@@ -16,10 +16,20 @@ as a decision instead of skipping it.
 1. **Intent before code.** No code without an active step in `PLAN.md`. If the request is vague,
    ask clarifying questions first. Each step has: goal, scope (files/globs), acceptance criteria.
 2. **Declare the step.** Before editing, write `.kratos/current-step.json`
-   (`{ "id", "title", "scope": [globs], "diffBudget": lines }`). The edit hook blocks writes outside
-   scope. Only `PLAN.md`, `DECISIONS.md`, `CLAUDE.md`, and `.kratos/**` are always writable.
-3. **Small steps.** Default diff budget is ~150 changed lines. If a step needs more, stop and
-   propose splitting it. One concern per step.
+   (`{ "id", "title", "scope": [globs], "estimate": lines, "diffBudget": lines }`). The edit hook
+   blocks writes outside scope. Only `PLAN.md`, `DECISIONS.md`, `CLAUDE.md`, and `.kratos/**` are
+   always writable.
+3. **Small steps, sized up front** (D24). One concern per step.
+   - **Budget = review load:** new lines (insertions) in the step's own files. Deleted lines,
+     config (`package.json`, `tsconfig*.json`), lockfiles and docs don't count. Default 150.
+   - **Estimate before coding:** list the files and rough new lines per file, then set `estimate`.
+     If it exceeds the budget, propose a split to the owner *before* writing code. Every split
+     must be a vertical slice that works and can be verified on its own (never "half an adapter").
+   - **At 80%** the hook warns: finish the current unit, then stop at the gate.
+   - **Over budget** the hook blocks. Stop, show what works, and let the owner choose:
+     **extend** (add `{ "lines", "reason" }` to `extensions` — only after the owner says yes),
+     **checkpoint** (commit the working part, continue as a new step), or **split**.
+     Never raise `diffBudget` or edit the hook to get past a block.
 4. **Log decisions.** Any non-obvious choice (library, data shape, protocol, error handling, file
    layout, trade-off) goes in `DECISIONS.md`: decision, alternatives, why, how to reverse.
    Never sneak a decision into code silently.

@@ -75,7 +75,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Note: `shell-quote` tokenizes, so `cd x && pnpm add y` is caught, while a quoted
   `echo "pnpm add"` is not a false alarm.
 
-### D13. Claude Code adapter will use `@anthropic-ai/claude-agent-sdk` (decided now, built in step 2)
+### D13. Claude Code adapter will use `@anthropic-ai/claude-agent-sdk` (decided now, built in step 2) — **superseded by D23**
 - Alternatives: spawn `claude -p --output-format stream-json` and parse it ourselves.
 - Why: official library for driving Claude Code; it runs the same CLI, with typed messages,
   permission callbacks (`canUseTool`) and hooks — the exact seams Kratos needs for gates.
@@ -110,3 +110,64 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   are behaviour (functions), which zod doesn't model usefully.
 - Deferred: session resume (SDK `resume: sessionId`), per-event ids/timestamps — add when the UI
   needs history or reconnect.
+
+### D20. Run the owner's installed `claude` CLI, found with `which` (step 2, owner)
+- Alternatives: the SDK's bundled, version-pinned binary (default if `pathToClaudeCodeExecutable`
+  is unset).
+- Why: same Claude Code the owner uses day to day. `claudePath` option overrides; a clear error if
+  `claude` isn't on PATH. Risk: CLI and SDK versions can drift — if the SDK breaks, try the bundled
+  binary first.
+- Reverse: drop `pathToClaudeCodeExecutable` in the adapter.
+
+### D21. Adapter details (step 2)
+- Settings: CLI default (user + project + local), so the target repo's CLAUDE.md and hooks apply
+  to Kratos-driven sessions too.
+- Skipped in v1: messages from sub-agents (`parent_tool_use_id` set), empty `thinking` blocks (this
+  CLI omits thinking text), and the ~35 SDK message kinds that don't map to an AgentEvent.
+- Order in practice: `tool_call` → permission callback → `tool_result`.
+- The callback only fires for tools the CLI's own settings say to ask about: with the owner's
+  settings, Write/Edit ask but some Bash commands are auto-allowed (and may be backgrounded).
+  Kratos gates (step 5) must account for this — e.g. a stricter permission mode for Kratos runs.
+- Verified with the real CLI (2.1.308): deny→reroute→allow, multi-turn context in one process,
+  interrupt → `turn_end: interrupted`, interrupt during a pending ask → `control_cancel_request`
+  fires our AbortSignal and the tool is not run, `stop()` leaves no processes.
+
+### D23. Talk to the `claude` CLI's RPC mode directly — no Agent SDK (step 2, owner)
+- Alternatives: `@anthropic-ai/claude-agent-sdk` (built and tested first, then removed).
+- Why: owner's call — no extra layer between Kratos and the CLI; fewer deps; we see the real
+  protocol. The SDK is itself a host for this same protocol, so we lose nothing we use today.
+- Protocol (read from the SDK's source, CLI 2.1.308): spawn
+  `claude -p --input-format stream-json --output-format stream-json --verbose
+  --permission-prompt-tool=stdio`; one JSON object per line each way.
+  - prompts → stdin `{type:"user", message:{role:"user", content}}`
+  - CLI asks → `{type:"control_request", request_id, request:{subtype:"can_use_tool", tool_name, input}}`
+  - we answer → `{type:"control_response", response:{subtype:"success", request_id,
+    response:{behavior:"allow", updatedInput} | {behavior:"deny", message}}}`
+  - CLI withdraws a pending ask → `{type:"control_cancel_request", request_id}` (→ our AbortSignal)
+  - interrupt → stdin `{type:"control_request", request_id, request:{subtype:"interrupt"}}`
+- Tools: Node's `child_process.spawn` + `readline` (standard library, not hand-rolled) for
+  JSON lines; zod schemas validate every CLI line we consume, unknown kinds are ignored.
+- Risk: this protocol is the CLI's internal host interface, not a documented public API — it can
+  change between CLI versions. The zod schemas make breakage loud instead of silent.
+- Reverse: re-add the SDK and rewrite `src/index.ts` around its `query()` (an SDK version was
+  built and tested during step 2 but never committed; it was ~100 lines).
+
+### D22. `package.json` / `tsconfig*.json` don't count toward diff budgets (step 2, owner)
+- Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
+  config lines until the hook implements this in step 2b. Folded into D24.
+
+### D24. Budget system v2: review load, estimate first, graduated response (step 2b, owner)
+- Problem: step 2 hit the budget three times — budgets were guessed then only checked mid-edit,
+  counted deleted/replaced lines and config, counted other steps' WIP (whole-tree diff), and had
+  no warning and no clean path when over. Raising the number each time fixed nothing.
+- Decision (v0 hook now; same model is Kratos's own gate in PLAN step 5):
+  - Review load = insertions vs HEAD (+ lines of new files) in files matching the step's scope,
+    excluding docs, lockfiles, `package.json`, `tsconfig*.json`, and per-step `exclude` globs.
+  - Steps declare `estimate`; estimate > budget blocks the first code edit → split first.
+  - ≥ 80% → warning to the agent (`additionalContext`); > 100% → block with three owner options:
+    extend (recorded in `extensions` with a reason), checkpoint (commit + new step), split.
+  - Splits are vertical slices: each part works and is verifiable alone.
+- Verified live in step 2: the 80% `additionalContext` warning reaches the agent.
+- Learned in step 2: estimates can miss by ~30% (index.ts 150 vs 110 guessed); extensions are the
+  honest path, recorded with reasons in the step file.
+- Reverse: previous hook in git history (commit 40ec6d7).

@@ -126,6 +126,30 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             logo links to `/`; sending from Home navigates to the new session's URL. Collapsible
             sessions sidebar (owner's design); status dots. Server answers deep links with
             `index.html` (SPA fallback, tested). Verified with real `claude`, two sessions at once.
+    - [~] **3m. Harness & model picker** (owner request, D43) — the agent chip becomes a dropdown
+          with the official Claude logo: pick the harness (Claude Code for now) and a model. The
+          model list comes from the CLI itself (`initialize` → `models`), never hardcoded: latest
+          aliases (Default/Opus/Fable/Sonnet/Haiku) on top, pinned older versions in "Other
+          versions". Chosen on Home for new sessions; switchable mid-session (`set_model`).
+          Two working slices (approved by owner):
+      - [x] **3m1. Backend** (~200 incl. tests) — `AgentAdapter.listModels()` (Claude: spawn,
+            `initialize`, read `models`, stop; cached) and `startSession({ model })` →
+            `--model`; `AgentSession.setModel()` → `set_model`; store `model` column (migration
+            0002), resumed sessions keep their model; protocol: server `harnesses` (id, name,
+            models) on connect/when loaded, `prompt` gains `harness`/`model` for new sessions,
+            client `set_model`, `SessionSummary.model`. Tests: fake claude answers
+            `initialize`/`set_model` and reports `--model`; hub start/resume/switch.
+      - [ ] **3L. Logging (tech debt, owner request)** — replace `console.*` with a proper
+            logger: console output plus rotating log files under `~/.kratos` for debugging.
+            Browser-side warnings (e.g. the store's `console.warn("kratos:", …)`) need forwarding
+            to the server, since a browser can't write files. TO BE DESIGNED with the owner after
+            3m1.
+      - [ ] **3m2. UI** (~150) — official Claude SVG (downloaded from claude.ai's own asset
+            server, checked: one path, no scripts) as a component; shadcn dropdown chip
+            "logo · Claude Code · Opus 5.5 ▾" with Harness + Model (Latest / Other versions);
+            Home choice remembered per browser; in a session the chip shows and switches that
+            session's model. Verified with real `claude`: start on Haiku, switch to Sonnet,
+            ask the agent which model it is.
     - [ ] **3c2. Conversation** — move UI state into a Zustand store (D39); AI Elements chat: prompts as bubbles, replies via Streamdown,
           tool calls as Trace, permission asks as Approve/Deny (Confirmation), bottom prompt box
           with Stop. Accept: live demo with real `claude` incl. an approval; refresh keeps a

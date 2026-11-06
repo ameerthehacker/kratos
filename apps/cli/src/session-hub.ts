@@ -1,4 +1,4 @@
-import type { AgentAdapter, ClientMessage, ServerMessage } from "@kratos/core";
+import type { AgentAdapter, ClientMessage, Harness, ServerMessage } from "@kratos/core";
 import { SessionRuntime } from "./session-runtime.js";
 import type { SessionStore } from "./store/store.js";
 
@@ -21,16 +21,22 @@ export class SessionHub {
   /** Which session each connected tab is viewing. */
   private readonly views = new Map<Send, string>();
 
+  /** Harnesses and their models (D43); empty until the agent has reported its models. */
+  private harnesses: Harness[] = [];
+
   constructor(
     private readonly adapter: AgentAdapter,
     private readonly cwd: string,
     private readonly store: SessionStore,
-  ) {}
+  ) {
+    this.loadHarnesses();
+  }
 
-  /** A tab connected: show it the most recent session and the session list. */
+  /** A tab connected: show it the most recent session, the session list and the harnesses. */
   connect(send: Send): Tab {
-    this.view(send, this.store.latestOrCreate(this.cwd, this.adapter.displayName).id);
+    this.view(send, this.store.latestOrCreate(this.cwd, this.adapter.id).id);
     send(this.sessionList());
+    if (this.harnesses.length > 0) send({ type: "harnesses", list: this.harnesses });
     return {
       receive: (message) => this.receive(send, message),
       disconnect: () => this.views.delete(send),
@@ -46,16 +52,25 @@ export class SessionHub {
     const viewing = this.runtime(this.views.get(send)!);
     switch (message.type) {
       case "prompt": {
+        if (message.harness && message.harness !== this.adapter.id) {
+          send({ type: "error", message: `Unknown harness ${message.harness}` });
+          return;
+        }
         // From Home: new work gets a new session, unless the viewed one is still empty anyway.
         // Whatever this tab was viewing keeps running (D41).
         let target = viewing;
         if (message.newSession && viewing.hasPrompts) {
-          target = this.runtime(this.store.create(this.cwd, this.adapter.displayName).id);
+          target = this.runtime(this.store.create(this.cwd, this.adapter.id).id);
           this.view(send, target.id);
         }
+        // The model chosen on Home applies to the session this prompt starts (D43).
+        if (!target.hasPrompts && message.model) target.setModel(message.model);
         target.prompt(message.text);
         return;
       }
+      case "set_model":
+        viewing.setModel(message.model);
+        return;
       case "open_session":
         if (this.store.get(message.id)?.projectDir === this.cwd) this.view(send, message.id);
         else send({ type: "error", message: `No session ${message.id} in this project` });
@@ -109,12 +124,30 @@ export class SessionHub {
         title: s.title,
         status: this.runtimes.get(s.id)?.status ?? "idle",
         updatedAt: s.updatedAt.getTime(),
+        harness: s.agent,
+        model: s.model,
       })),
     };
   }
 
   private broadcastSessionList(): void {
-    const list = this.sessionList();
-    for (const send of this.views.keys()) send(list);
+    this.broadcast(this.sessionList());
+  }
+
+  private broadcast(message: ServerMessage): void {
+    for (const send of this.views.keys()) send(message);
+  }
+
+  /** Ask the agent which models it offers (D43); every tab gets the list as soon as it's known.
+   * If the agent can't say, the harness is still listed (its default model works). */
+  private loadHarnesses(): void {
+    const publish = (models: Harness["models"]) => {
+      this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models }];
+      this.broadcast({ type: "harnesses", list: this.harnesses });
+    };
+    this.adapter.listModels().then(publish, (err) => {
+      console.warn(`kratos: could not list ${this.adapter.displayName} models: ${String(err)}`);
+      publish([]);
+    });
   }
 }

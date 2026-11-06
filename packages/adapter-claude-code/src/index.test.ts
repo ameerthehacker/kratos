@@ -153,3 +153,44 @@ describe("Claude Code adapter: conversations", () => {
     expect(resumed).not.toContain("--session-id");
   });
 });
+
+describe("Claude Code adapter: models (D43)", () => {
+  it("lists the CLI's models, aliases as 'latest' and pinned ids as 'other', asking only once", async () => {
+    const adapter = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE });
+    const first = adapter.listModels();
+    expect(adapter.listModels()).toBe(first); // cached: no second CLI start
+    expect(await first).toEqual([
+      { id: "default", label: "Default (recommended)", description: "Best for everyday tasks", group: "latest" },
+      { id: "haiku", label: "Haiku 5.5", description: "Fastest", group: "latest" },
+      { id: "claude-opus-4-8", label: "Opus 4.8", description: "Pinned older version", group: "other" },
+    ]);
+  });
+
+  it("starts on the chosen model (--model) and switches it live (set_model)", async () => {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+      model: "haiku",
+    });
+    // Keep consuming events like the hub does: the CLI confirms set_model on its output.
+    const seen: AgentEvent[] = [];
+    const pump = (async () => {
+      for await (const event of session.events) seen.push(event);
+    })();
+    const nthReport = async (n: number) => {
+      await vi.waitFor(() => expect(seen.filter((e) => e.kind === "tool_result").length).toBeGreaterThanOrEqual(n));
+      const result = seen.filter((e) => e.kind === "tool_result")[n - 1];
+      return result?.kind === "tool_result" ? result.output : undefined;
+    };
+    try {
+      session.send("model");
+      expect(await nthReport(1)).toBe("haiku");
+      await session.setModel("claude-opus-4-8"); // resolves once the CLI confirms
+      session.send("model");
+      expect(await nthReport(2)).toBe("claude-opus-4-8");
+    } finally {
+      await session.stop();
+      await pump;
+    }
+  });
+});

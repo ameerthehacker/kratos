@@ -62,15 +62,27 @@ export type RequestPermission = (
  */
 export type Conversation = { id: string; resume: boolean };
 
-/** A coding agent Kratos knows how to drive. One adapter per agent (e.g. "claude-code"). */
+/** A model an agent offers (D43). `group`: "latest" = always-newest aliases, "other" = pinned. */
+export const AgentModel = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  group: z.enum(["latest", "other"]),
+});
+export type AgentModel = z.infer<typeof AgentModel>;
+
+/** A coding agent Kratos knows how to drive (a "harness"). One adapter per agent (e.g. "claude-code"). */
 export interface AgentAdapter {
   readonly id: string;
   readonly displayName: string;
-  /** Without `conversation`, the agent starts a fresh, unnamed conversation. */
+  /** The models this agent offers, as the agent itself reports them (never hardcoded). */
+  listModels(): Promise<AgentModel[]>;
+  /** Without `conversation`, a fresh, unnamed conversation; without `model`, the agent's default. */
   startSession(options: {
     cwd: string;
     requestPermission: RequestPermission;
     conversation?: Conversation;
+    model?: string;
   }): AgentSession;
 }
 
@@ -82,6 +94,10 @@ export interface AgentSession {
   send(prompt: string): void;
   /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
   interrupt(): Promise<void>;
+  /** Switch the running conversation to another model (from listModels). Resolves when the agent
+   * confirms — which it reports on its output, so `events` must be being consumed (the hub always
+   * does). */
+  setModel(model: string): Promise<void>;
   /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }

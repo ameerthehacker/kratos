@@ -15,6 +15,14 @@ const waiting = new Map(); // request_id → resolve(response)
 const cancelled = new Set();
 let responsesAfterCancel = 0;
 let onInterrupt = () => {};
+// The model: from --model, switched by set_model (D43). A tiny version of the real `initialize` list.
+let model = process.argv.includes("--model") ? process.argv[process.argv.indexOf("--model") + 1] : "default";
+const MODELS = [
+  { value: "default", displayName: "Default (recommended)", description: "Best for everyday tasks" },
+  { value: "haiku", displayName: "Haiku 5.5", description: "Fastest" },
+  { value: "claude-opus-4-8", displayName: "Opus 4.8", description: "Pinned older version" },
+];
+const success = (request_id, response) => out({ type: "control_response", response: { subtype: "success", request_id, response } });
 
 const input = { file_path: "a.txt", content: "hi" };
 const toolUse = () =>
@@ -65,6 +73,11 @@ const turns = {
   async crash() {
     process.exit(1);
   },
+  // Report which model we're on now.
+  async model() {
+    report(model);
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));
@@ -76,6 +89,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   const msg = JSON.parse(line);
   if (msg.type === "user") void turns[msg.message.content]?.();
   else if (msg.type === "control_request" && msg.request.subtype === "interrupt") onInterrupt();
+  else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });
+  else if (msg.type === "control_request" && msg.request.subtype === "set_model") {
+    model = msg.request.model;
+    success(msg.request_id, {});
+  }
   else if (msg.type === "control_response") {
     const id = msg.response.request_id;
     if (cancelled.has(id)) responsesAfterCancel++;

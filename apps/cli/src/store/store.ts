@@ -63,6 +63,11 @@ export class SessionStore {
   }
 
   /** Give a session its title (its first prompt). Only the first call has an effect. */
+  /** Remember the model a session runs with (D43); null = the agent's default. */
+  setModel(sessionId: string, model: string | null): void {
+    this.db.update(sessions).set({ model }).where(eq(sessions.id, sessionId)).run();
+  }
+
   setTitle(sessionId: string, title: string): void {
     this.db
       .update(sessions)

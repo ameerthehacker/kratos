@@ -1,15 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
 import which from "which";
 import {
   AgentEvent,
   type AgentAdapter,
+  type AgentModel,
   type AgentSession,
   type Conversation,
   type RequestPermission,
 } from "@kratos/core";
+import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { CliMessage } from "./protocol.js";
+import { CliMessage, InitializeResponse } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -17,12 +19,44 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
   if (!claudePath) {
     throw new Error("Claude Code CLI (`claude`) not found on PATH. Install it or pass `claudePath`.");
   }
+  let models: Promise<AgentModel[]> | undefined; // asked once per run; retried after a failure
   return {
     id: "claude-code",
     displayName: "Claude Code",
-    startSession: ({ cwd, requestPermission, conversation }) =>
-      startSession(claudePath, cwd, requestPermission, conversation),
+    listModels: () =>
+      (models ??= fetchModels(claudePath).catch((err) => {
+        models = undefined;
+        throw err;
+      })),
+    startSession: ({ cwd, requestPermission, conversation, model }) =>
+      startSession(claudePath, cwd, requestPermission, conversation, model),
   };
+}
+
+/** Ask the CLI which models this account can use: start it, send `initialize`, read `models` (D43). */
+async function fetchModels(claudePath: string): Promise<AgentModel[]> {
+  const proc = new JsonLinesProcess(claudePath, CLI_ARGS, { cwd: tmpdir() });
+  const control = new ControlChannel(proc);
+  const reading = (async () => {
+    for await (const raw of proc.messages()) {
+      const parsed = CliMessage.safeParse(raw);
+      if (parsed.success) control.handle(parsed.data);
+    }
+    control.close("claude exited before answering initialize");
+  })();
+  try {
+    const answer = await control.request({ subtype: "initialize" }, { timeoutMs: 30_000 });
+    return InitializeResponse.parse(answer).models.map((m) => ({
+      id: m.value,
+      label: m.displayName,
+      description: m.description ?? "",
+      // Aliases ("default", "opus", …) always mean the newest; full ids are pinned versions.
+      group: m.value.startsWith("claude-") ? "other" : "latest",
+    }));
+  } finally {
+    await proc.stop();
+    await reading;
+  }
 }
 
 const CLI_ARGS = [
@@ -43,11 +77,14 @@ function startSession(
   cwd: string,
   requestPermission: RequestPermission,
   conversation?: Conversation,
+  model?: string,
 ): AgentSession {
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol.
-  const proc = new JsonLinesProcess(claudePath, [...CLI_ARGS, ...conversationArgs(conversation)], { cwd });
+  const args = [...CLI_ARGS, ...conversationArgs(conversation), ...(model ? ["--model", model] : [])];
+  const proc = new JsonLinesProcess(claudePath, args, { cwd });
 
+  const control = new ControlChannel(proc); // requests we send (set_model, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
 
@@ -86,6 +123,7 @@ function startSession(
       const parsed = CliMessage.safeParse(raw);
       if (!parsed.success) continue; // a line kind Kratos doesn't use
       const msg = parsed.data;
+      if (control.handle(msg)) continue; // an answer to one of our requests
       if (msg.type === "control_request") void answer(msg);
       else if (msg.type === "control_cancel_request") pending.get(msg.request_id)?.abort();
       else {
@@ -93,7 +131,8 @@ function startSession(
         if (msg.type === "result") interrupted = false;
       }
     }
-    // stdout ended. If nobody asked it to stop, claude died (or never started): say so.
+    control.close("claude exited"); // requests still waiting will never be answered
+    // If nobody asked it to stop, claude died (or never started): say so.
     const exit = await proc.exited;
     if (!exit.requested) {
       const why = exit.message ?? `exit code ${exit.code ?? "?"}`;
@@ -108,8 +147,10 @@ function startSession(
     },
     async interrupt() {
       interrupted = true;
-      proc.send({ type: "control_request", request_id: randomUUID(), request: { subtype: "interrupt" } });
+      // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`.
+      control.request({ subtype: "interrupt" }).catch(() => {});
     },
+    setModel: async (model) => void (await control.request({ subtype: "set_model", model })), // D43
     async stop() {
       for (const abort of pending.values()) abort.abort();
       await proc.stop();

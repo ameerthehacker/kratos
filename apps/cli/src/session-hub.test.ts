@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AgentAdapter, AgentEvent, AgentSession, PermissionRequest, ServerMessage, SessionSummary } from "@kratos/core";
+import type {
+  AgentAdapter,
+  AgentEvent,
+  AgentModel,
+  AgentSession,
+  Harness,
+  PermissionRequest,
+  ServerMessage,
+  SessionSummary,
+} from "@kratos/core";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
 
@@ -21,6 +30,10 @@ class FakeSession implements AgentSession {
   async interrupt() {
     this.interrupts++;
   }
+  readonly modelSwitches: string[] = [];
+  async setModel(model: string) {
+    this.modelSwitches.push(model);
+  }
   async stop() {
     this.stopped = true;
     this.stream.close();
@@ -38,11 +51,18 @@ class FakeSession implements AgentSession {
   }
 }
 
+const MODELS: AgentModel[] = [
+  { id: "default", label: "Default", description: "recommended", group: "latest" },
+  { id: "haiku", label: "Haiku", description: "fast", group: "latest" },
+  { id: "claude-opus-4-8", label: "Opus 4.8", description: "older", group: "other" },
+];
+
 function setup() {
   const agents: FakeSession[] = [];
   const adapter: AgentAdapter = {
     id: "fake",
     displayName: "Fake",
+    listModels: async () => MODELS,
     startSession: (options) => {
       const agent = new FakeSession(options);
       agents.push(agent);
@@ -54,12 +74,13 @@ function setup() {
 
   /** A browser tab on the current hub. Like the real UI: its log clears when it switches session. */
   const tab = () => {
-    const state = { seen: [] as ServerMessage[], sessionIds: [] as string[], list: [] as SessionSummary[] };
+    const state = { seen: [] as ServerMessage[], sessionIds: [] as string[], list: [] as SessionSummary[], harnesses: [] as Harness[] };
     const handle = hub.connect((m) => {
       if (m.type === "session") {
         state.sessionIds.push(m.id);
         state.seen = [];
       } else if (m.type === "sessions") state.list = m.list;
+      else if (m.type === "harnesses") state.harnesses = m.list;
       else state.seen.push(m);
     });
     return {
@@ -69,6 +90,9 @@ function setup() {
       },
       get list() {
         return state.list;
+      },
+      get harnesses() {
+        return state.harnesses;
       },
       /** The session this tab views now. */
       get viewing() {
@@ -356,5 +380,70 @@ describe("SessionHub across restarts (D36, D41)", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("SessionHub: harness & model (D43)", () => {
+  it("tells every tab the harness and its models, also tabs that connect later", async () => {
+    const { tab } = setup();
+    const early = tab(); // connected before the models are known
+    await tick();
+    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS }]);
+    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS }]);
+  });
+
+  it("starts a session with the model picked on Home and shows it in the list", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first", newSession: true, harness: "fake", model: "haiku" });
+    expect(agents[0]!.options.model).toBe("haiku");
+    expect(a.list.find((s) => s.id === a.viewing)).toMatchObject({ harness: "fake", model: "haiku" });
+
+    a.receive({ type: "prompt", text: "later prompt", model: "claude-opus-4-8" }); // not a session start
+    expect(a.list.find((s) => s.id === a.viewing)?.model).toBe("haiku");
+  });
+
+  it("switches a running session's model live, and keeps it when the agent resumes", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first", model: "haiku" });
+    a.receive({ type: "set_model", model: "claude-opus-4-8" });
+    expect(agents[0]!.modelSwitches).toEqual(["claude-opus-4-8"]);
+    expect(a.list.find((s) => s.id === a.viewing)?.model).toBe("claude-opus-4-8");
+
+    restart();
+    const late = tab();
+    late.receive({ type: "prompt", text: "after restart" });
+    expect(agents.at(-1)!.options).toMatchObject({ model: "claude-opus-4-8", conversation: { resume: true } });
+  });
+
+  it("rejects a harness it doesn't run, without starting anything", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "hi", harness: "codex" });
+    expect(agents).toHaveLength(0);
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: "Unknown harness codex" });
+  });
+
+  it("still lists the harness (no models) when the agent can't report its models", async () => {
+    const store = SessionStore.open(":memory:");
+    const failing: AgentAdapter = {
+      id: "fake",
+      displayName: "Fake",
+      listModels: async () => {
+        throw new Error("claude not logged in");
+      },
+      startSession: () => {
+        throw new Error("unused");
+      },
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hub = new SessionHub(failing, "/projects/demo", store);
+    await tick();
+    const got: ServerMessage[] = [];
+    hub.connect((m) => got.push(m));
+    expect(got.find((m) => m.type === "harnesses")).toEqual({ type: "harnesses", list: [{ id: "fake", name: "Fake", models: [] }] });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("claude not logged in"));
+    warn.mockRestore();
   });
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentEvent, PermissionDecision, PermissionRequest } from "./agent.js";
+import { AgentEvent, AgentModel, PermissionDecision, PermissionRequest } from "./agent.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -13,9 +13,18 @@ import { AgentEvent, PermissionDecision, PermissionRequest } from "./agent.js";
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
    * session for it instead and moves this tab there; other sessions keep running (D41). */
-  z.object({ type: z.literal("prompt"), text: z.string().min(1), newSession: z.boolean().optional() }),
+  /** `harness`/`model` apply when this prompt starts a session (its first prompt); D43. */
+  z.object({
+    type: z.literal("prompt"),
+    text: z.string().min(1),
+    newSession: z.boolean().optional(),
+    harness: z.string().optional(),
+    model: z.string().optional(),
+  }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
+  /** Switch the viewed session's model, also while its agent is running (D43). */
+  z.object({ type: z.literal("set_model"), model: z.string() }),
   z.object({ type: z.literal("interrupt") }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
@@ -30,11 +39,20 @@ export const SessionSummary = z.object({
   title: z.string().nullable(),
   status: z.enum(["idle", "working", "needs_approval"]),
   updatedAt: z.number(),
+  /** Harness (adapter id) and model it runs with; model null = the agent's default. */
+  harness: z.string(),
+  model: z.string().nullable(),
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 
-/** Server → browser. Everything except pong/error/session/sessions is in a session's log. */
+/** A harness the server can run, with the models it reports (D43). */
+export const Harness = z.object({ id: z.string(), name: z.string(), models: z.array(AgentModel) });
+export type Harness = z.infer<typeof Harness>;
+
+/** Server → browser. Everything except pong/error/session/sessions/harnesses is in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
+  /** The harnesses and their models: on connect once known, and when (re)loaded. */
+  z.object({ type: z.literal("harnesses"), list: z.array(Harness) }),
   /** The session this tab now views; its log replay follows. On a new id, clear the log. */
   z.object({ type: z.literal("session"), id: z.string() }),
   /** All of this project's sessions, most recent first: on connect and whenever one changes. */

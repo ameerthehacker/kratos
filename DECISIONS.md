@@ -156,6 +156,35 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D43. Harness & model picker (step 3m, owner)
+- Owner: the agent chip is a dropdown with the Claude logo to pick the harness (only Claude Code
+  for now) and a model Claude provides; shown as latest aliases + an "Other versions" group;
+  chosen on Home, and switchable mid-session.
+- Facts verified first: the CLI's `initialize` control request returns `models` (`value` for
+  `--model`, `displayName`, `description`) — 13 for the owner's account incl. "default"; the
+  aliases (`opus`, `fable`, `sonnet`, `haiku`) always mean the latest; changing model in a
+  running session is `control_request {subtype: "set_model", model}` (read from the SDK source).
+- Logo (owner: "download from the official Claude site"): claude.ai's own declared icon,
+  `https://assets-proxy.anthropic.com/claude-ai/v2/assets/v1/cd02a42d9-Vq_H3mgS.svg` (2,558
+  bytes, image/svg+xml). Fetched via its link on claude.ai (claude.ai itself blocks scripted
+  requests with 403 — not worked around). Inspected before use: one `<path>`, fill `#D97757`, no
+  scripts/handlers/external refs. Its color becomes a theme token.
+- 3m1 backend: `AgentAdapter.listModels()` (Claude: start the CLI in a temp dir, `initialize`,
+  map `models` — `claude-…` ids are "other", aliases "latest"; cached per run, retried after a
+  failure); `startSession({ model })` → `--model` (also on resume); `AgentSession.setModel()`.
+  Sessions store their `model` (null = agent default) and `agent` now holds the harness *id* —
+  migration 0002 adds the column and rewrites old `'Claude Code'` rows to `'claude-code'`
+  (verified on a copy of an old DB). The model picked on Home applies only to the prompt that
+  *starts* a session; `set_model` switches the viewed session (live if its agent runs). If the
+  agent can't list its models, the harness is still offered (empty list → its default works).
+- `ControlChannel` (owner: "commonise control request/response"): one class for every control
+  request Kratos sends the CLI — unique ids, matches `control_response`, settles once on answer /
+  error answer / timeout / CLI exit / failed send. Used by `fetchModels`, `setModel`, `interrupt`.
+  Requests the CLI sends *us* (`can_use_tool`) stay in the adapter: that's the permission gate.
+- Contract made explicit: `setModel()` resolves when the CLI confirms, which arrives on its
+  output — so `events` must be being consumed (the hub's pump always is). Found when a test that
+  paused reading hung.
+
 ### D42. UI shell: React Router, Zustand, island layout (step 3n2, owner requests)
 - Routes (owner: React Router, v8): `/` Home, `/s/:sessionId` a session; unknown → `/`. v8 notes:
   `RouterProvider` comes from `react-router/dom`, everything else from `react-router`. A session

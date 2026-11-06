@@ -41,5 +41,20 @@ export const CliMessage = z.discriminatedUnion("type", [
     }),
   }),
   z.object({ type: z.literal("control_cancel_request"), request_id: z.string() }),
+  /** The CLI's answer to a control_request *we* sent (initialize, set_model, …). */
+  z.object({
+    type: z.literal("control_response"),
+    response: z.object({
+      subtype: z.string(), // "success" | "error"
+      request_id: z.string(),
+      response: z.unknown().optional(),
+      error: z.string().optional(),
+    }),
+  }),
 ]);
 export type CliMessage = z.infer<typeof CliMessage>;
+
+/** The part of the `initialize` answer Kratos uses: the models this account can pick (D43). */
+export const InitializeResponse = z.object({
+  models: z.array(z.object({ value: z.string(), displayName: z.string(), description: z.string().optional() })),
+});

@@ -21,6 +21,8 @@ export class SessionRuntime {
   private readonly log: ServerMessage[];
   /** Has the agent ever been started for this conversation? Then every start must resume (D36). */
   private agentStarted: boolean;
+  /** The model this session runs with; null = the agent's default (D43). */
+  private model: string | null;
   private session: AgentSession | undefined;
   /** A prompt was sent and its turn hasn't ended yet. */
   private turnOpen = false;
@@ -38,6 +40,7 @@ export class SessionRuntime {
     const stored = deps.store.get(id);
     if (!stored) throw new Error(`Unknown session ${id}`);
     this.agentStarted = stored.agentStartedAt !== null;
+    this.model = stored.model;
     this.log = deps.store.load(id);
     // Asks left open by a previous run can't be answered: the agent process that asked is gone.
     for (const askId of unresolvedAsks(this.log)) {
@@ -71,6 +74,14 @@ export class SessionRuntime {
     this.session?.interrupt().catch(this.reportFailure("Interrupt"));
   }
 
+  /** Use another model from now on: switched live if the agent is running, else at its next start. */
+  setModel(model: string): void {
+    this.model = model;
+    this.deps.store.setModel(this.id, model);
+    this.session?.setModel(model).catch(this.reportFailure("Switching model"));
+    this.deps.onChange();
+  }
+
   /** Answer one of this session's asks. Returns false if the ask isn't (or no longer) ours. */
   decide(askId: string, decision: PermissionDecision): boolean {
     return this.settle(askId, decision.decision === "allow" ? "allowed" : "denied", decision);
@@ -88,6 +99,7 @@ export class SessionRuntime {
     const session = this.deps.adapter.startSession({
       cwd: this.deps.cwd,
       conversation: { id: this.id, resume: this.agentStarted },
+      model: this.model ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
     this.deps.store.markAgentStarted(this.id);

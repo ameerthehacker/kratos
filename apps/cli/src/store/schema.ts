@@ -15,6 +15,8 @@ export const sessions = sqliteTable(
     agent: text("agent").notNull(),
     /** The session's first prompt, shown in the Recent list / sidebar (D41). */
     title: text("title"),
+    /** The model the session runs with (D43); null = the agent's default. `agent` = harness id. */
+    model: text("model"),
     /** Set the first time the agent process starts; from then on, starts must resume. */
     agentStartedAt: integer("agent_started_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

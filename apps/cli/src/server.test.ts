@@ -41,9 +41,12 @@ const is = <K extends ServerMessage["type"]>(type: K) => (m: ServerMessage): m i
   m.type === type;
 const turnEnd = (m: ServerMessage): m is Extract<ServerMessage, { type: "agent_event" }> =>
   m.type === "agent_event" && m.event.kind === "turn_end";
-/** Message types in order; session-list updates (sent whenever a status changes) left out. */
+/** Message types in order; list updates (sessions: on any status change; harnesses: whenever the
+ * agent's models are known) are left out — their timing isn't part of the conversation. */
 const summary = (messages: ServerMessage[]) =>
-  messages.filter((m) => m.type !== "sessions").map((m) => (m.type === "agent_event" ? `agent_event:${m.event.kind}` : m.type));
+  messages
+    .filter((m) => m.type !== "sessions" && m.type !== "harnesses")
+    .map((m) => (m.type === "agent_event" ? `agent_event:${m.event.kind}` : m.type));
 
 describe("kratos server", () => {
   it("runs a prompt with a permission round trip over WebSocket, and replays it to a late tab", async () => {
@@ -62,6 +65,9 @@ describe("kratos server", () => {
     try {
       tab.send({ type: "ping" });
       expect(await tab.waitFor(is("pong"))).toMatchObject({ cwd, agent: "Claude Code", serverVersion: "0.0.0" });
+      const harnesses = await tab.waitFor(is("harnesses")); // the fake CLI's models, via initialize
+      expect(harnesses.list[0]).toMatchObject({ id: "claude-code", name: "Claude Code" });
+      expect(harnesses.list[0]!.models.map((m) => m.id)).toEqual(["default", "haiku", "claude-opus-4-8"]);
 
       tab.send({ type: "prompt", text: "ask" }); // the fake asks to Write, then reports our answer
       const ask = await tab.waitFor(is("permission_request"));

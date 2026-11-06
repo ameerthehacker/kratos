@@ -47,7 +47,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       exit reported with `requested:false` + code on crash; non-JSON lines skipped; `send()` after
       exit returns `false` and nothing throws; `stop()` graceful when the child exits on stdin
       close; `stop()` escalates to SIGKILL when SIGTERM is ignored (generous time bounds).
-- [ ] **T2. CLI → AgentEvent mapping** (~100) — move `toEvents` to a pure `src/map.ts` (no
+- [x] **T2. CLI → AgentEvent mapping** (~100) — move `toEvents` to a pure `src/map.ts` (no
       behaviour change). Cases: text; empty `thinking` dropped; `tool_use` → tool_call;
       `tool_result` with string / text-array / missing content + `is_error`; unknown block kinds
       skipped; sub-agent messages skipped; `result` success / error subtype / after interrupt.

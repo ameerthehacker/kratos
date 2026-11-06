@@ -33,6 +33,41 @@ UI, running Claude Code, enforcing plan → scoped step → proof → walkthroug
       config/lockfiles/docs excluded); steps declare an `estimate` up front; warn at 80%; over
       budget → owner chooses extend / checkpoint / split. Scope: `.claude/**`.
       Accept: hook test cases pass; CLAUDE.md rule 3 rewritten.
+- [x] **2e. Remove v0 guard hooks** (D27) — owner found them more friction than help. Hook
+      scripts, their settings entry, hook-only deps and `.kratos/` removed; CLAUDE.md rules kept as
+      practice (plan, small steps, decisions, proof, walkthrough, gate) without enforcement.
+
+### Tests for what's built (before step 3) — PROPOSED, awaiting owner approval
+
+Rule for inclusion: a test exists only if a break would be **silent** and would hurt the
+**permission gate**, **process safety**, or the **guardrails**. Fast, deterministic, no network,
+no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next to the code.
+
+- [ ] **T1. Vitest setup + `JsonLinesProcess`** (~90 lines) — with fake `node -e` children:
+      exit reported with `requested:false` + code on crash; non-JSON lines skipped; `send()` after
+      exit returns `false` and nothing throws; `stop()` graceful when the child exits on stdin
+      close; `stop()` escalates to SIGKILL when SIGTERM is ignored (generous time bounds).
+- [ ] **T2. CLI → AgentEvent mapping** (~100) — move `toEvents` to a pure `src/map.ts` (no
+      behaviour change). Cases: text; empty `thinking` dropped; `tool_use` → tool_call;
+      `tool_result` with string / text-array / missing content + `is_error`; unknown block kinds
+      skipped; sub-agent messages skipped; `result` success / error subtype / after interrupt.
+- [ ] **T3. Permission gate over the control protocol** (~170, may need an extension) — a small
+      fake `claude` script (speaks the D23 protocol, scripted by prompt) passed via `claudePath`:
+      allow → `control_response` allow with original input; allow + `updatedInput` → forwarded;
+      deny → message forwarded; **callback throws → deny (fails closed)**; `control_cancel_request`
+      → AbortSignal fires and **no** response is written; non-`can_use_tool` request → error
+      response; `interrupt()` sends the interrupt request and turn ends `interrupted`; process
+      dies mid-turn → `turn_end: error`.
+**Deliberately not tested now (and why)**
+- Guard hooks — removed in 2e (D27), nothing left to test.
+- zod schemas in `core` — declarative; a test would be testing zod.
+- `apps/cli` server (static files, ping/pong) — placeholder; step 3 rewrites it, tests come then.
+- Web UI, demo script, `which` lookup — trivial wiring or dev-only; visible when broken.
+- Real `claude` CLI behaviour — not a unit test (slow, costs tokens, nondeterministic). The fake
+  in T3 can drift from the real protocol; a separate opt-in smoke script (`pnpm smoke`, the
+  existing scratch proof) is the guard for that — later, not in this batch.
+- Orphan cleanup on parent exit — execa's `cleanup` guarantee, verified once in 2d.
+
 - [ ] **3. Session over WebSocket** — UI sends a prompt, server runs the adapter, streams events
       back; UI renders a raw event log. Accept: live demo in the browser.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan

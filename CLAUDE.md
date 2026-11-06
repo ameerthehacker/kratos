@@ -6,48 +6,35 @@ author of intent; the agent proposes, explains, and proves. Kratos wraps existin
 
 ## Bootstrapping rule (read this first)
 
-Until Kratos can host its own development, **this file + the hooks in `.claude/` _are_ Kratos v0**.
-We build Kratos the way Kratos will make people build software. The owner of this repo must never
-end up with code they don't understand. If a rule below slows us down, that's the point — raise it
-as a decision instead of skipping it.
+Until Kratos can host its own development, **this file is Kratos v0**: we build Kratos the way
+Kratos will help people build software. The owner of this repo must never end up with code they
+don't understand. The rules are working practice, not enforcement — if one gets in the way, say so
+and we change it (the v0 guard hooks were removed for exactly that reason, D27).
 
-## Working agreement (mandatory for every change)
+## Working agreement
 
-1. **Intent before code.** No code without an active step in `PLAN.md`. If the request is vague,
-   ask clarifying questions first. Each step has: goal, scope (files/globs), acceptance criteria.
-2. **Declare the step.** Before editing, write `.kratos/current-step.json`
-   (`{ "id", "title", "scope": [globs], "estimate": lines, "diffBudget": lines }`). The edit hook
-   blocks writes outside scope. Only `PLAN.md`, `DECISIONS.md`, `CLAUDE.md`, and `.kratos/**` are
-   always writable.
-3. **Small steps, sized up front** (D24). One concern per step.
-   - **Budget = review load:** new lines (insertions) in the step's own files. Deleted lines,
-     config (`package.json`, `tsconfig*.json`), lockfiles and docs don't count. Default 150.
-   - **Estimate before coding:** list the files and rough new lines per file, then set `estimate`.
-     If it exceeds the budget, propose a split to the owner *before* writing code. Every split
-     must be a vertical slice that works and can be verified on its own (never "half an adapter").
-   - **At 80%** the hook warns: finish the current unit, then stop at the gate.
-   - **Over budget** the hook blocks. Stop, show what works, and let the owner choose:
-     **extend** (add `{ "lines", "reason" }` to `extensions` — only after the owner says yes),
-     **checkpoint** (commit the working part, continue as a new step), or **split**.
-     Never raise `diffBudget` or edit the hook to get past a block.
-4. **Log decisions.** Any non-obvious choice (library, data shape, protocol, error handling, file
+1. **Intent before code.** No code without a step in `PLAN.md`. If the request is vague, ask
+   clarifying questions first. Each step has: goal, scope (files), acceptance criteria.
+2. **Small steps.** One concern per step; ~150 new lines of code is a guide, not a limit. If a
+   step will clearly be much bigger, say so before starting and suggest a split into vertical
+   slices that each work on their own. Otherwise just report the size at the gate.
+3. **Log decisions.** Any non-obvious choice (library, data shape, protocol, error handling, file
    layout, trade-off) goes in `DECISIONS.md`: decision, alternatives, why, how to reverse.
    Never sneak a decision into code silently.
-5. **Library-first.** Prefer widely used, maintained libraries over hand-rolled code for anything
+4. **Library-first.** Prefer widely used, maintained libraries over hand-rolled code for anything
    with edge cases (HTTP, validation, CLI args, globs, git, shell parsing, dates, etc.). Pick the
    common choice for the use case, not the clever one. Hand-roll only trivial code or when no good
-   library exists, and log why. Adding a package triggers an approval prompt: say what it does and
-   log it in `DECISIONS.md` (see D7).
-6. **Show proof, not claims.** After a step, run the relevant checks (`pnpm build`, `pnpm typecheck`,
+   library exists, and log why. When adding a package, say what it does and log it in
+   `DECISIONS.md` (see D7).
+5. **Show proof, not claims.** After a step, run the relevant checks (`pnpm build`, `pnpm typecheck`,
    run the app) and show the actual output. "Done" without evidence is not done.
-7. **Explain by data flow.** End each step with a short walkthrough ordered by how data moves
+6. **Explain by data flow.** End each step with a short walkthrough ordered by how data moves
    (e.g. browser → WebSocket → server → agent adapter → CLI process), not by file order. Call out
    anything the owner should understand before moving on, and new concepts in plain words.
-8. **Stop at the gate.** After a step, stop and wait for the owner. Don't chain into the next step.
-   Then mark it done in `PLAN.md` and clear/replace `.kratos/current-step.json`.
-9. **Teach mode on request.** If the owner says "I'll write this", scaffold around it, leave a
+7. **Stop at the gate.** After a step, stop and wait for the owner. Don't chain into the next step.
+   Then mark it done in `PLAN.md`.
+8. **Teach mode on request.** If the owner says "I'll write this", scaffold around it, leave a
    clear `TODO(owner)` with hints, and review their code instead of writing it.
-10. **No edits via Bash.** Change files with the edit tools only (hooks can't see `sed`/heredocs).
 
 ## Architecture
 

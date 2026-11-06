@@ -30,7 +30,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: `kratos` = one command, one port. `pnpm dev:web` proxies `/ws` for fast UI iteration.
 - Reverse: change static path resolution in `apps/cli/src/server.ts`.
 
-### D6. v0 guardrails as Claude Code hooks (step 0)
+### D6. v0 guardrails as Claude Code hooks (step 0) — **superseded by D27**
 - Alternatives: rules in CLAUDE.md only; build Kratos enforcement first.
 - Why: lets us live by the Kratos rules today. `PreToolUse` hooks enforce step scope + diff
   budget on edits and ask before new dependencies / `git push` / `rm -rf`.
@@ -69,7 +69,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   (blank page, "is not a function"). We import the named `useWebSocket` from
   `react-use-websocket/dist/lib/use-websocket` instead. Revisit if the package ships ESM.
 
-### D12. Hooks use `picomatch`, `simple-git`, `shell-quote`, `zod` (step 0b)
+### D12. Hooks use `picomatch`, `simple-git`, `shell-quote`, `zod` (step 0b) — **superseded by D27**
 - Why: glob matching, git queries, and shell tokenizing are classic "looks easy, has edge cases"
   code. Hooks import them from the root `node_modules` (root devDependencies).
 - Note: `shell-quote` tokenizes, so `cd x && pnpm add y` is caught, while a quoted
@@ -181,7 +181,17 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   commander (D10 covers the user-facing `kratos` CLI).
 - Carry into step 3: the Kratos server must also take the target project dir explicitly.
 
-### D24. Budget system v2: review load, estimate first, graduated response (step 2b, owner)
+### D27. Remove the v0 guard hooks (step 2e, owner)
+- Decision: delete `.claude/hooks/guard-edits.mjs` and `guard-bash.mjs`, their entry in
+  `.claude/settings.json`, the hook-only root deps (picomatch, simple-git, shell-quote, zod) and the
+  `.kratos/` step file. CLAUDE.md keeps the working practice without enforcement.
+- Why: for the owner, the enforcement was more resistance than help while building Kratos —
+  repeated blocks and budget negotiations interrupted the flow more than they protected it.
+- Kept: the D24 *model* (review load, estimate, extend/checkpoint/split) as a product idea for
+  PLAN step 5, where the owner opts in through the UI instead of being blocked by a hook.
+- Reverse: restore both hooks and the settings entry from commit 05d12d2 and re-add the deps.
+
+### D24. Budget system v2: review load, estimate first, graduated response (step 2b, owner) — **v0 hook removed by D27; model kept for step 5**
 - Problem: step 2 hit the budget three times — budgets were guessed then only checked mid-edit,
   counted deleted/replaced lines and config, counted other steps' WIP (whole-tree diff), and had
   no warning and no clean path when over. Raising the number each time fixed nothing.

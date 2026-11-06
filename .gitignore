@@ -3,5 +3,3 @@ dist/
 .turbo/
 *.log
 .DS_Store
-# per-session step state written by the agent
-.kratos/

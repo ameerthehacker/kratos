@@ -51,6 +51,12 @@ function BareMessage({ message }: { message: LogMessage }) {
   if (message.type === "agent_event" && message.event.kind === "text") {
     return <li className="whitespace-pre-wrap">{message.event.text}</li>;
   }
+  if (message.type === "agent_event" && message.event.kind === "turn_end") {
+    // A normal end needs no marker (owner); only say so when the turn was cut short.
+    if (message.event.reason === "completed") return null;
+    const why = message.event.reason === "interrupted" ? "Stopped" : `Stopped: ${message.event.error ?? "agent error"}`;
+    return <li className="text-sm text-muted-foreground">{why}</li>;
+  }
   const label =
     message.type === "agent_event" ? message.event.kind.replace("_", " ")
     : message.type === "permission_request" ? `asks to use ${message.request.tool}`

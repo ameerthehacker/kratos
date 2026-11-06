@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { WS_PATH, type ClientMessage, type ServerMessage } from "@kratos/core";
+import { memoryLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { startServer } from "./server.js";
 import { SessionStore } from "./store/store.js";
@@ -51,7 +52,8 @@ const summary = (messages: ServerMessage[]) =>
 describe("kratos server", () => {
   it("runs a prompt with a permission round trip over WebSocket, and replays it to a late tab", async () => {
     const cwd = process.cwd();
-    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const { log, lines } = memoryLogger();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"), log);
     // Watch the cleanup paths: closed tabs must leave the hub, server shutdown must stop the agent.
     let disconnects = 0;
     const connect = hub.connect.bind(hub);
@@ -60,7 +62,7 @@ describe("kratos server", () => {
       return { ...tab, disconnect: () => (disconnects++, tab.disconnect()) };
     });
     const hubClose = vi.spyOn(hub, "close");
-    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code" });
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code", log });
     const tab = await openTab(server.port);
     try {
       tab.send({ type: "ping" });
@@ -85,6 +87,17 @@ describe("kratos server", () => {
       ];
       expect(summary(tab.messages)).toEqual(["session", "pong", ...conversation]);
       expect(tab.messages.find(is("permission_resolved"))).toMatchObject({ id: ask.id, outcome: "allowed" });
+      // The server's log tells the same story (D44).
+      const logged = (msg: string) => lines.find((l) => l.msg === msg);
+      expect(logged("agent started")).toMatchObject({ component: "session", model: "default", resume: false });
+      expect(logged("permission asked")).toMatchObject({ ask: ask.id, tool: "Write" });
+      expect(logged("permission settled")).toMatchObject({ ask: ask.id, outcome: "allowed" });
+
+      // Browser warnings land in the same log, as component "web".
+      tab.send({ type: "client_log", level: "warn", message: "unknown message from server", data: "{oops" });
+      await vi.waitFor(() =>
+        expect(logged("unknown message from server")).toMatchObject({ level: 40, component: "web", data: "{oops" }),
+      );
 
       const late = await openTab(server.port); // no ping: the replay arrives on connect by itself
       await late.waitFor(turnEnd);

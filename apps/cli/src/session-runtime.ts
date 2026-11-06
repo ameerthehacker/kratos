@@ -7,6 +7,7 @@ import type {
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
+import type { Logger } from "./logger.js";
 import type { SessionStore } from "./store/store.js";
 
 type Outcome = "allowed" | "denied" | "cancelled";
@@ -26,6 +27,7 @@ export class SessionRuntime {
   private session: AgentSession | undefined;
   /** A prompt was sent and its turn hasn't ended yet. */
   private turnOpen = false;
+  private readonly logger: Logger;
 
   constructor(
     readonly id: string,
@@ -33,10 +35,12 @@ export class SessionRuntime {
       adapter: AgentAdapter;
       cwd: string;
       store: SessionStore;
+      log: Logger;
       onMessage: (message: ServerMessage) => void;
       onChange: () => void;
     },
   ) {
+    this.logger = deps.log.child({ component: "session", session: id });
     const stored = deps.store.get(id);
     if (!stored) throw new Error(`Unknown session ${id}`);
     this.agentStarted = stored.agentStartedAt !== null;
@@ -77,6 +81,7 @@ export class SessionRuntime {
   /** Use another model from now on: switched live if the agent is running, else at its next start. */
   setModel(model: string): void {
     this.model = model;
+    this.logger.info({ model, live: this.session !== undefined }, "model set");
     this.deps.store.setModel(this.id, model);
     this.session?.setModel(model).catch(this.reportFailure("Switching model"));
     this.deps.onChange();
@@ -102,6 +107,7 @@ export class SessionRuntime {
       model: this.model ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
+    this.logger.info({ model: this.model ?? "default", resume: this.agentStarted }, "agent started");
     this.deps.store.markAgentStarted(this.id);
     this.agentStarted = true;
     void this.pump(session);
@@ -114,11 +120,14 @@ export class SessionRuntime {
       for await (const event of session.events) {
         this.publish({ type: "agent_event", event });
         if (event.kind === "turn_end") {
+          this.logger.debug({ event }, "turn ended");
           this.turnOpen = false;
           this.deps.onChange();
         }
       }
+      this.logger.info("agent ended");
     } catch (err) {
+      this.logger.error({ err }, "agent session failed");
       this.publish({ type: "error", message: `Agent session failed: ${String(err)}` });
     } finally {
       if (this.session === session) this.session = undefined;
@@ -133,6 +142,7 @@ export class SessionRuntime {
   private ask(request: PermissionRequest, signal: AbortSignal): Promise<PermissionDecision> {
     const askId = randomUUID();
     const decision = new Promise<PermissionDecision>((resolve) => this.pending.set(askId, resolve));
+    this.logger.debug({ ask: askId, tool: request.tool }, "permission asked");
     this.publish({ type: "permission_request", id: askId, request });
     this.deps.onChange();
     signal.addEventListener(
@@ -148,6 +158,7 @@ export class SessionRuntime {
     const resolve = this.pending.get(askId);
     if (!resolve) return false;
     this.pending.delete(askId);
+    this.logger.debug({ ask: askId, outcome }, "permission settled");
     this.publish({ type: "permission_resolved", id: askId, outcome }, options);
     resolve(decision);
     this.deps.onChange();
@@ -157,7 +168,10 @@ export class SessionRuntime {
   /** A fire-and-forget agent call failed: report it instead of crashing the server with an
    * unhandled rejection (Node's default). */
   private reportFailure(what: string) {
-    return (err: unknown) => this.publish({ type: "error", message: `${what} failed: ${String(err)}` });
+    return (err: unknown) => {
+      this.logger.warn({ err }, `${what} failed`);
+      this.publish({ type: "error", message: `${what} failed: ${String(err)}` });
+    };
   }
 
   /** `activity: false` = Kratos housekeeping (shutdown/restart cleanup): logged, but it doesn't

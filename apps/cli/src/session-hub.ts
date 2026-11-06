@@ -1,4 +1,5 @@
 import type { AgentAdapter, ClientMessage, Harness, ServerMessage } from "@kratos/core";
+import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { SessionStore } from "./store/store.js";
 
@@ -23,12 +24,16 @@ export class SessionHub {
 
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
+  private readonly log: Logger;
 
   constructor(
     private readonly adapter: AgentAdapter,
     private readonly cwd: string,
     private readonly store: SessionStore,
+    /** Kratos's logger (D44); default: silent. */
+    log: Logger = silentLogger,
   ) {
+    this.log = log.child({ component: "hub" });
     this.loadHarnesses();
   }
 
@@ -61,6 +66,7 @@ export class SessionHub {
         let target = viewing;
         if (message.newSession && viewing.hasPrompts) {
           target = this.runtime(this.store.create(this.cwd, this.adapter.id).id);
+          this.log.info({ session: target.id }, "new session");
           this.view(send, target.id);
         }
         // The model chosen on Home applies to the session this prompt starts (D43).
@@ -83,7 +89,8 @@ export class SessionHub {
         for (const runtime of this.runtimes.values()) if (runtime.decide(message.id, message.decision)) return;
         return;
       case "ping":
-        return; // answered by the server itself
+      case "client_log":
+        return; // handled by the server itself
     }
   }
 
@@ -103,6 +110,7 @@ export class SessionHub {
         adapter: this.adapter,
         cwd: this.cwd,
         store: this.store,
+        log: this.log,
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
       });
@@ -142,11 +150,12 @@ export class SessionHub {
    * If the agent can't say, the harness is still listed (its default model works). */
   private loadHarnesses(): void {
     const publish = (models: Harness["models"]) => {
+      if (models.length > 0) this.log.info({ harness: this.adapter.id, count: models.length }, "models loaded");
       this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models }];
       this.broadcast({ type: "harnesses", list: this.harnesses });
     };
     this.adapter.listModels().then(publish, (err) => {
-      console.warn(`kratos: could not list ${this.adapter.displayName} models: ${String(err)}`);
+      this.log.warn({ harness: this.adapter.id, err }, "could not list models; only the default model is offered");
       publish([]);
     });
   }

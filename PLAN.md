@@ -139,11 +139,18 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             models) on connect/when loaded, `prompt` gains `harness`/`model` for new sessions,
             client `set_model`, `SessionSummary.model`. Tests: fake claude answers
             `initialize`/`set_model` and reports `--model`; hub start/resume/switch.
-      - [ ] **3L. Logging (tech debt, owner request)** — replace `console.*` with a proper
-            logger: console output plus rotating log files under `~/.kratos` for debugging.
-            Browser-side warnings (e.g. the store's `console.warn("kratos:", …)`) need forwarding
-            to the server, since a browser can't write files. TO BE DESIGNED with the owner after
-            3m1.
+      - [x] **3L. Logging (tech debt, owner request, D44)** (~200 incl. tests) — done:
+            pino (Fastify's own logger, so app + HTTP share one) with two outputs: console via
+            pino-pretty at `info`, and `~/.kratos/logs/kratos.log` (JSON, `debug`) rotated by
+            pino-roll at 10 MB, keeping 5. `--log-level` overrides the console. Components log
+            through children (`hub`, `session`, `http`, `web`). Replaces all 7 `console.*` calls
+            and adds the useful lifecycle lines (models loaded/failed, agent started with
+            model/resume, agent exited, asks + decisions at debug). Browser warnings go to the
+            server as a new `client_log` message (still shown in devtools). All Kratos data moves
+            to `~/.kratos`: the default DB becomes `~/.kratos/kratos.db` (no migration of the old
+            location: the product is brand new, owner; env-paths dropped). Tests: file written +
+            rotation config, `client_log` reaches the log, hub/runtime log calls. Also (owner, mid-step):
+            the session view no longer shows a "turn end" marker; only a cut-short turn says "Stopped".
       - [ ] **3m2. UI** (~150) — official Claude SVG (downloaded from claude.ai's own asset
             server, checked: one path, no scripts) as a component; shadcn dropdown chip
             "logo · Claude Code · Opus 5.5 ▾" with Harness + Model (Latest / Other versions);

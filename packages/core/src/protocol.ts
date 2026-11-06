@@ -30,6 +30,13 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
+  /** Something the browser wants in the server's log file (D44), logged as component "web". */
+  z.object({
+    type: z.literal("client_log"),
+    level: z.enum(["info", "warn", "error"]),
+    message: z.string().max(2000),
+    data: z.unknown().optional(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 

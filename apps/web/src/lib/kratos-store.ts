@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ClientMessage, Harness, ServerMessage, SessionSummary } from "@kratos/core";
+import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** Messages that belong to a session's log (everything the server replays). */
@@ -38,7 +39,7 @@ export const useKratos = create<KratosState>((set) => ({
       case "harnesses":
         return set({ harnesses: message.list });
       case "error":
-        return console.warn("kratos:", message.message);
+        return clientLog("warn", `server error: ${message.message}`);
       default:
         return set((state) => ({ log: [...state.log, message] }));
     }

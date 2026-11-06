@@ -1,9 +1,10 @@
-import Fastify from "fastify";
+import Fastify, { LogController, type FastifyReply, type FastifyRequest } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket, { type WebSocket } from "@fastify/websocket";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
+import { silentLogger, type Logger } from "./logger.js";
 import type { SessionHub } from "./session-hub.js";
 
 export const DEFAULT_HOST = "127.0.0.1";
@@ -21,9 +22,13 @@ export async function startServer(options: {
   agent: string;
   /** Folder with the built UI (default: apps/web/dist). */
   webRoot?: string;
+  /** Kratos's logger (D44); Fastify logs through it as component "http". Default: silent. */
+  log?: Logger;
 }) {
   const { hub } = options;
-  const app = Fastify({ logger: { level: "warn" } });
+  const log = options.log ?? silentLogger;
+  const webLog = log.child({ component: "web" });
+  const app = Fastify({ loggerInstance: log.child({ component: "http" }), logController: new QuietRequests() });
 
   await app.register(fastifyStatic, { root: options.webRoot ?? WEB_DIST });
   await app.register(fastifyWebsocket);
@@ -46,6 +51,9 @@ export async function startServer(options: {
         send(socket, { type: "error", message: "invalid message" });
       } else if (parsed.data.type === "ping") {
         send(socket, { type: "pong", at: Date.now(), serverVersion: "0.0.0", cwd: options.cwd, agent: options.agent });
+      } else if (parsed.data.type === "client_log") {
+        const { level, message, data } = parsed.data;
+        webLog[level]({ data }, message); // the browser's own warnings, kept with ours (D44)
       } else {
         tab.receive(parsed.data);
       }
@@ -62,6 +70,16 @@ export async function startServer(options: {
       await app.close();
     },
   };
+}
+
+/** Every page load fetches a dozen assets: log requests at debug (file only), not info. */
+class QuietRequests extends LogController {
+  override incomingRequest(): void {}
+  override requestCompleted(error: Error | null | undefined, request: FastifyRequest, reply: FastifyReply): void {
+    const line = { method: request.method, url: request.url, statusCode: reply.statusCode, ms: Math.round(reply.elapsedTime) };
+    if (error) reply.log.error({ ...line, err: error }, "request errored");
+    else reply.log.debug(line, "request");
+  }
 }
 
 function send(socket: WebSocket, msg: ServerMessage) {

@@ -4,6 +4,7 @@ import { ReadyState } from "react-use-websocket";
 import { useWebSocket } from "react-use-websocket/dist/lib/use-websocket";
 import { ServerMessage, WS_PATH, type ClientMessage } from "@kratos/core";
 import { useKratos } from "@/lib/kratos-store";
+import { clientLog } from "@/lib/log";
 
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${WS_PATH}`;
 
@@ -16,9 +17,10 @@ export function useKratosConnection() {
     onOpen: () => sendJsonMessage({ type: "ping" } satisfies ClientMessage),
     // onMessage, not lastJsonMessage: replays arrive in bursts and every message counts.
     onMessage: (event) => {
-      const parsed = ServerMessage.safeParse(JSON.parse(String(event.data)));
+      const raw = String(event.data);
+      const parsed = ServerMessage.safeParse(JSON.parse(raw));
       if (parsed.success) useKratos.getState().receive(parsed.data);
-      else console.warn("kratos: unknown message", event.data);
+      else clientLog("warn", "unknown message from server", raw.slice(0, 500));
     },
   });
 

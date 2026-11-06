@@ -45,6 +45,7 @@ apps/cli                   `kratos [project-dir]` (commander)
   src/server.ts            Fastify: serves apps/web/dist, one WebSocket per browser tab (/ws)
   src/session-hub.ts       the one shared agent session: log, replay, asks, broadcast (D32)
   src/store/               SQLite via Drizzle + better-sqlite3; schema → drizzle/ migrations (D36)
+  src/logger.ts            pino: console (pretty, info) + ~/.kratos/logs rotating files (debug) (D44)
 apps/web                   Vite + React UI; react-use-websocket to ws://<host>/ws
 packages/core              zod schemas for the WebSocket protocol + the AgentAdapter interface
 packages/adapter-claude-code
@@ -90,7 +91,8 @@ pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck
 pnpm test             # vitest: all tests, no real claude needed
 pnpm start            # run kratos (after build) → http://localhost:4317 (acts in this repo!)
-node apps/cli/dist/index.js <dir> [--port] [--host] [--db]   # kratos on another project
+node apps/cli/dist/index.js <dir> [--port] [--host] [--db] [--log-dir] [--log-level]  # another project
+tail -f ~/.kratos/logs/current.log    # debug log (JSON lines, rotated 10 MB × 5); `| pnpm exec pino-pretty` to read
 pnpm dev:web          # Vite dev server with /ws proxied to a running kratos
 pnpm --filter @kratos/cli db:generate   # after editing src/store/schema.ts
 ```

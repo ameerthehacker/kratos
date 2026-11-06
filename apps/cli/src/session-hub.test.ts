@@ -9,6 +9,7 @@ import type {
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
+import { memoryLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
 
@@ -437,13 +438,14 @@ describe("SessionHub: harness & model (D43)", () => {
         throw new Error("unused");
       },
     };
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const hub = new SessionHub(failing, "/projects/demo", store);
+    const { log, lines } = memoryLogger();
+    const hub = new SessionHub(failing, "/projects/demo", store, log);
     await tick();
     const got: ServerMessage[] = [];
     hub.connect((m) => got.push(m));
     expect(got.find((m) => m.type === "harnesses")).toEqual({ type: "harnesses", list: [{ id: "fake", name: "Fake", models: [] }] });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("claude not logged in"));
-    warn.mockRestore();
+    expect(lines).toContainEqual(
+      expect.objectContaining({ level: 40, component: "hub", err: expect.objectContaining({ message: "claude not logged in" }) }),
+    );
   });
 });

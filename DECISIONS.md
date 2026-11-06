@@ -156,6 +156,33 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D44. Logging: pino → console + rotating files in ~/.kratos (step 3L, owner)
+- Owner: replace `console.*` with a proper logger that prints to the console *and* writes rotating
+  log files under `~/.kratos` for debugging.
+- Choices (owner): rotate at 10 MB, keep 5; browser warnings also into the file (via a
+  `client_log` WebSocket message); *all* Kratos data in `~/.kratos` (DB too; the old app-data DB is
+  *not* migrated — the product is brand new, owner); console at `info`, file at `debug`.
+- Library-first: pino (already inside Fastify — one logger for app and HTTP), pino-roll (pino's
+  rotating-file transport), pino-pretty (readable console). Alternatives: winston +
+  winston-daily-rotate-file (would be a second logger next to Fastify's pino).
+- Design (my calls):
+  - Files: `~/.kratos/logs/kratos.N.log` (JSON lines), `current.log` → the active one. pino-roll's
+    `limit.count` excludes the active file, so 4 + 1 = 5; `removeOtherLogFiles` makes the cap hold
+    across restarts (each start opens a new file number). pino-roll checks the size per batched
+    write, so a file can overshoot 10 MB by one batch.
+  - Components log through child loggers: `http` (Fastify), `hub`, `session` (+ session id),
+    `web` (the browser). Lines: models loaded/failed, new session, agent started (model, resume),
+    agent ended/failed, model set, failed agent calls (warn); turn ends, asks and their outcome,
+    and every HTTP request (method, url, status, ms) at debug, so file only.
+  - CLI: `--log-dir` (default `~/.kratos/logs`), `--log-level` (console only; the file is always
+    debug). The logger runs in a worker thread (pino transport): shutdown flushes it before exit.
+  - `client_log {level, message ≤ 2000 chars, data?}` is handled by the server, not the hub; the
+    web's `clientLog()` also prints to devtools and drops the line silently when disconnected.
+  - Hub/runtime/server take an optional logger (default silent) so tests stay quiet; tests use a
+    `memoryLogger()` that keeps parsed lines. The adapter's terminal `demo.ts` keeps `console`: that
+    is its user interface, not logging.
+- Reverse: swap `logTargets()` in `apps/cli/src/logger.ts`; everything else only sees a pino Logger.
+
 ### D43. Harness & model picker (step 3m, owner)
 - Owner: the agent chip is a dropdown with the Claude logo to pick the harness (only Claude Code
   for now) and a model Claude provides; shown as latest aliases + an "Other versions" group;
@@ -276,6 +303,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   script only verifies a binary that arrives via optional deps).
 
 ### D36. Persistence: SQLite via Drizzle + better-sqlite3, user data folder, resumable (step 3p, owner)
+- *Location superseded by D44: the DB now lives in `~/.kratos/kratos.db`.*
 - Owner choices: history *and* Claude's memory survive restarts; one `kratos.db` in the OS user
   data folder (`env-paths`; macOS `~/Library/Application Support/kratos`), never in the project;
   Drizzle ORM + better-sqlite3 (typed schema, drizzle-kit SQL migrations); the latest session per

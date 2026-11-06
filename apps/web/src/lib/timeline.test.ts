@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent, ServerMessage } from "@kratos/core";
-import { buildTimeline } from "./timeline";
+import { buildTimeline, openAsks } from "./timeline";
 
 const agent = (event: AgentEvent): Extract<ServerMessage, { type: "agent_event" }> => ({ type: "agent_event", event });
 
@@ -12,7 +12,13 @@ describe("buildTimeline (D45)", () => {
         agent({ kind: "thinking", text: "look first" }),
         agent({ kind: "tool_call", id: "r", tool: "Read", input: {}, action: { type: "read", target: "/repo/src/a.ts" } }),
         agent({ kind: "tool_result", id: "r", output: "code", isError: false }),
-        agent({ kind: "tool_call", id: "e", tool: "Edit", input: {}, action: { type: "edit", target: "/repo/src/a.ts", added: 2, removed: 1 } }),
+        agent({
+          kind: "tool_call",
+          id: "e",
+          tool: "Edit",
+          input: {},
+          action: { type: "edit", target: "/repo/src/a.ts", added: 2, removed: 1, edits: [{ before: "x", after: "y\nz" }] },
+        }),
         { type: "permission_request", id: "ask1", request: { tool: "Edit", input: {} } },
         { type: "permission_resolved", id: "ask1", outcome: "denied" },
         agent({ kind: "tool_result", id: "e", output: "denied", isError: true }), // no extra "Failed"
@@ -36,6 +42,8 @@ describe("buildTimeline (D45)", () => {
       ["run", "Ran the tests", [], "ask2"], // its ask is still open
     ]);
     expect(first.steps[3]?.intent).toBe("Run the tests");
+    expect(first.steps[2]?.edit).toEqual({ path: "src/a.ts", changes: [{ before: "x", after: "y\nz" }] });
+    expect(openAsks(items).map((s) => s.ask?.id)).toEqual(["ask2"]); // what the dock shows
     expect(first.steps[3]?.raw).toEqual({ command: "pnpm test" });
     expect(second.steps[0]).toMatchObject({ kind: "other", title: "Used Mystery", raw: { call: 'Mystery {"a":1}', output: "nope" } });
     expect(second.steps[0]?.chips).toEqual([{ text: "Failed", tone: "bad" }]);

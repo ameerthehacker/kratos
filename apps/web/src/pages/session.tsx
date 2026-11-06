@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { AgentPicker } from "@/components/agent-picker";
+import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
+import { buildTimeline, openAsks } from "@/lib/timeline";
 
 const NO_LOG: LogMessage[] = [];
 
@@ -16,6 +18,8 @@ export function SessionPage() {
   );
   const session = sessions.find((s) => s.id === sessionId);
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
+  const shown = viewing === sessionId ? log : NO_LOG;
+  const items = useMemo(() => buildTimeline(shown, cwd), [shown, cwd]);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
   useEffect(() => {
@@ -35,14 +39,10 @@ export function SessionPage() {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
-      <Conversation
-        log={viewing === sessionId ? log : NO_LOG}
-        agent={agentName}
-        cwd={cwd}
-        onDecide={(id, decision) => send({ type: "permission_decision", id, decision })}
-      />
+      <Conversation items={items} agent={agentName} />
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+        <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
         <PromptCard
           agent={
             <AgentPicker

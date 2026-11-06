@@ -177,6 +177,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             while the agent works (`interrupt`). Accept: real run with an approval and a denial;
             refresh keeps a pending ask; Stop ends a turn. Done: all four verified with real
             `claude`. Next: asks for edits should show a readable diff, not raw JSON.
+      - [x] **3c3. Ask redesign: option C + readable preview** (~150, owner picked C, D45) — the
+            amber card is replaced: the step only shows a "Waiting for you" chip; the question
+            docks above the composer ("Claude Code wants to write notes.txt", Deny / Allow) with
+            a readable preview — a diff for writes/edits (jsdiff), the highlighted command for
+            runs, the raw call otherwise. Several open asks: the oldest first, "1 of 2". The
+            adapter adds the edit text to `action` (`edits: [{before, after}]`, capped).
+            Accept: real `claude` write (new file), edit (diff) and bash asks, allow + deny.
+            Done: all three verified (write allowed, edit denied, bash allowed).
     - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),

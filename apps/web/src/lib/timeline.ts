@@ -1,7 +1,7 @@
 import type { AgentEvent, ServerMessage, ToolAction } from "@kratos/core";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
-export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" };
+export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" };
 
 /** One thing the agent did, in plain words (the owner's chat design, D45). */
 export type Step = {
@@ -11,7 +11,9 @@ export type Step = {
   chips: Chip[];
   /** Shown with "Show raw": a shell command (highlighted) or the tool's raw call, and its output. */
   raw: { command?: string; call?: string; output?: string };
-  /** While Kratos waits for the owner to allow or deny this call: what to answer (3c2b). */
+  /** For edits: the file (relative to the project) and its before/after texts, for a diff preview. */
+  edit?: { path: string; changes: NonNullable<ToolAction["edits"]> };
+  /** While Kratos waits for the owner to allow or deny this call: what to answer (3c2b, 3c3). */
   ask?: OpenAsk;
   /** What the call would do, in present tense ("Edit math.js"): the ask card's question. */
   intent: string;
@@ -110,8 +112,14 @@ function describe(call: ToolCall, cwd: string): Step {
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       break;
     case "edit":
-      title = `Edited ${base(path)}`;
-      intent = `Edit ${base(path)}`;
+      // A whole-file write (no "before") reads as writing, not editing.
+      if (action.edits?.length === 1 && action.edits[0]!.before === "") {
+        title = `Wrote ${base(path)}`;
+        intent = `Write ${base(path)}`;
+      } else {
+        title = `Edited ${base(path)}`;
+        intent = `Edit ${base(path)}`;
+      }
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       if (action.added !== undefined || action.removed !== undefined) {
         chips.push({ text: `+${action.added ?? 0} −${action.removed ?? 0}`, tone: "muted" });
@@ -138,7 +146,8 @@ function describe(call: ToolCall, cwd: string): Step {
       intent = `Use ${call.tool}`;
   }
   const raw = action.type === "run" && action.command ? { command: action.command } : { call: `${call.tool} ${compact(call.input)}` };
-  return { id: call.id, kind: action.type, title, intent, chips, raw, tool: call.tool };
+  const edit = action.type === "edit" && action.edits ? { path: path ?? "", changes: action.edits } : undefined;
+  return { id: call.id, kind: action.type, title, intent, chips, raw, edit, tool: call.tool };
 }
 
 function addResult(step: Step, output: string, isError: boolean): void {
@@ -164,4 +173,9 @@ function trim(output: string): string {
   const lines = output.replace(/\s+$/, "").split("\n");
   if (lines.length <= OUTPUT_LINES) return lines.join("\n");
   return [...lines.slice(0, OUTPUT_LINES), `… ${lines.length - OUTPUT_LINES} more lines`].join("\n");
+}
+
+/** Steps still waiting for the owner, oldest first: what the ask dock shows (3c3). */
+export function openAsks(items: readonly TimelineItem[]): Step[] {
+  return items.flatMap((item) => (item.type === "steps" ? item.steps.filter((step) => step.ask) : []));
 }

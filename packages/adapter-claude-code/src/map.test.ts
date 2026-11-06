@@ -20,7 +20,7 @@ describe("toEvents: assistant messages", () => {
     expect(events).toEqual([
       { kind: "thinking", text: "should use Write" },
       { kind: "text", text: "Writing it now." },
-      { kind: "tool_call", id: "t1", tool: "Write", input: { file_path: "a.txt" }, action: { type: "edit", target: "a.txt" } },
+      { kind: "tool_call", id: "t1", tool: "Write", input: { file_path: "a.txt" }, action: { type: "edit", target: "a.txt", edits: [{ before: "", after: "" }] } },
     ]);
   });
 
@@ -31,9 +31,15 @@ describe("toEvents: assistant messages", () => {
     };
     expect(action("Read", { file_path: "/r/a.ts" })).toEqual({ type: "read", target: "/r/a.ts" });
     expect(action("Edit", { file_path: "a.ts", old_string: "x", new_string: "y\nz" })).toEqual({
-      type: "edit", target: "a.ts", added: 2, removed: 1,
+      type: "edit", target: "a.ts", added: 2, removed: 1, edits: [{ before: "x", after: "y\nz" }],
     });
-    expect(action("Write", { file_path: "n.txt", content: "hello\n" })).toEqual({ type: "edit", target: "n.txt", added: 1 });
+    expect(action("Write", { file_path: "n.txt", content: "hello\n" })).toEqual({
+      type: "edit", target: "n.txt", added: 1, edits: [{ before: "", after: "hello\n" }],
+    });
+    // A huge write keeps a capped preview, flagged as partial.
+    const big = action("Write", { file_path: "big.txt", content: "x".repeat(20_000) });
+    expect(big?.edits?.[0]).toMatchObject({ before: "", truncated: true });
+    expect(big?.edits?.[0]?.after).toHaveLength(8000);
     expect(action("Bash", { command: "pnpm test", description: "Run tests" })).toEqual({
       type: "run", command: "pnpm test", description: "Run tests",
     });

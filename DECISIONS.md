@@ -185,6 +185,13 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   call's error result adds no "Failed"). Stop: the send button turns into Stop while the
   session isn't idle and the box is empty (typing still sends); it sends `interrupt`.
   Known gap: a Write/Edit ask shows the raw JSON, not a readable diff — a later step.
+- 3c3 (owner picked option C of three sketches; the amber card looked heavy): the ask docks
+  above the composer — "Claude Code wants to write notes.txt", Deny / Allow, and a readable
+  preview: a diff for edits (jsdiff `diffLines`; `−`/`+` lines), the highlighted command for
+  runs, the raw call otherwise. The step in the chat only shows "Waiting for you" and reads in
+  present tense until answered. Several open asks: oldest first, "1 of N". For the preview the
+  adapter adds `edits: [{before, after}]` to `action` (Write = before ""), each side capped at
+  8000 chars with `truncated` — the log already stores the full call, so this is a capped copy.
 - Code theme: one constant + the Streamdown code plugin built from it (`lib/appearance.ts`), so
   both highlighters always match; owner wants it user-configurable later (PLAN "Settings").
 - Reverse: the components live in `apps/web/src/components/conversation/`; `action` is optional.

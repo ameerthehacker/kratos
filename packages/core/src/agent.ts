@@ -25,6 +25,11 @@ export const ToolAction = z.object({
   /** For `edit`: lines written and replaced, when known. */
   added: z.number().optional(),
   removed: z.number().optional(),
+  /**
+   * For `edit`: the text replaced and written, for a readable preview (`before` is "" for a new
+   * file). Each side is capped; `truncated` says the preview is partial (the call itself isn't).
+   */
+  edits: z.array(z.object({ before: z.string(), after: z.string(), truncated: z.boolean().optional() })).optional(),
 });
 export type ToolAction = z.infer<typeof ToolAction>;
 

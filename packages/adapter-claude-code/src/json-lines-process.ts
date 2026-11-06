@@ -53,6 +53,11 @@ export class JsonLinesProcess {
     return this.running;
   }
 
+  /** OS process id (undefined if it failed to start). For diagnostics and test cleanup. */
+  get pid(): number | undefined {
+    return this.child.pid;
+  }
+
   /** Write one JSON value as a line. Returns false (writes nothing) once the process has ended. */
   send(message: unknown): boolean {
     if (!this.running || !this.child.stdin.writable) return false;

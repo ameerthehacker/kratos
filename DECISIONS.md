@@ -156,7 +156,19 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D28. Vitest at the root, tests next to code, excluded from builds (T1)
+- `pnpm test` = `vitest run` over the whole repo; `*.test.ts` sits beside the file it tests and is
+  excluded from each package's `tsc` build (Vitest transpiles TS itself; tests aren't typechecked
+  by `pnpm typecheck` — revisit with `vitest --typecheck` if that bites).
+- Tests that spawn processes must clean them up in `afterEach` (via `JsonLinesProcess.pid`), so a
+  broken `stop()` fails the test instead of hanging the whole run (found by mutation testing).
+- Alternatives: `node:test` (built in, but no TS without a loader); per-package turbo `test`
+  tasks (unnecessary while there's one test package).
+
 ### D26. `JsonLinesProcess`: one class owns child-process lifecycle, built on execa (step 2d, owner)
+- Correction (T1): the "EPIPE crashes Kratos" risk below did **not** reproduce on Node 22/macOS —
+  writes to a dead child's stdin are dropped silently, even with bare `child_process`. The stdin
+  error handler stays as cheap insurance, but no test covers it.
 - Why: process handling was mixed into the Claude adapter, and some cases were unhandled: EPIPE
   when writing after a crash would crash Kratos, a crash mid-turn ended the stream silently,
   `stop()` killed instantly, and a Kratos crash could orphan `claude` processes.

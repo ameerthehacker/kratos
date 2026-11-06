@@ -37,13 +37,13 @@ UI, running Claude Code, enforcing plan → scoped step → proof → walkthroug
       scripts, their settings entry, hook-only deps and `.kratos/` removed; CLAUDE.md rules kept as
       practice (plan, small steps, decisions, proof, walkthrough, gate) without enforcement.
 
-### Tests for what's built (before step 3) — PROPOSED, awaiting owner approval
+### Tests for what's built (before step 3) — approved by owner
 
 Rule for inclusion: a test exists only if a break would be **silent** and would hurt the
 **permission gate**, **process safety**, or the **guardrails**. Fast, deterministic, no network,
 no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next to the code.
 
-- [ ] **T1. Vitest setup + `JsonLinesProcess`** (~90 lines) — with fake `node -e` children:
+- [x] **T1. Vitest setup + `JsonLinesProcess`** (~90 lines) — with fake `node -e` children:
       exit reported with `requested:false` + code on crash; non-JSON lines skipped; `send()` after
       exit returns `false` and nothing throws; `stop()` graceful when the child exits on stdin
       close; `stop()` escalates to SIGKILL when SIGTERM is ignored (generous time bounds).

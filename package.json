@@ -6,11 +6,13 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
+    "test": "vitest run",
     "start": "node apps/cli/dist/index.js",
     "dev:web": "pnpm --filter @kratos/web dev"
   },
   "devDependencies": {
     "turbo": "^2.11.10",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }

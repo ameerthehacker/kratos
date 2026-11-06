@@ -85,7 +85,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         prints "Claude Code will act in: …"; real Claude adapter. Accept: one WS round trip against
         the fake claude in a test. Added on owner request: `--host` (D33), `pong` with server info
         instead of `hello` (D34); graceful SIGINT/SIGTERM shutdown (D35).
-  - [ ] **3p. Persistence (SQLite)** (D36) — the session log *and Claude's memory* survive a
+  - [x] **3p. Persistence (SQLite)** (D36) — the session log *and Claude's memory* survive a
         kratos restart. One DB in the user data folder; latest session per project resumes.
         Three working slices (approved by owner):
     - [x] **3p1. Session store** (~180) — Drizzle schema (`sessions`: id = Claude conversation
@@ -97,7 +97,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
     - [x] **3p2. Resume plumbing** (~50) — `startSession` gains `conversationId` + `resume`
           (core, generic); Claude adapter passes `--session-id <id>` (new) or `--resume <id>`;
           fake claude reports its args so a test proves both.
-    - [ ] **3p3. Hub + CLI on the store** (~110) — hub loads the log on start, persists every
+    - [x] **3p3. Hub + CLI on the store** (~110) — hub loads the log on start, persists every
           message, marks stale asks cancelled, starts the agent with resume = "started before";
           CLI opens `<user data>/kratos/kratos.db` (env-paths). Tests: restart replays the log
           with the stale ask cancelled and the next prompt resumes the same id. Accept: real

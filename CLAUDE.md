@@ -41,11 +41,19 @@ and we change it (the v0 guard hooks were removed for exactly that reason, D27).
 Turborepo + pnpm workspaces, TypeScript, ESM everywhere.
 
 ```
-apps/cli    `kratos` command (commander): Fastify server with @fastify/static (serves
-            apps/web/dist) and @fastify/websocket (/ws)
-apps/web    Vite + React UI; react-use-websocket to ws://<host>/ws
-packages/core  zod schemas for the WebSocket protocol + the generic AgentAdapter interface
+apps/cli                   `kratos [project-dir]` (commander)
+  src/server.ts            Fastify: serves apps/web/dist, one WebSocket per browser tab (/ws)
+  src/session-hub.ts       the one shared agent session: log, replay, asks, broadcast (D32)
+  src/store/               SQLite via Drizzle + better-sqlite3; schema → drizzle/ migrations (D36)
+apps/web                   Vite + React UI; react-use-websocket to ws://<host>/ws
+packages/core              zod schemas for the WebSocket protocol + the AgentAdapter interface
+packages/adapter-claude-code
+  src/json-lines-process.ts  child-process lifecycle (execa), JSON lines in/out (D26)
+  src/index.ts             drives `claude` in its stream-json RPC mode (D23); map.ts → AgentEvents
+  test/fake-claude.mjs     scripted stand-in for `claude` used by tests (D30)
 ```
+
+Data flow: browser tab ⇄ WebSocket ⇄ server ⇄ SessionHub (⇄ SQLite) ⇄ AgentAdapter ⇄ `claude`.
 
 Messages crossing a boundary (WebSocket, files, agent output) are validated with zod schemas from
 `packages/core`; TS types are `z.infer`-ed from them, never written separately.
@@ -60,6 +68,9 @@ nvm use               # Node 24 (.nvmrc); pnpm install refuses other versions
 pnpm install          # install workspace deps
 pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck
-pnpm start            # run kratos (after build) → http://localhost:4317
+pnpm test             # vitest: all tests, no real claude needed
+pnpm start            # run kratos (after build) → http://localhost:4317 (acts in this repo!)
+node apps/cli/dist/index.js <dir> [--port] [--host] [--db]   # kratos on another project
 pnpm dev:web          # Vite dev server with /ws proxied to a running kratos
+pnpm --filter @kratos/cli db:generate   # after editing src/store/schema.ts
 ```

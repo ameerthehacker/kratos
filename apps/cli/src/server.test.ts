@@ -4,6 +4,7 @@ import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { WS_PATH, type ClientMessage, type ServerMessage } from "@kratos/core";
 import { SessionHub } from "./session-hub.js";
 import { startServer } from "./server.js";
+import { SessionStore } from "./store/store.js";
 
 /** The fake `claude` from the adapter's tests: speaks the real control protocol (D30). */
 const FAKE_CLAUDE = fileURLToPath(new URL("../../../packages/adapter-claude-code/test/fake-claude.mjs", import.meta.url));
@@ -43,7 +44,7 @@ const summary = (messages: ServerMessage[]) =>
 describe("kratos server", () => {
   it("runs a prompt with a permission round trip over WebSocket, and replays it to a late tab", async () => {
     const cwd = process.cwd();
-    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd);
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
     // Watch the cleanup paths: closed tabs must leave the hub, server shutdown must stop the agent.
     let disconnects = 0;
     const connect = hub.connect.bind(hub);

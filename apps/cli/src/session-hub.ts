@@ -7,6 +7,7 @@ import type {
   PermissionRequest,
   ServerMessage,
 } from "@kratos/core";
+import type { SessionStore } from "./store/store.js";
 
 type Send = (message: ServerMessage) => void;
 type Outcome = "allowed" | "denied" | "cancelled";
@@ -15,17 +16,30 @@ type Outcome = "allowed" | "denied" | "cancelled";
  * The server's one shared agent session (D32). Browser tabs come and go; the hub keeps the
  * conversation's message log, replays it to every new tab, broadcasts new messages, and routes
  * permission asks to whichever tab answers first. Knows nothing about WebSockets.
+ * The log lives in the store, so it survives restarts, and the agent resumes the same
+ * conversation (D36).
  */
 export class SessionHub {
-  private readonly log: ServerMessage[] = [];
   private readonly tabs = new Set<Send>();
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
+  private readonly log: ServerMessage[];
+  private readonly sessionId: string;
+  /** Has the agent ever been started for this conversation? Then every start must resume. */
+  private agentStarted: boolean;
   private session: AgentSession | undefined;
 
   constructor(
     private readonly adapter: AgentAdapter,
     private readonly cwd: string,
-  ) {}
+    private readonly store: SessionStore,
+  ) {
+    const stored = store.latestOrCreate(cwd, adapter.displayName);
+    this.sessionId = stored.id;
+    this.agentStarted = stored.agentStartedAt !== null;
+    this.log = store.load(stored.id);
+    // Asks left open by a previous run can't be answered: the agent process that asked is gone.
+    for (const id of unresolvedAsks(this.log)) this.publish({ type: "permission_resolved", id, outcome: "cancelled" });
+  }
 
   /** A tab connected: replay the log so far, then keep it updated. Returns its disconnect. */
   connect(send: Send): () => void {
@@ -62,8 +76,11 @@ export class SessionHub {
   private start(): AgentSession {
     const session = this.adapter.startSession({
       cwd: this.cwd,
+      conversation: { id: this.sessionId, resume: this.agentStarted },
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
+    this.store.markAgentStarted(this.sessionId);
+    this.agentStarted = true;
     void this.pump(session);
     return session;
   }
@@ -103,6 +120,17 @@ export class SessionHub {
 
   private publish(message: ServerMessage): void {
     this.log.push(message);
+    this.store.append(this.sessionId, message);
     for (const send of this.tabs) send(message);
   }
+}
+
+/** Ids of permission requests in the log that never got a permission_resolved. */
+function unresolvedAsks(log: ServerMessage[]): string[] {
+  const open = new Set<string>();
+  for (const message of log) {
+    if (message.type === "permission_request") open.add(message.id);
+    else if (message.type === "permission_resolved") open.delete(message.id);
+  }
+  return [...open];
 }

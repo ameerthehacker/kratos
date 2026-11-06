@@ -182,6 +182,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   without an id" can't be expressed); omitted = fresh unnamed conversation. Verified with the real
   CLI: `--session-id` + codeword, process stopped, new process with `--resume` recalled it; a fresh
   conversation (control) did not.
+- 3p3: the hub owns the stored session (load on start, append on every publish, cancel stale
+  asks, resume = agent started before — also fixes a crash-restart *within* a run, which would
+  otherwise reuse `--session-id` for an existing conversation). `kratos --db <file>` overrides the
+  default `<user data>/kratos/kratos.db` (useful for tests and separate histories). Verified with
+  the real CLI: codeword told, kratos Ctrl-C'd and restarted, new tab got the replay and Claude
+  recalled the codeword.
 - Risks: pnpm blocks dependency build scripts by default, so better-sqlite3's native binary must
   be explicitly allowed; `--resume` failing (e.g. Claude's transcript deleted) would make every
   restart fail — handle if seen.

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { StickToBottom } from "use-stick-to-bottom";
+import { PromptBubble } from "@/components/conversation/prompt-bubble";
 import { StepGroup } from "@/components/conversation/step-group";
 import { codePlugin } from "@/lib/appearance";
 import type { TimelineItem } from "@/lib/timeline";
@@ -21,11 +22,7 @@ export function Conversation(props: { items: TimelineItem[]; agent: string }) {
         {items.map((item, i) => {
           switch (item.type) {
             case "prompt":
-              return (
-                <div key={i} className="max-w-4/5 self-end rounded-2xl bg-secondary px-4 py-2.5 whitespace-pre-wrap">
-                  {item.text}
-                </div>
-              );
+              return <PromptBubble key={i} text={item.text} />;
             case "reply":
               return (
                 <Streamdown key={i} mode="static" plugins={{ code: codePlugin }} className="min-w-0">

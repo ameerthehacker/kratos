@@ -156,6 +156,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D47. Copying prompts: copy-to-clipboard (step 3c5, owner)
+- Owner: a copy button on your prompts. Library-first: `copy-to-clipboard` v4 (async; tries the
+  Clipboard API, falls back to `execCommand("copy")`; its `window.prompt` last resort is off).
+- Why not `navigator.clipboard` alone: tried first — it's refused outside secure contexts (e.g.
+  `--host 0.0.0.0` over plain http) and in embedded browsers, which the real run hit ("Write
+  permission denied"). A failed copy is logged via `clientLog` (D44).
+- UI: a small icon button under each prompt bubble, shown on hover / keyboard focus, a check
+  for 1.5 s after copying. Reverse: `components/conversation/prompt-bubble.tsx`.
+
 ### D46. Agent boundary: null = default model, asks name their call (step 3c4, owner)
 - Owner asked whether we're coupled to Claude Code. A check found two leaks: the UI knew
   Claude's `"default"` model id, and matched asks to steps by tool name + order (true only

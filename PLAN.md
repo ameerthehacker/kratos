@@ -201,6 +201,11 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             tool), and grep shows no `"default"` model id outside the adapter; real `claude`
             run: switch to Default mid-session, allow/deny an ask. Done (D46): Haiku → Default
             answered as Opus 5.5 live; stored model NULL; asks stored with their toolCallId.
+      - [x] **3c5. Copy your prompts** (~30, owner, D47) — a small copy button under each of your
+            prompt bubbles (shows on hover/keyboard focus), copies the exact text with the
+            browser's clipboard API, and confirms with a check for a moment. Accept: copy a
+            multi-line prompt in the real UI and read the clipboard back. Done: the copied text
+            (seen on the copy event) is the exact multi-line prompt.
     - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),

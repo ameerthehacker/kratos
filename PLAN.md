@@ -68,8 +68,26 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
   existing scratch proof) is the guard for that — later, not in this batch.
 - Orphan cleanup on parent exit — execa's `cleanup` guarantee, verified once in 2d.
 
-- [ ] **3. Session over WebSocket** — UI sends a prompt, server runs the adapter, streams events
-      back; UI renders a raw event log. Accept: live demo in the browser.
+- [ ] **3. Session over WebSocket** — one shared session per server, used from the browser
+      (D31, D32). Split into three working slices (approved by owner):
+  - [x] **3a. Session hub + protocol** (~200) — `packages/core` protocol gains: client `prompt`,
+        `interrupt`, `permission_decision`; server `user_prompt`, `agent_event`,
+        `permission_request`, `permission_resolved`. To keep every slice building, `hello` gains
+        `cwd`/`agent` in 3b and ping/pong go with the old UI in 3c.
+        `apps/cli/src/session-hub.ts`: owns the agent session (started on first prompt, restarted
+        after it ends), the message log (replayed to each new tab), pending asks (first decision
+        wins, resolution broadcast, CLI-withdrawn asks marked cancelled), broadcast to tabs.
+        Tests with an in-memory fake adapter: late tab gets full replay incl. a pending ask; first
+        decision wins + broadcast; stale decision ignored; withdrawn ask → cancelled; lazy start
+        and restart; closing all tabs leaves the ask pending.
+  - [ ] **3b. WebSocket + CLI wiring** (~60) — `server.ts` connects each socket to the hub and
+        validates client messages with zod; `kratos [project-dir]` defaults to the current dir,
+        prints "Claude Code will act in: …"; real Claude adapter. Accept: one WS round trip against
+        the fake claude in a test.
+  - [ ] **3c. Browser UI** (~140) — header with project dir + connection status; prompt box;
+        event log (text, thinking, tool calls with results, turn ends); permission card with
+        Allow / Deny + reason; Interrupt button; rebuilds from replay. Accept: live demo with the
+        real `claude`; refresh keeps the conversation and any pending ask.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

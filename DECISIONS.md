@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D31. `kratos [project-dir]`, defaulting to the current dir (step 3, owner)
+- Alternatives: required argument (D25's approach for the demo).
+- Why: owner's preference — works like `code .`. The resolved folder is printed at startup and
+  shown in the UI header so it's always visible where Claude acts.
+- Caveat: `pnpm start` from this repo runs at the repo root, so it points Claude at Kratos
+  itself — fine for dogfooding, but pass a folder to work elsewhere.
+
+### D32. One shared session per server (step 3, owner)
+- Alternatives: one session per browser tab (simpler; refresh loses the conversation).
+- Rules (my defaults, flip any):
+  - The server keeps the session's message log and replays it to each new or refreshed tab,
+    including asks still waiting for an answer.
+  - Any tab may answer an ask; the first decision wins and the resolution is broadcast so other
+    tabs close the card. Decisions for unknown or already-resolved asks are ignored.
+  - A pending ask waits even if every tab closes (no auto-deny) — reopen and answer it.
+  - The `claude` process starts on the first prompt and restarts on the next prompt if it ended.
+  - The log is in memory and unbounded for now; it's lost when the server stops.
+
 ### D29. Leaving `messages()` early stops the process (bug found by T3)
 - Bug: if a consumer `break`s out of `session.events` without calling `stop()` first, everything
   hung forever. Closing execa's line iterator waits for the process to exit, but the process only

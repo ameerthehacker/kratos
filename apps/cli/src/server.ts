@@ -3,7 +3,9 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket, { type WebSocket } from "@fastify/websocket";
 import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createReadStream } from "node:fs";
 import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
+import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editors.js";
 import { silentLogger, type Logger } from "./logger.js";
 import type { SessionHub } from "./session-hub.js";
 
@@ -24,14 +26,29 @@ export async function startServer(options: {
   webRoot?: string;
   /** Kratos's logger (D44); Fastify logs through it as component "http". Default: silent. */
   log?: Logger;
+  /** Where the project can be opened (3d3); default none. `open` launches one (tests fake it). */
+  editors?: DetectedEditor[];
+  openEditor?: (editorId: string) => Promise<void>;
+  /** Where converted editor icons are cached (default: no icons served). */
+  iconCacheDir?: string;
 }) {
   const { hub } = options;
   const log = options.log ?? silentLogger;
   const webLog = log.child({ component: "web" });
+  const editors = options.editors ?? [];
+  const openEditor = options.openEditor ?? ((id: string) => openIn(id, options.cwd, editors));
   const app = Fastify({ loggerInstance: log.child({ component: "http" }), logController: new QuietRequests() });
 
   await app.register(fastifyStatic, { root: options.webRoot ?? WEB_DIST });
   await app.register(fastifyWebsocket);
+
+  // Editors' own app icons (3d3): only ids from the detected list, converted once and cached.
+  app.get<{ Params: { id: string } }>("/editor-icons/:id.png", async (request, reply) => {
+    const editor = editors.find((e) => e.id === request.params.id);
+    const png = editor && options.iconCacheDir ? await editorIcon(editor, options.iconCacheDir).catch(() => null) : null;
+    if (!png) return reply.code(404).send("Not found");
+    return reply.type("image/png").header("cache-control", "max-age=86400").send(createReadStream(png));
+  });
 
   // App routes like /s/<id> (React Router) aren't files: answer them with the app itself, so deep
   // links and refreshes work. Real missing files (with an extension) still 404.
@@ -50,7 +67,16 @@ export async function startServer(options: {
       if (!parsed.success) {
         send(socket, { type: "error", message: "invalid message" });
       } else if (parsed.data.type === "ping") {
-        send(socket, { type: "pong", at: Date.now(), serverVersion: "0.0.0", cwd: options.cwd, agent: options.agent });
+        send(socket, { type: "pong", at: Date.now(), serverVersion: "0.0.0", cwd: options.cwd, agent: options.agent, editors: publicEditors(editors) });
+      } else if (parsed.data.type === "open_in") {
+        const editor = parsed.data.editor;
+        openEditor(editor).then(
+          () => log.info({ editor }, "opened the project in an editor"),
+          (err: unknown) => {
+            log.warn({ editor, err }, "could not open the project");
+            send(socket, { type: "error", message: `Could not open the project: ${err instanceof Error ? err.message : String(err)}` });
+          },
+        );
       } else if (parsed.data.type === "client_log") {
         const { level, message, data } = parsed.data;
         webLog[level]({ data }, message); // the browser's own warnings, kept with ours (D44)

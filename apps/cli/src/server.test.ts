@@ -115,6 +115,34 @@ describe("kratos server", () => {
     expect(hubClose).toHaveBeenCalledOnce();
   });
 
+  it("lists the editors in pong and opens the project in one, reporting failures to the tab (3d3)", async () => {
+    const cwd = process.cwd();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const opened: string[] = [];
+    const editors = [{ id: "vscode", label: "VS Code" }];
+    const openEditor = async (id: string) => {
+      if (id !== "vscode") throw new Error(`Unknown editor "${id}"`);
+      opened.push(id);
+    };
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code", editors, openEditor });
+    const tab = await openTab(server.port);
+    try {
+      tab.send({ type: "ping" });
+      expect(await tab.waitFor(is("pong"))).toMatchObject({ editors });
+      tab.send({ type: "open_in", editor: "vscode" });
+      await vi.waitFor(() => expect(opened).toEqual(["vscode"]));
+      tab.send({ type: "open_in", editor: "nope" });
+      expect(await tab.waitFor(is("error"))).toMatchObject({ message: 'Could not open the project: Unknown editor "nope"' });
+      // Icons are served only for detected editors with an app (none here): no other ids, no paths.
+      for (const id of ["nope", "vscode", "..%2F..%2Fetc%2Fpasswd"]) {
+        expect((await fetch(`http://127.0.0.1:${server.port}/editor-icons/${id}.png`)).status).toBe(404);
+      }
+    } finally {
+      tab.close();
+      await server.close();
+    }
+  });
+
   it("answers app routes (deep links) with the UI, but 404s real missing files", async () => {
     const webRoot = mkdtempSync(join(tmpdir(), "kratos-web-"));
     writeFileSync(join(webRoot, "index.html"), "<!doctype html><div id=root></div>");

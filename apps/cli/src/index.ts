@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { DEFAULT_PORT } from "@kratos/core";
-import { DEFAULT_DB, DEFAULT_LOG_DIR } from "./data-home.js";
+import { DEFAULT_DB, DEFAULT_LOG_DIR, KRATOS_HOME } from "./data-home.js";
+import { detectEditors } from "./editors.js";
 import { createLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { DEFAULT_HOST, startServer } from "./server.js";
@@ -39,7 +40,10 @@ const program = new Command()
     const dbPath = resolve(opts.db);
     const store = SessionStore.open(dbPath);
     const hub = new SessionHub(adapter, cwd, store, log); // loads (or starts) this project's latest session
-    const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log });
+    const editors = detectEditors(); // 3d3: what "Open in…" offers
+    log.debug({ editors: editors.map((e) => e.id) }, "editors found");
+    const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
+    const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir });
     const shownHost = LOOPBACK.has(opts.host) ? "localhost" : opts.host;
     log.info(`kratos running at http://${shownHost}:${server.port}`);
     log.info(`${adapter.displayName} will act in: ${cwd}`);

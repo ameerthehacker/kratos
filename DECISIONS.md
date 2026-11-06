@@ -156,6 +156,29 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D50. Project chip + open in editor (step 3d3, owner)
+- Owner: the header's raw path should look modern and open the project in various editors.
+  Now a pill (folder icon, project name, chevron; full path in its menu) whose menu opens the
+  project in an installed editor, reveals it in the file manager, or copies the path.
+- Detection at start (`apps/cli/src/editors.ts`): a fixed list (VS Code, Cursor, Zed, Windsurf,
+  WebStorm, IntelliJ, Sublime, Xcode). On macOS an editor counts if its .app is in
+  /Applications or ~/Applications — its CLI often isn't on PATH (here: VS Code without `code`);
+  elsewhere, if its CLI is on PATH (`which`). Sent to tabs in `pong.editors`.
+- Safety: the browser only sends `open_in {editor}` with an id; the server checks it against
+  the detected list and only ever opens the project folder — no command or path from a tab.
+- Launch: the `open` package (sindresorhus; `open -a "<App>" <dir>` on macOS, the CLI name
+  elsewhere). Failures go back to the tab as an error and to the log.
+- Real logos (owner): `simple-icons` has no VS Code logo (Microsoft had it removed), so Kratos
+  uses each installed app's own icon: `plutil` finds the icon file named in the app's
+  Info.plist, `sips` converts the .icns (both built into macOS), and `sharp` trims the
+  transparent padding macOS icons carry so the tile sits level with text (owner: "logos not
+  sitting well" before the trim). Cached in `~/.kratos/cache/editor-icons`, served at
+  `/editor-icons/<id>.png` for detected ids only (404 otherwise). Off macOS: a generic icon.
+- The chip shows the editor you used last (remembered per browser), else the first one found,
+  else a folder. The connection dot moved into the chip, with a tooltip saying what it means
+  (shadcn Tooltip, opening below; rendered as a span since it sits inside the chip's button).
+- Reverse: drop the menu; `pong.editors` and `open_in` are additive.
+
 ### D49. Done sessions (step 3d2, owner)
 - Owner: mark a chat done; the sidebar has **Working** and **Done** sections (owner kept the
   names even though "working" is also a live status); marking moves it. Owner's answers: a new

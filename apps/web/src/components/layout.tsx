@@ -1,16 +1,16 @@
 import { Link, Outlet } from "react-router";
 import { KratosLogo } from "@/components/kratos-logo";
+import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { SessionsSidebar } from "@/components/sessions-sidebar";
 import { useKratosConnection } from "@/hooks/use-kratos-connection";
 import { useKratos } from "@/lib/kratos-store";
-import { cn } from "@/lib/utils";
 
 /** Every page, in the owner's island layout: sidebar and main area float as rounded islands on
  * the canvas. Also owns the connection to kratos. */
 export function Layout() {
   useKratosConnection();
   const connected = useKratos((s) => s.connected);
-  const cwd = useKratos((s) => s.info?.cwd);
+  const info = useKratos((s) => s.info);
 
   return (
     // Viewport-high: each page scrolls its own content (the conversation pins to the bottom).
@@ -26,16 +26,9 @@ export function Layout() {
             <KratosLogo />
           </Link>
           <span className="flex-1" />
-          {cwd && (
-            <span className="truncate font-mono text-xs text-muted-foreground" title={cwd}>
-              {cwd}
-            </span>
-          )}
-          <span
-            className={cn("size-2 shrink-0 rounded-full", connected ? "bg-primary" : "animate-pulse bg-wait")}
-            title={connected ? "Connected" : "Connecting…"}
-            aria-label={connected ? "Connected" : "Connecting"}
-          />
+          {/* The connection dot lives in the project chip (3d3), with a tooltip. */}
+          {/* Before the first answer from the server there's no project yet: just the dot. */}
+          {info ? <ProjectMenu cwd={info.cwd} editors={info.editors} connected={connected} /> : <ConnectionDot connected={connected} />}
         </header>
         <Outlet />
       </div>

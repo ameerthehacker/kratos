@@ -104,6 +104,7 @@ export class SessionHub {
         return;
       case "ping":
       case "client_log":
+      case "open_in":
         return; // handled by the server itself
     }
   }

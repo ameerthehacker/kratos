@@ -216,6 +216,19 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             reply box (`size` large / compact); hints hide below 640px. Also (owner): Recent
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
+            Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d3. Project chip + open in editor** (~150, owner, D50) — the header's raw path becomes a
+            pill (folder icon, project name, chevron; full path in the menu). The menu opens the
+            project in an installed editor (VS Code, Cursor, Zed, Windsurf, WebStorm, IntelliJ,
+            Sublime, Xcode — whichever are found), reveals it in Finder/the file manager, or
+            copies the path. Server detects editors at start (macOS: the .app in /Applications
+            or ~/Applications; else the CLI via `which`) and sends them in `pong`; the browser
+            sends `open_in {editor}` with an id from that list — only this project's folder is
+            ever opened, no path or command comes from the browser. Launch via the `open`
+            package. Accept: unit test for detection + id check; real run opens VS Code here.
+            Done: found VS Code + Xcode here (VS Code via its .app, no `code` on PATH); opened it.
+            Also (owner): real app logos (trimmed), last-used editor's logo on the chip (else the
+            first found), connection dot inside the chip with an explaining tooltip.
       - [x] **3d2. Done sessions** (~150, D49) — mark a session done; the sidebar splits into
             **Working** and **Done** (owner kept the names), Home's Recent hides done ones.
             Mark/reopen from: a new session header (title + status + "Mark as done"/"Reopen"),

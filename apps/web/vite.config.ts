@@ -11,6 +11,9 @@ export default defineConfig({
   },
   server: {
     // In `pnpm dev:web`, forward the WebSocket to a running `kratos` (pnpm start).
-    proxy: { "/ws": { target: "ws://127.0.0.1:4317", ws: true } },
+    proxy: {
+      "/ws": { target: "ws://127.0.0.1:4317", ws: true },
+      "/editor-icons": { target: "http://127.0.0.1:4317" }, // editors' app icons (3d3)
+    },
   },
 });

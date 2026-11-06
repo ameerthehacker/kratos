@@ -31,6 +31,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
+  /** Open the project folder in one of the editors listed in `pong` (3d3). */
+  z.object({ type: z.literal("open_in"), editor: z.string() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
   /** Something the browser wants in the server's log file (D44), logged as component "web". */
@@ -57,6 +59,15 @@ export const SessionSummary = z.object({
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 
+/** Somewhere the project folder can be opened: an installed editor, or the file manager (3d3). */
+export const Editor = z.object({
+  id: z.string(),
+  label: z.string(),
+  /** URL of the app's own icon on this server, when there is one (macOS apps). */
+  icon: z.string().optional(),
+});
+export type Editor = z.infer<typeof Editor>;
+
 /** A harness the server can run, with the models it reports (D43). */
 export const Harness = z.object({ id: z.string(), name: z.string(), models: z.array(AgentModel) });
 export type Harness = z.infer<typeof Harness>;
@@ -76,6 +87,8 @@ export const ServerMessage = z.discriminatedUnion("type", [
     serverVersion: z.string(),
     cwd: z.string(),
     agent: z.string(),
+    /** Where the project can be opened, as detected on this machine (3d3). */
+    editors: z.array(Editor),
   }),
   /** A prompt someone sent (so every tab shows the whole conversation). */
   z.object({ type: z.literal("user_prompt"), text: z.string() }),

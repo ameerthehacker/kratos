@@ -1,11 +1,12 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 /** The design's prompt card: text box, agent chip, round send button. Enter sends, Shift+Enter = newline. */
 export function PromptCard(props: {
-  agent: string;
+  /** The agent chip (an AgentPicker). */
+  agent: ReactNode;
   onSend: (text: string) => void;
   placeholder: string;
   rows?: number;
@@ -39,10 +40,7 @@ export function PromptCard(props: {
         className="field-sizing-fixed min-h-0 resize-none border-0 bg-transparent px-2 py-1.5 text-lg shadow-none focus-visible:ring-0 md:text-lg dark:bg-transparent"
       />
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs text-secondary-foreground">
-          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-          {props.agent}
-        </span>
+        {props.agent}
         <span className="flex-1" />
         <Button
           type="submit"

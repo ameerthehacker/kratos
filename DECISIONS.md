@@ -178,6 +178,9 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
     debug). The logger runs in a worker thread (pino transport): shutdown flushes it before exit.
   - `client_log {level, message ≤ 2000 chars, data?}` is handled by the server, not the hub; the
     web's `clientLog()` also prints to devtools and drops the line silently when disconnected.
+  - Found in 3m2's run: pino-roll's `mkdir` is async but it links `current.log` at once, so a
+    fresh log folder crashed the worker (ENOENT) — `createLogger` makes the folder first. And
+    sessions get the root logger (not the hub's child), else lines carry `component` twice.
   - Hub/runtime/server take an optional logger (default silent) so tests stay quiet; tests use a
     `memoryLogger()` that keeps parsed lines. The adapter's terminal `demo.ts` keeps `console`: that
     is its user interface, not logging.
@@ -208,6 +211,16 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   request Kratos sends the CLI — unique ids, matches `control_response`, settles once on answer /
   error answer / timeout / CLI exit / failed send. Used by `fetchModels`, `setModel`, `interrupt`.
   Requests the CLI sends *us* (`can_use_tool`) stay in the adapter: that's the permission gate.
+- 3m2 UI (my calls): shadcn `dropdown-menu` (Base UI Menu) as the chip — Harness radio group,
+  Model radio group (latest), "Other versions" submenu. The CLI's `default` model id is treated
+  as "no model chosen" (null): Home sends no `--model`, the chip says "Default". In a session,
+  picking Default sends `set_model "default"`, which the CLI accepts (verified: answers as Opus
+  5.5, the recommended model). The Home choice is a tiny zustand store with the `persist`
+  middleware (localStorage `kratos.home-choice`); a remembered model the agent no longer lists
+  falls back to the default. In a session the harness is locked (only the model can change).
+  Radio items need `closeOnClick` — Base UI keeps a menu open after a radio pick by default (found
+  in the real run: the open menu ate the next typed text). The logo's color is a theme token
+  (`text-claude`, same in every theme); the SVG's fill became `currentColor`.
 - Contract made explicit: `setModel()` resolves when the CLI confirms, which arrives on its
   output — so `events` must be being consumed (the hub's pump always is). Found when a test that
   paused reading hung.

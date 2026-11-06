@@ -1,22 +1,24 @@
 import { useEffect } from "react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
+import { AgentPicker } from "@/components/agent-picker";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
 
 /** `/s/:sessionId` — one session's conversation. Opening the URL makes this tab view it. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const { connected, agent, sessions, viewing, log, send } = useKratos(
-    useShallow((s) => ({ connected: s.connected, agent: s.info?.agent, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send })),
+  const { connected, harnesses, sessions, viewing, log, send } = useKratos(
+    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send })),
   );
+  const session = sessions.find((s) => s.id === sessionId);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
   useEffect(() => {
     if (connected && sessionId && viewing !== sessionId) send({ type: "open_session", id: sessionId });
   }, [connected, sessionId, viewing, send]);
 
-  if (sessions.length > 0 && !sessions.some((s) => s.id === sessionId)) {
+  if (sessions.length > 0 && !session) {
     return (
       <main className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 px-6 pt-32 text-muted-foreground">
         <p>This session doesn't exist in this project.</p>
@@ -34,7 +36,16 @@ export function SessionPage() {
         {viewing === sessionId && log.map((message, i) => <BareMessage key={i} message={message} />)}
       </ol>
       <PromptCard
-        agent={agent ?? "Agent"}
+        agent={
+          <AgentPicker
+            harnesses={harnesses}
+            value={{ harness: session?.harness ?? "", model: session?.model ?? null }}
+            // Switches this session's model, live if its agent is running (D43). null = the default.
+            onChange={(choice) => choice.model !== session?.model && send({ type: "set_model", model: choice.model ?? "default" })}
+            harnessLocked
+            disabled={!connected || viewing !== sessionId}
+          />
+        }
         onSend={(text) => send({ type: "prompt", text })}
         disabled={!connected || viewing !== sessionId}
         rows={2}

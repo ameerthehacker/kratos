@@ -151,12 +151,13 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             location: the product is brand new, owner; env-paths dropped). Tests: file written +
             rotation config, `client_log` reaches the log, hub/runtime log calls. Also (owner, mid-step):
             the session view no longer shows a "turn end" marker; only a cut-short turn says "Stopped".
-      - [ ] **3m2. UI** (~150) — official Claude SVG (downloaded from claude.ai's own asset
+      - [x] **3m2. UI** (~150) — official Claude SVG (downloaded from claude.ai's own asset
             server, checked: one path, no scripts) as a component; shadcn dropdown chip
             "logo · Claude Code · Opus 5.5 ▾" with Harness + Model (Latest / Other versions);
             Home choice remembered per browser; in a session the chip shows and switches that
             session's model. Verified with real `claude`: start on Haiku, switch to Sonnet,
-            ask the agent which model it is.
+            ask the agent which model it is. Done: also found and fixed two 3L bugs (log folder
+            race on first start; session log lines carried `component` twice).
     - [ ] **3c2. Conversation** — move UI state into a Zustand store (D39); AI Elements chat: prompts as bubbles, replies via Streamdown,
           tool calls as Trace, permission asks as Approve/Deny (Confirmation), bottom prompt box
           with Stop. Accept: live demo with real `claude` incl. an approval; refresh keeps a

@@ -52,7 +52,7 @@ const summary = (messages: ServerMessage[]) =>
 describe("kratos server", () => {
   it("runs a prompt with a permission round trip over WebSocket, and replays it to a late tab", async () => {
     const cwd = process.cwd();
-    const { log, lines } = memoryLogger();
+    const { log, lines, raw } = memoryLogger();
     const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"), log);
     // Watch the cleanup paths: closed tabs must leave the hub, server shutdown must stop the agent.
     let disconnects = 0;
@@ -90,6 +90,7 @@ describe("kratos server", () => {
       // The server's log tells the same story (D44).
       const logged = (msg: string) => lines.find((l) => l.msg === msg);
       expect(logged("agent started")).toMatchObject({ component: "session", model: "default", resume: false });
+      expect(raw.filter((l) => l.includes('"agent started"'))[0]!.match(/"component"/g)).toHaveLength(1); // no hub+session
       expect(logged("permission asked")).toMatchObject({ ask: ask.id, tool: "Write" });
       expect(logged("permission settled")).toMatchObject({ ask: ask.id, outcome: "allowed" });
 

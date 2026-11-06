@@ -25,6 +25,8 @@ export class SessionHub {
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
   private readonly log: Logger;
+  /** Sessions log as their own component, so they get the root logger, not the hub's child. */
+  private readonly rootLog: Logger;
 
   constructor(
     private readonly adapter: AgentAdapter,
@@ -33,6 +35,7 @@ export class SessionHub {
     /** Kratos's logger (D44); default: silent. */
     log: Logger = silentLogger,
   ) {
+    this.rootLog = log;
     this.log = log.child({ component: "hub" });
     this.loadHarnesses();
   }
@@ -110,7 +113,7 @@ export class SessionHub {
         adapter: this.adapter,
         cwd: this.cwd,
         store: this.store,
-        log: this.log,
+        log: this.rootLog,
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
       });

@@ -18,7 +18,7 @@ describe("logger (D44)", () => {
   });
 
   it("writes JSON lines, debug included, to a file that current.log points at", async () => {
-    const logDir = mkdtempSync(join(tmpdir(), "kratos-logs-"));
+    const logDir = join(mkdtempSync(join(tmpdir(), "kratos-logs-")), "not", "yet"); // first run: no folder
     const log = createLogger({ logDir, consoleLevel: "error" }); // keep the test output clean
     log.child({ component: "hub" }).debug({ count: 3 }, "models loaded");
     await new Promise<void>((resolve, reject) => log.flush((err) => (err ? reject(err) : resolve())));

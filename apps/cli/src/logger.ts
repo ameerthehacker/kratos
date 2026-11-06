@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { pino, type Logger, type TransportTargetOptions } from "pino";
 
@@ -38,15 +39,19 @@ export function createLogger(options: { logDir: string; consoleLevel?: string })
   const consoleLevel = options.consoleLevel ?? "info";
   // The logger itself must pass everything any target wants (the lower of the two levels).
   const level = pino.levels.values[consoleLevel]! < pino.levels.values[FILE_LEVEL]! ? consoleLevel : FILE_LEVEL;
+  // pino-roll's own `mkdir` is async but it creates current.log right away: on a fresh folder the
+  // symlink would fail (ENOENT) and crash the worker. Make the folder first.
+  mkdirSync(options.logDir, { recursive: true });
   return pino({ level }, pino.transport({ targets: logTargets(options) }));
 }
 
 /** For tests and library use: a logger that drops everything. */
 export const silentLogger: Logger = pino({ level: "silent" });
 
-/** For tests: a debug-level logger that keeps its lines (parsed) in `lines`. */
-export function memoryLogger(): { log: Logger; lines: Array<Record<string, unknown>> } {
+/** For tests: a debug-level logger that keeps its lines, parsed (`lines`) and as written (`raw`). */
+export function memoryLogger(): { log: Logger; lines: Array<Record<string, unknown>>; raw: string[] } {
   const lines: Array<Record<string, unknown>> = [];
-  const log = pino({ level: "debug" }, { write: (line: string) => void lines.push(JSON.parse(line)) });
-  return { log, lines };
+  const raw: string[] = [];
+  const write = (line: string) => void (raw.push(line), lines.push(JSON.parse(line)));
+  return { log: pino({ level: "debug" }, { write }), lines, raw };
 }

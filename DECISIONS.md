@@ -177,6 +177,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Layout: viewport-high; each page scrolls its own content, and the session composer sits below
   the scroll area (always visible, the design's sticky composer). Shiki makes the bundle large
   (warning at build); lazy-loading it is a later optimisation.
+- 3c2b asks + Stop: an open ask lives on its step (`step.ask`) and renders as the design's amber
+  "needs your OK" card — the call in present tense ("Edit notes.txt"), the agent's reason if
+  any, the exact command or call (always shown: you approve what will actually run), Allow /
+  Deny. Deny sends a fixed message ("The owner denied this in Kratos."); typed deny reasons are
+  later. Answered, it's the step again with "You allowed this" / "You denied this" (a denied
+  call's error result adds no "Failed"). Stop: the send button turns into Stop while the
+  session isn't idle and the box is empty (typing still sends); it sends `interrupt`.
+  Known gap: a Write/Edit ask shows the raw JSON, not a readable diff — a later step.
 - Code theme: one constant + the Streamdown code plugin built from it (`lib/appearance.ts`), so
   both highlighters always match; owner wants it user-configurable later (PLAN "Settings").
 - Reverse: the components live in `apps/web/src/components/conversation/`; `action` is optional.

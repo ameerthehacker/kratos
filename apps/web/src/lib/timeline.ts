@@ -1,7 +1,7 @@
 import type { AgentEvent, ServerMessage, ToolAction } from "@kratos/core";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
-export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" };
+export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" };
 
 /** One thing the agent did, in plain words (the owner's chat design, D45). */
 export type Step = {
@@ -11,12 +11,17 @@ export type Step = {
   chips: Chip[];
   /** Shown with "Show raw": a shell command (highlighted) or the tool's raw call, and its output. */
   raw: { command?: string; call?: string; output?: string };
-  /** Kratos is waiting for the owner to allow or deny this call. */
-  waiting: boolean;
+  /** While Kratos waits for the owner to allow or deny this call: what to answer (3c2b). */
+  ask?: OpenAsk;
+  /** What the call would do, in present tense ("Edit math.js"): the ask card's question. */
+  intent: string;
   /** The agent's tool name (to match its permission ask), and whether its result came back. */
   tool?: string;
   finished?: boolean;
 };
+
+/** A permission ask still waiting for the owner. `id` is what `permission_decision` answers. */
+export type OpenAsk = { id: string; reason?: string };
 
 export type TimelineItem =
   | { type: "prompt"; text: string }
@@ -28,6 +33,7 @@ type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | 
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
 
 const OUTPUT_LINES = 20;
+const DENIED = "You denied this";
 
 /**
  * Turn a session's log into what the chat shows: prompts, replies, and runs of consecutive tool
@@ -52,16 +58,20 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
       items.push({ type: "prompt", text: message.text });
     } else if (message.type === "permission_request") {
       // The ask follows its tool call: attach it to the newest unanswered call of that tool.
-      const step = [...steps.values()].reverse().find((s) => !s.finished && s.tool === message.request.tool);
-      if (step) {
-        step.waiting = true;
-        asks.set(message.id, step);
+      let step = [...steps.values()].reverse().find((s) => !s.finished && !s.ask && s.tool === message.request.tool);
+      if (!step) {
+        // No matching call in the log (shouldn't happen): still show the ask, from its own data.
+        step = describe({ kind: "tool_call", id: `ask-${message.id}`, tool: message.request.tool, input: message.request.input }, cwd);
+        addStep(step);
       }
+      step.ask = { id: message.id, reason: message.request.reason };
+      asks.set(message.id, step);
     } else if (message.type === "permission_resolved") {
       const step = asks.get(message.id);
       if (step) {
-        step.waiting = false;
-        if (message.outcome === "denied") step.chips.push({ text: "You denied this", tone: "bad" });
+        step.ask = undefined;
+        if (message.outcome === "allowed") step.chips.push({ text: "You allowed this", tone: "ok" });
+        if (message.outcome === "denied") step.chips.push({ text: DENIED, tone: "bad" });
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
       }
     } else {
@@ -70,7 +80,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
         breakGroup();
         items.push({ type: "reply", text: event.text });
       } else if (event.kind === "thinking") {
-        addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", chips: [], raw: { call: event.text }, waiting: false });
+        addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", intent: "Think", chips: [], raw: { call: event.text } });
       } else if (event.kind === "tool_call") {
         const step = describe(event, cwd);
         steps.set(event.id, step);
@@ -92,13 +102,16 @@ function describe(call: ToolCall, cwd: string): Step {
   const path = action.target && relative(action.target, cwd);
   const chips: Chip[] = [];
   let title: string;
+  let intent: string;
   switch (action.type) {
     case "read":
       title = `Read ${base(path)}`;
+      intent = `Read ${base(path)}`;
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       break;
     case "edit":
       title = `Edited ${base(path)}`;
+      intent = `Edit ${base(path)}`;
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       if (action.added !== undefined || action.removed !== undefined) {
         chips.push({ text: `+${action.added ?? 0} −${action.removed ?? 0}`, tone: "muted" });
@@ -106,27 +119,33 @@ function describe(call: ToolCall, cwd: string): Step {
       break;
     case "run":
       title = action.description ?? (isTest(action.command) ? "Ran the tests" : "Ran a command");
+      intent = action.description ?? (isTest(action.command) ? "Run the tests" : "Run a command");
       break;
     case "search":
       title = `Searched for “${action.target ?? ""}”`;
+      intent = `Search for “${action.target ?? ""}”`;
       break;
     case "web":
       title = `Looked up ${action.target ?? "the web"}`;
+      intent = `Look up ${action.target ?? "the web"}`;
       break;
     case "task":
       title = `Handed off: ${action.description ?? "a sub-task"}`;
+      intent = `Hand off: ${action.description ?? "a sub-task"}`;
       break;
     default:
       title = `Used ${call.tool}`;
+      intent = `Use ${call.tool}`;
   }
   const raw = action.type === "run" && action.command ? { command: action.command } : { call: `${call.tool} ${compact(call.input)}` };
-  return { id: call.id, kind: action.type, title, chips, raw, waiting: false, tool: call.tool };
+  return { id: call.id, kind: action.type, title, intent, chips, raw, tool: call.tool };
 }
 
 function addResult(step: Step, output: string, isError: boolean): void {
   step.finished = true;
   step.raw.output = trim(output);
-  if (isError) step.chips.push({ text: "Failed", tone: "bad" });
+  const denied = step.chips.some((c) => c.text === DENIED);
+  if (isError && !denied) step.chips.push({ text: "Failed", tone: "bad" }); // a denial comes back as an error
   else if (step.kind === "run") {
     const passed = /(\d+)\s+passed/.exec(output);
     step.chips.push(passed ? { text: `✓ ${passed[1]} passed`, tone: "ok" } : { text: "✓ Done", tone: "ok" });

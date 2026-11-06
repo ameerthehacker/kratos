@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -11,9 +11,12 @@ export function PromptCard(props: {
   placeholder: string;
   rows?: number;
   disabled?: boolean;
+  /** The agent is working: with an empty box, the send button becomes Stop (3c2b). */
+  onStop?: () => void;
 }) {
   const [text, setText] = useState("");
   const canSend = text.trim().length > 0 && !props.disabled;
+  const showStop = props.onStop !== undefined && text.trim().length === 0;
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -42,15 +45,29 @@ export function PromptCard(props: {
       <div className="flex items-center gap-2">
         {props.agent}
         <span className="flex-1" />
-        <Button
-          type="submit"
-          size="icon"
-          disabled={!canSend}
-          aria-label="Send"
-          className="size-11 rounded-full disabled:bg-secondary disabled:text-faint disabled:opacity-100"
-        >
-          <ArrowUp className="size-4.5" strokeWidth={2.4} />
-        </Button>
+        {showStop ? (
+          <Button
+            type="button"
+            size="icon"
+            onClick={props.onStop}
+            disabled={props.disabled}
+            aria-label="Stop"
+            title="Stop the agent's turn"
+            className="size-11 rounded-full bg-foreground text-background hover:bg-foreground/90"
+          >
+            <Square className="size-3.5" fill="currentColor" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!canSend}
+            aria-label="Send"
+            className="size-11 rounded-full disabled:bg-secondary disabled:text-faint disabled:opacity-100"
+          >
+            <ArrowUp className="size-4.5" strokeWidth={2.4} />
+          </Button>
+        )}
       </div>
     </form>
   );

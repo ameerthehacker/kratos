@@ -158,7 +158,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             session's model. Verified with real `claude`: start on Haiku, switch to Sonnet,
             ask the agent which model it is. Done: also found and fixed two 3L bugs (log folder
             race on first start; session log lines carried `component` twice).
-    - [ ] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
+    - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:
             your prompts as right-aligned bubbles; the agent's text as markdown (Streamdown);
@@ -171,11 +171,12 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             bottom. Accept: real `claude` run that reads, edits and runs a command renders as
             steps; raw toggle shows the command + output; refresh replays the same view.
             Done: verified with real `claude` (run → edit → re-run → read, markdown + code block).
-      - [ ] **3c2b. Asks + Stop** (~100) — a pending permission ask as the design's amber
+      - [x] **3c2b. Asks + Stop** (~100, D45) — a pending permission ask as the design's amber
             "needs a call" card (what it wants to do, in plain words + raw) with Allow / Deny;
             once settled it's a step ("Asked you: … · Allowed"). Send button turns into Stop
             while the agent works (`interrupt`). Accept: real run with an approval and a denial;
-            refresh keeps a pending ask; Stop ends a turn.
+            refresh keeps a pending ask; Stop ends a turn. Done: all four verified with real
+            `claude`. Next: asks for edits should show a readable diff, not raw JSON.
     - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),

@@ -35,7 +35,12 @@ export function SessionPage() {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
-      <Conversation log={viewing === sessionId ? log : NO_LOG} agent={agentName} cwd={cwd} />
+      <Conversation
+        log={viewing === sessionId ? log : NO_LOG}
+        agent={agentName}
+        cwd={cwd}
+        onDecide={(id, decision) => send({ type: "permission_decision", id, decision })}
+      />
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <PromptCard
@@ -50,6 +55,7 @@ export function SessionPage() {
             />
           }
           onSend={(text) => send({ type: "prompt", text })}
+          onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
           disabled={!connected || viewing !== sessionId}
           rows={2}
           placeholder="Reply…"

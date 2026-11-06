@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { StickToBottom } from "use-stick-to-bottom";
-import { StepGroup } from "@/components/conversation/step-group";
+import { StepGroup, type Decide } from "@/components/conversation/step-group";
 import { codePlugin } from "@/lib/appearance";
 import type { LogMessage } from "@/lib/kratos-store";
 import { buildTimeline } from "@/lib/timeline";
@@ -12,7 +12,7 @@ import { buildTimeline } from "@/lib/timeline";
  * the agent's replies as markdown, its tool calls as plain-words steps. Scrolls itself and stays
  * pinned to the newest message unless you scroll up.
  */
-export function Conversation(props: { log: readonly LogMessage[]; agent: string; cwd?: string }) {
+export function Conversation(props: { log: readonly LogMessage[]; agent: string; cwd?: string; onDecide: Decide }) {
   const items = useMemo(() => buildTimeline(props.log, props.cwd), [props.log, props.cwd]);
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
 
@@ -34,7 +34,7 @@ export function Conversation(props: { log: readonly LogMessage[]; agent: string;
                 </Streamdown>
               );
             case "steps":
-              return <StepGroup key={i} agent={props.agent} steps={item.steps} raw={raw} onToggleRaw={() => setRaw(!raw)} />;
+              return <StepGroup key={i} agent={props.agent} steps={item.steps} raw={raw} onToggleRaw={() => setRaw(!raw)} onDecide={props.onDecide} />;
             case "event":
               return (
                 <div key={i} className="flex items-center gap-2.5 text-sm text-muted-foreground">

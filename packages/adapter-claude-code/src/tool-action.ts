@@ -7,7 +7,7 @@ import type { ToolAction } from "@kratos/core";
 export function toolAction(tool: string, input: unknown): ToolAction {
   const i = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
   const str = (key: string) => (typeof i[key] === "string" ? (i[key] as string) : undefined);
-  const lines = (key: string) => (str(key) ? str(key)!.split("\n").length : undefined);
+  const lines = (key: string) => (str(key) !== undefined ? lineCount(str(key)!) : undefined);
 
   switch (tool) {
     case "Read":
@@ -18,7 +18,7 @@ export function toolAction(tool: string, input: unknown): ToolAction {
       return { type: "edit", target: str("file_path"), added: lines("new_string"), removed: lines("old_string") };
     case "MultiEdit": {
       const edits = Array.isArray(i.edits) ? (i.edits as Array<Record<string, unknown>>) : [];
-      const count = (key: string) => edits.reduce((n, e) => n + (typeof e[key] === "string" ? (e[key] as string).split("\n").length : 0), 0);
+      const count = (key: string) => edits.reduce((n, e) => n + (typeof e[key] === "string" ? lineCount(e[key] as string) : 0), 0);
       return { type: "edit", target: str("file_path"), added: count("new_string"), removed: count("old_string") };
     }
     case "NotebookEdit":
@@ -38,4 +38,10 @@ export function toolAction(tool: string, input: unknown): ToolAction {
     default:
       return { type: "other" };
   }
+}
+
+/** Lines in a text, as an editor counts them: a trailing newline doesn't start a new line. */
+function lineCount(text: string): number {
+  if (text === "") return 0;
+  return text.replace(/\n$/, "").split("\n").length;
 }

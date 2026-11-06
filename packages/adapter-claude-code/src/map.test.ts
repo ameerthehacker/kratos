@@ -33,6 +33,7 @@ describe("toEvents: assistant messages", () => {
     expect(action("Edit", { file_path: "a.ts", old_string: "x", new_string: "y\nz" })).toEqual({
       type: "edit", target: "a.ts", added: 2, removed: 1,
     });
+    expect(action("Write", { file_path: "n.txt", content: "hello\n" })).toEqual({ type: "edit", target: "n.txt", added: 1 });
     expect(action("Bash", { command: "pnpm test", description: "Run tests" })).toEqual({
       type: "run", command: "pnpm test", description: "Run tests",
     });

@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket, { type WebSocket } from "@fastify/websocket";
+import { extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
 import type { SessionHub } from "./session-hub.js";
@@ -18,12 +19,22 @@ export async function startServer(options: {
   hub: SessionHub;
   cwd: string;
   agent: string;
+  /** Folder with the built UI (default: apps/web/dist). */
+  webRoot?: string;
 }) {
   const { hub } = options;
   const app = Fastify({ logger: { level: "warn" } });
 
-  await app.register(fastifyStatic, { root: WEB_DIST });
+  await app.register(fastifyStatic, { root: options.webRoot ?? WEB_DIST });
   await app.register(fastifyWebsocket);
+
+  // App routes like /s/<id> (React Router) aren't files: answer them with the app itself, so deep
+  // links and refreshes work. Real missing files (with an extension) still 404.
+  app.setNotFoundHandler((request, reply) => {
+    const path = new URL(request.url, "http://kratos").pathname;
+    if (request.method === "GET" && !extname(path)) return reply.sendFile("index.html");
+    return reply.code(404).send("Not found");
+  });
 
   app.get(WS_PATH, { websocket: true }, (socket) => {
     const tab = hub.connect((message) => send(socket, message)); // shows the latest session first

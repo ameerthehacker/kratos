@@ -40,7 +40,9 @@ export class SessionRuntime {
     this.agentStarted = stored.agentStartedAt !== null;
     this.log = deps.store.load(id);
     // Asks left open by a previous run can't be answered: the agent process that asked is gone.
-    for (const askId of unresolvedAsks(this.log)) this.publish({ type: "permission_resolved", id: askId, outcome: "cancelled" });
+    for (const askId of unresolvedAsks(this.log)) {
+      this.publish({ type: "permission_resolved", id: askId, outcome: "cancelled" }, { activity: false });
+    }
   }
 
   /** The log so far, for replaying to a tab that opens this session. */
@@ -77,7 +79,7 @@ export class SessionRuntime {
   /** Server shutdown: withdraw open asks and stop the agent. */
   async close(): Promise<void> {
     for (const askId of [...this.pending.keys()]) {
-      this.settle(askId, "cancelled", { decision: "deny", message: "Kratos is shutting down" });
+      this.settle(askId, "cancelled", { decision: "deny", message: "Kratos is shutting down" }, { activity: false });
     }
     await this.session?.stop();
   }
@@ -130,11 +132,11 @@ export class SessionRuntime {
   }
 
   /** Resolve an ask once; unknown or already-settled ids are ignored (first decision wins). */
-  private settle(askId: string, outcome: Outcome, decision: PermissionDecision): boolean {
+  private settle(askId: string, outcome: Outcome, decision: PermissionDecision, options?: { activity: false }): boolean {
     const resolve = this.pending.get(askId);
     if (!resolve) return false;
     this.pending.delete(askId);
-    this.publish({ type: "permission_resolved", id: askId, outcome });
+    this.publish({ type: "permission_resolved", id: askId, outcome }, options);
     resolve(decision);
     this.deps.onChange();
     return true;
@@ -146,9 +148,11 @@ export class SessionRuntime {
     return (err: unknown) => this.publish({ type: "error", message: `${what} failed: ${String(err)}` });
   }
 
-  private publish(message: ServerMessage): void {
+  /** `activity: false` = Kratos housekeeping (shutdown/restart cleanup): logged, but it doesn't
+   * make the session "recently active". */
+  private publish(message: ServerMessage, options?: { activity: false }): void {
     this.log.push(message);
-    this.deps.store.append(this.id, message);
+    this.deps.store.append(this.id, message, options);
     this.deps.onMessage(message);
   }
 }

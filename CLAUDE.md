@@ -68,6 +68,10 @@ Messages crossing a boundary (WebSocket, files, agent output) are validated with
      when the design genuinely needs a size the scale lacks and it's used, or meaningful, app-wide;
   3. an arbitrary value only when neither works for a true one-off — with a comment saying why.
 - Colors only via theme variables (`bg-primary`, `text-muted-foreground`, `bg-wait`, …), never hex.
+- **Island layout** (owner's design): panels float as rounded islands (`rounded-3xl bg-background`)
+  on the darker canvas (`bg-canvas`), separated by gaps (`p-2.5 gap-2.5`), never by borders or
+  full-bleed dividers. New panels (sidebars, inspectors) are islands too. The design artifact is
+  the source of truth — re-read it before UI work; it evolves.
 - Exception: shadcn-generated files in `src/components/ui/` stay as generated (`shadcn add`
   overwrites them); their selector variants like `[&_svg]:…` have no non-bracket form anyway.
 

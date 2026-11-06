@@ -83,7 +83,7 @@ export class SessionStore {
   }
 
   /** Append one message to a session's log and mark the session as just active. */
-  append(sessionId: string, message: ServerMessage): void {
+  append(sessionId: string, message: ServerMessage, options: { activity?: boolean } = {}): void {
     const now = new Date();
     this.db.transaction((tx) => {
       const next = tx
@@ -92,7 +92,8 @@ export class SessionStore {
         .where(eq(messages.sessionId, sessionId))
         .get()!.seq;
       tx.insert(messages).values({ sessionId, seq: next, message, createdAt: now }).run();
-      tx.update(sessions).set({ updatedAt: now }).where(eq(sessions.id, sessionId)).run();
+      // Kratos's own housekeeping (activity: false) mustn't reorder the Recent list.
+      if (options.activity !== false) tx.update(sessions).set({ updatedAt: now }).where(eq(sessions.id, sessionId)).run();
     });
   }
 

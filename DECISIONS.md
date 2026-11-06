@@ -156,6 +156,22 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D42. UI shell: React Router, Zustand, island layout (step 3n2, owner requests)
+- Routes (owner: React Router, v8): `/` Home, `/s/:sessionId` a session; unknown → `/`. v8 notes:
+  `RouterProvider` comes from `react-router/dom`, everything else from `react-router`. A session
+  page asks the server to `open_session` its URL's id; Home navigates to the session its prompt
+  landed in once the server echoes the prompt (works whether a new session was made or an empty
+  one reused). The server answers extension-less GETs with `index.html` (deep links/refresh);
+  missing files still 404. `startServer({ webRoot })` so the test doesn't need a build.
+- State: Zustand now (planned for 3c2 in D39, pulled forward — layout, sidebar, Home and the
+  session page all share it). `useKratosConnection` (mounted once in the layout) owns the
+  WebSocket and writes the store; components select slices (`useShallow`).
+- Island layout (owner's design, re-read): `bg-canvas` (#070708) behind rounded `bg-background`
+  islands with 10px padding/gaps, no borders; current session = chip color. Rule in CLAUDE.md.
+- Bug found while checking: Kratos's own cleanup (withdrawing asks at shutdown, cancelling stale
+  asks on reload) bumped a session's `updatedAt`, reordering Recent. Such messages are now stored
+  with `activity: false`; two regression tests (fail without the fix).
+
 ### D41. Sessions run side by side; each tab views one (step 3n, owner) — revises D32
 - Owner: starting new work must not cancel a running session. So a project has many sessions;
   each keeps its own `claude` process, log and pending asks, and they run concurrently.

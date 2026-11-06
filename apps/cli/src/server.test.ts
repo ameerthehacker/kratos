@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
@@ -90,5 +93,23 @@ describe("kratos server", () => {
       await server.close();
     }
     expect(hubClose).toHaveBeenCalledOnce();
+  });
+
+  it("answers app routes (deep links) with the UI, but 404s real missing files", async () => {
+    const webRoot = mkdtempSync(join(tmpdir(), "kratos-web-"));
+    writeFileSync(join(webRoot, "index.html"), "<!doctype html><div id=root></div>");
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), process.cwd(), SessionStore.open(":memory:"));
+    const server = await startServer({ port: 0, hub, cwd: process.cwd(), agent: "Claude Code", webRoot });
+    const get = (path: string) => fetch(`http://127.0.0.1:${server.port}${path}`);
+    try {
+      for (const path of ["/", "/s/6f1c2b9e-0d4a-4c1e-9a77-3b1f1f2a9c10", "/anything/else"]) {
+        const res = await get(path);
+        expect([path, res.status, res.headers.get("content-type")]).toEqual([path, 200, expect.stringContaining("text/html")]);
+        expect(await res.text()).toContain('id=root');
+      }
+      expect((await get("/assets/missing.js")).status).toBe(404);
+    } finally {
+      await server.close();
+    }
   });
 });

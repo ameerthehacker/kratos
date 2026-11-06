@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentAdapter, AgentEvent, AgentSession, PermissionRequest, ServerMessage, SessionSummary } from "@kratos/core";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
@@ -311,5 +311,50 @@ describe("SessionHub across restarts (D36, D41)", () => {
 
     restart();
     expect(tab().seen.filter((m) => m.type === "permission_resolved")).toHaveLength(1);
+  });
+
+  describe("cleanup doesn't count as activity (Recent order)", () => {
+    /** Session A waits on an ask, session B is newer. Clock ticks between steps. */
+    function twoSessions() {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      const later = () => vi.setSystemTime(Date.now() + 1000);
+      const t = setup();
+      const a = t.tab();
+      a.receive({ type: "prompt", text: "session A" });
+      t.agents[0]!.ask(WRITE);
+      const aId = a.viewing;
+      later();
+      a.receive({ type: "prompt", text: "session B", newSession: true });
+      later();
+      return { ...t, aId, bId: a.viewing, later };
+    }
+
+    it("after shutdown withdrew A's ask, B is still the latest", async () => {
+      try {
+        const t = twoSessions();
+        await t.hub.close(); // withdraws A's ask
+        t.later();
+        t.restart();
+        const late = t.tab();
+        expect(late.viewing).toBe(t.bId);
+        expect(late.list.map((s) => s.title)).toEqual(["session B", "session A"]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("cancelling A's stale ask when it's reopened after a restart doesn't move it up", () => {
+      try {
+        const t = twoSessions();
+        t.restart(); // no clean shutdown: A's ask is still open in the log
+        const late = t.tab();
+        late.receive({ type: "open_session", id: t.aId }); // loading A cancels the stale ask
+        expect(late.seen.at(-1)).toMatchObject({ type: "permission_resolved", outcome: "cancelled" });
+        expect(late.list.map((s) => s.title)).toEqual(["session B", "session A"]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

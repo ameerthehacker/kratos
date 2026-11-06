@@ -22,6 +22,7 @@
     --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;
     --font-sans: 'Geist Variable', sans-serif;
     --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+    --color-canvas: var(--canvas);
     --color-wait: var(--wait);
     --color-run: var(--run);
     --color-add: var(--add);
@@ -105,6 +106,7 @@
    design → shadcn: bg→background, surf→card, chip→secondary/muted, hov→accent, ln→border,
    bd→input, fg2→secondary-foreground, mu→muted-foreground, acc→primary, del→destructive. */
 .dark {
+    --canvas: #070708; /* behind the islands (owner's island layout) */
     --background: #111113;
     --foreground: #EDEDEF;
     --card: #18181B;
@@ -147,7 +149,7 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-canvas text-foreground; /* islands (sidebar, main) sit on the canvas */
     }
   html {
     @apply font-sans;

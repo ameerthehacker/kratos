@@ -109,6 +109,23 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           (logo header + project folder + connection dot, "What should we build?", prompt card
           with agent chip + send); after the first prompt, a bare message list. Accept: send a
           prompt from the browser to real `claude`, refresh keeps it.
+    - [~] **3n. Sessions side by side** (owner request, D41) — the logo opens Home at any time;
+          sending from Home starts a *new* session while existing ones **keep running** (their
+          agent, log and asks untouched). Each tab views one session; you get back to any session
+          from the Recent list on Home or the sessions sidebar, which show live status.
+      - [x] **3n1. Multi-session backend** (~250 incl. tests) — `SessionRuntime` (one session:
+            log, agent, asks, status; today's hub logic moved out) + `SessionHub` as a registry
+            of runtimes and per-tab subscriptions; store gains `get`, `list` and a `title`
+            column (migration 0001). Protocol: client `open_session {id}`, `prompt.newSession`;
+            server `session {id}` (what this tab views, then its replay) and `sessions` (list
+            with title + status: working / needs_approval / idle, broadcast on change). Asks are
+            answered by id from any tab. Tests: concurrent sessions keep running and stay
+            separate, per-tab views, list/status updates, restart restores the list.
+      - [ ] **3n2. UI** — routes with React Router (owner request): `/` = Home (prompt +
+            Recent list), `/s/:id` = a session's conversation (bookmarkable, refresh-safe); the
+            logo links to `/`; sending from Home navigates to the new session's URL. Collapsible
+            sessions sidebar (owner's design); status dots. Server answers deep links with
+            `index.html` (SPA fallback, tested). Verified with real `claude`, two sessions at once.
     - [ ] **3c2. Conversation** — move UI state into a Zustand store (D39); AI Elements chat: prompts as bubbles, replies via Streamdown,
           tool calls as Trace, permission asks as Approve/Deny (Confirmation), bottom prompt box
           with Stop. Accept: live demo with real `claude` incl. an approval; refresh keeps a

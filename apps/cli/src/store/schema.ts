@@ -13,6 +13,8 @@ export const sessions = sqliteTable(
     id: text("id").primaryKey(),
     projectDir: text("project_dir").notNull(),
     agent: text("agent").notNull(),
+    /** The session's first prompt, shown in the Recent list / sidebar (D41). */
+    title: text("title"),
     /** Set the first time the agent process starts; from then on, starts must resume. */
     agentStartedAt: integer("agent_started_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

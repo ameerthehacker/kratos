@@ -84,4 +84,22 @@ describe("SessionStore", () => {
     expect(startedAt).not.toBeNull();
     expect(reopened.load(session.id)).toEqual([prompt("remember me")]);
   });
+
+  it("lists a project's sessions newest first (ties → later created), with first-prompt titles", () => {
+    const store = openStore();
+    const a = store.create("/proj", "Claude Code");
+    const b = store.create("/proj", "Claude Code"); // same millisecond as `a` (fake clock)
+    store.create("/other", "Claude Code");
+    expect(store.list("/proj").map((s) => s.id)).toEqual([b.id, a.id]);
+    expect(store.latestOrCreate("/proj", "Claude Code").id).toBe(b.id);
+
+    store.setTitle(a.id, "first prompt");
+    store.setTitle(a.id, "second prompt"); // only the first one sticks
+    expect(store.get(a.id)?.title).toBe("first prompt");
+    expect(store.get("missing")).toBeUndefined();
+
+    later();
+    store.append(a.id, prompt("activity")); // activity moves it to the top
+    expect(store.list("/proj").map((s) => s.id)).toEqual([a.id, b.id]);
+  });
 });

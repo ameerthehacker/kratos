@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ReadyState } from "react-use-websocket";
 // CJS-only package: import the named hook from its module file (D11).
 import { useWebSocket } from "react-use-websocket/dist/lib/use-websocket";
-import { ServerMessage, WS_PATH, type ClientMessage } from "@kratos/core";
+import { ServerMessage, WS_PATH, type ClientMessage, type SessionSummary } from "@kratos/core";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 
@@ -15,6 +15,7 @@ const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.ho
 export function useKratos() {
   const [log, setLog] = useState<ServerMessage[]>([]);
   const [info, setInfo] = useState<ServerInfo>();
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   const { sendJsonMessage, readyState } = useWebSocket(WS_URL, {
     shouldReconnect: () => true,
@@ -30,6 +31,8 @@ export function useKratos() {
       if (!parsed.success) return console.warn("kratos: unknown message", event.data);
       const message = parsed.data;
       if (message.type === "pong") setInfo(message);
+      else if (message.type === "session") setLog([]); // a (new) session's log follows from scratch
+      else if (message.type === "sessions") setSessions(message.list);
       else if (message.type === "error") console.warn("kratos:", message.message);
       else setLog((prev) => [...prev, message]);
     },
@@ -39,6 +42,7 @@ export function useKratos() {
     connected: readyState === ReadyState.OPEN,
     info,
     log,
+    sessions,
     send: (message: ClientMessage) => sendJsonMessage(message),
   };
 }

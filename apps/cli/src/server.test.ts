@@ -38,8 +38,9 @@ const is = <K extends ServerMessage["type"]>(type: K) => (m: ServerMessage): m i
   m.type === type;
 const turnEnd = (m: ServerMessage): m is Extract<ServerMessage, { type: "agent_event" }> =>
   m.type === "agent_event" && m.event.kind === "turn_end";
+/** Message types in order; session-list updates (sent whenever a status changes) left out. */
 const summary = (messages: ServerMessage[]) =>
-  messages.map((m) => (m.type === "agent_event" ? `agent_event:${m.event.kind}` : m.type));
+  messages.filter((m) => m.type !== "sessions").map((m) => (m.type === "agent_event" ? `agent_event:${m.event.kind}` : m.type));
 
 describe("kratos server", () => {
   it("runs a prompt with a permission round trip over WebSocket, and replays it to a late tab", async () => {
@@ -49,8 +50,8 @@ describe("kratos server", () => {
     let disconnects = 0;
     const connect = hub.connect.bind(hub);
     vi.spyOn(hub, "connect").mockImplementation((send) => {
-      const disconnect = connect(send);
-      return () => (disconnects++, disconnect());
+      const tab = connect(send);
+      return { ...tab, disconnect: () => (disconnects++, tab.disconnect()) };
     });
     const hubClose = vi.spyOn(hub, "close");
     const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code" });
@@ -73,12 +74,12 @@ describe("kratos server", () => {
         "agent_event:tool_result",
         "agent_event:turn_end",
       ];
-      expect(summary(tab.messages)).toEqual(["pong", ...conversation]);
+      expect(summary(tab.messages)).toEqual(["session", "pong", ...conversation]);
       expect(tab.messages.find(is("permission_resolved"))).toMatchObject({ id: ask.id, outcome: "allowed" });
 
       const late = await openTab(server.port); // no ping: the replay arrives on connect by itself
       await late.waitFor(turnEnd);
-      expect(summary(late.messages)).toEqual(conversation);
+      expect(summary(late.messages)).toEqual(["session", ...conversation]);
       late.close();
       await vi.waitFor(() => expect(disconnects).toBe(1));
 

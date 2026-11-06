@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { AgentAdapter, AgentEvent, AgentSession, PermissionRequest, ServerMessage } from "@kratos/core";
+import type { AgentAdapter, AgentEvent, AgentSession, PermissionRequest, ServerMessage, SessionSummary } from "@kratos/core";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0)); // let event pumps run
+const WRITE: PermissionRequest = { tool: "Write", input: { file_path: "a.txt" } };
 
 /** In-memory agent session the test drives by hand: emit events, raise asks, end it. */
 class FakeSession implements AgentSession {
@@ -30,53 +33,77 @@ class FakeSession implements AgentSession {
     const abort = new AbortController();
     return { decision: this.options.requestPermission(request, { signal: abort.signal }), withdraw: () => abort.abort() };
   }
+  get id() {
+    return this.options.conversation!.id;
+  }
 }
 
 function setup() {
-  const sessions: FakeSession[] = [];
+  const agents: FakeSession[] = [];
   const adapter: AgentAdapter = {
     id: "fake",
     displayName: "Fake",
     startSession: (options) => {
-      const session = new FakeSession(options);
-      sessions.push(session);
-      return session;
+      const agent = new FakeSession(options);
+      agents.push(agent);
+      return agent;
     },
   };
   const store = SessionStore.open(":memory:");
   let hub = new SessionHub(adapter, "/projects/demo", store);
-  /** Connects to the current hub (the restarted one, after restart()). */
+
+  /** A browser tab on the current hub. Like the real UI: its log clears when it switches session. */
   const tab = () => {
-    const seen: ServerMessage[] = [];
-    const disconnect = hub.connect((m) => seen.push(m));
-    return { seen, disconnect };
+    const state = { seen: [] as ServerMessage[], sessionIds: [] as string[], list: [] as SessionSummary[] };
+    const handle = hub.connect((m) => {
+      if (m.type === "session") {
+        state.sessionIds.push(m.id);
+        state.seen = [];
+      } else if (m.type === "sessions") state.list = m.list;
+      else state.seen.push(m);
+    });
+    return {
+      ...handle,
+      get seen() {
+        return state.seen;
+      },
+      get list() {
+        return state.list;
+      },
+      /** The session this tab views now. */
+      get viewing() {
+        return state.sessionIds.at(-1)!;
+      },
+      lastAskId: () => state.seen.findLast((m): m is Extract<ServerMessage, { type: "permission_request" }> => m.type === "permission_request")!.id,
+    };
   };
-  /** Simulate a kratos restart: a new hub over the same database; the old agent process is gone. */
+  /** Simulate a kratos restart: a new hub over the same database; old agent processes are gone. */
   const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store));
-  return { hub, sessions, tab, restart };
+  return {
+    agents,
+    tab,
+    restart,
+    get hub() {
+      return hub;
+    },
+  };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0)); // let the event pump run
-const WRITE: PermissionRequest = { tool: "Write", input: { file_path: "a.txt" } };
-const lastRequestId = (seen: ServerMessage[]) => {
-  const ask = seen.findLast((m) => m.type === "permission_request");
-  return ask?.type === "permission_request" ? ask.id : "";
-};
+const status = (list: SessionSummary[], id: string) => list.find((s) => s.id === id)?.status;
 
-describe("SessionHub", () => {
-  it("starts the agent on the first prompt in the project dir and broadcasts to every tab", async () => {
-    const { hub, sessions, tab } = setup();
+describe("SessionHub: one session", () => {
+  it("starts the agent on the first prompt and streams to every tab viewing the session", async () => {
+    const { agents, tab } = setup();
     const a = tab();
     const b = tab();
-    expect(sessions).toHaveLength(0);
+    expect(a.viewing).toBe(b.viewing); // new tabs open the most recent session
+    expect(agents).toHaveLength(0);
 
-    hub.receive({ type: "prompt", text: "hi" });
-    sessions[0]!.emit({ kind: "text", text: "hello" });
+    a.receive({ type: "prompt", text: "hi" });
+    agents[0]!.emit({ kind: "text", text: "hello" });
     await tick();
 
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]!.options.cwd).toBe("/projects/demo");
-    expect(sessions[0]!.prompts).toEqual(["hi"]);
+    expect(agents[0]!.options).toMatchObject({ cwd: "/projects/demo", conversation: { id: a.viewing, resume: false } });
     const expected = [
       { type: "user_prompt", text: "hi" },
       { type: "agent_event", event: { kind: "text", text: "hello" } },
@@ -84,121 +111,205 @@ describe("SessionHub", () => {
     expect(a.seen).toEqual(expected);
     expect(b.seen).toEqual(expected);
 
-    // Later prompts continue the same conversation (same agent session).
-    hub.receive({ type: "prompt", text: "again" });
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]!.prompts).toEqual(["hi", "again"]);
+    a.receive({ type: "prompt", text: "again" }); // same conversation, same agent
+    expect(agents).toHaveLength(1);
+    expect(agents[0]!.prompts).toEqual(["hi", "again"]);
   });
 
-  it("replays the whole log to a tab that connects later, including a pending ask it can answer", async () => {
-    const { hub, sessions, tab } = setup();
+  it("replays the log to a late tab, incl. an ask that waited while no tab was open", async () => {
+    const { agents, tab } = setup();
     const a = tab();
-    hub.receive({ type: "prompt", text: "edit a.txt" });
-    const { decision } = sessions[0]!.ask(WRITE);
-    a.disconnect(); // every tab gone: the ask must stay pending (no auto-deny)
+    a.receive({ type: "prompt", text: "edit a.txt" });
+    const { decision } = agents[0]!.ask(WRITE);
+    a.disconnect();
 
     const late = tab();
     expect(late.seen.map((m) => m.type)).toEqual(["user_prompt", "permission_request"]);
-    hub.receive({ type: "permission_decision", id: lastRequestId(late.seen), decision: { decision: "allow" } });
+    late.receive({ type: "permission_decision", id: late.lastAskId(), decision: { decision: "allow" } });
     await expect(decision).resolves.toEqual({ decision: "allow" });
   });
 
-  it("first decision wins, everyone sees one resolution, and stale or unknown answers are ignored", async () => {
-    const { hub, sessions, tab } = setup();
+  it("first decision wins, everyone sees one resolution, stale and unknown answers are ignored", async () => {
+    const { agents, tab } = setup();
     const a = tab();
     const b = tab();
-    hub.receive({ type: "prompt", text: "edit" });
-    const { decision } = sessions[0]!.ask(WRITE);
-    const id = lastRequestId(a.seen);
+    a.receive({ type: "prompt", text: "edit" });
+    const { decision } = agents[0]!.ask(WRITE);
+    const id = a.lastAskId();
 
-    hub.receive({ type: "permission_decision", id, decision: { decision: "deny", message: "not there" } });
-    hub.receive({ type: "permission_decision", id, decision: { decision: "allow" } }); // too late
-    hub.receive({ type: "permission_decision", id: "no-such-ask", decision: { decision: "allow" } });
+    a.receive({ type: "permission_decision", id, decision: { decision: "deny", message: "not there" } });
+    b.receive({ type: "permission_decision", id, decision: { decision: "allow" } });
+    b.receive({ type: "permission_decision", id: "no-such-ask", decision: { decision: "allow" } });
 
     await expect(decision).resolves.toEqual({ decision: "deny", message: "not there" });
-    for (const seen of [a.seen, b.seen]) {
-      expect(seen.filter((m) => m.type === "permission_resolved")).toEqual([
-        { type: "permission_resolved", id, outcome: "denied" },
-      ]);
+    for (const t of [a, b]) {
+      expect(t.seen.filter((m) => m.type === "permission_resolved")).toEqual([{ type: "permission_resolved", id, outcome: "denied" }]);
     }
   });
 
-  it("marks an ask withdrawn by the agent as cancelled and ignores answers to it", async () => {
-    const { hub, sessions, tab } = setup();
+  it("marks an ask withdrawn by the agent as cancelled and ignores answers to it", () => {
+    const { agents, tab } = setup();
     const a = tab();
-    hub.receive({ type: "prompt", text: "edit" });
-    const { withdraw } = sessions[0]!.ask(WRITE);
-    const id = lastRequestId(a.seen);
-
+    a.receive({ type: "prompt", text: "edit" });
+    const { withdraw } = agents[0]!.ask(WRITE);
+    const id = a.lastAskId();
     withdraw();
-    hub.receive({ type: "permission_decision", id, decision: { decision: "allow" } });
-    expect(a.seen.filter((m) => m.type === "permission_resolved")).toEqual([
-      { type: "permission_resolved", id, outcome: "cancelled" },
-    ]);
+    a.receive({ type: "permission_decision", id, decision: { decision: "allow" } });
+    expect(a.seen.filter((m) => m.type === "permission_resolved")).toEqual([{ type: "permission_resolved", id, outcome: "cancelled" }]);
   });
 
-  it("close() withdraws open asks and stops the agent session", async () => {
-    const { hub, sessions, tab } = setup();
+  it("forwards interrupts, and resumes the same conversation after the agent ended", async () => {
+    const { agents, tab } = setup();
     const a = tab();
-    hub.receive({ type: "prompt", text: "edit" });
-    const { decision } = sessions[0]!.ask(WRITE);
+    a.receive({ type: "interrupt" }); // nothing running yet: ignored
+    a.receive({ type: "prompt", text: "one" });
+    a.receive({ type: "interrupt" });
+    expect(agents[0]!.interrupts).toBe(1);
 
-    await hub.close();
-    await expect(decision).resolves.toMatchObject({ decision: "deny" });
-    expect(a.seen.at(-1)).toMatchObject({ type: "permission_resolved", outcome: "cancelled" });
-    expect(sessions[0]!.stopped).toBe(true);
+    await agents[0]!.stop(); // e.g. the CLI crashed
+    await tick();
+    a.receive({ type: "prompt", text: "two" });
+    expect(agents[1]!.options.conversation).toEqual({ id: a.viewing, resume: true });
   });
 
-  it("forwards interrupts, and starts a fresh agent session after the old one ended", async () => {
-    const { hub, sessions } = setup();
-    hub.receive({ type: "interrupt" }); // nothing running yet: ignored
-    hub.receive({ type: "prompt", text: "one" });
-    hub.receive({ type: "interrupt" });
-    expect(sessions[0]!.interrupts).toBe(1);
-
-    await sessions[0]!.stop(); // e.g. the CLI crashed
+  it("reports a failing interrupt instead of crashing the server", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "one" });
+    agents[0]!.interrupt = async () => {
+      throw new Error("process stuck");
+    };
+    a.receive({ type: "interrupt" });
     await tick();
-    hub.receive({ type: "prompt", text: "two" });
-    expect(sessions).toHaveLength(2);
-    expect(sessions[1]!.prompts).toEqual(["two"]);
-    // Same conversation, continued — not a second "new" start under the same id.
-    expect(sessions[1]!.options.conversation).toEqual({ id: sessions[0]!.options.conversation!.id, resume: true });
+    expect(a.seen).toContainEqual({ type: "error", message: "Interrupt failed: Error: process stuck" });
   });
 });
 
-describe("SessionHub across restarts (persistence, D36)", () => {
-  it("replays the stored conversation after a restart, and the agent resumes it", async () => {
-    const { hub, sessions, tab, restart } = setup();
-    hub.receive({ type: "prompt", text: "remember this" });
-    sessions[0]!.emit({ kind: "text", text: "ok" });
-    await tick();
-    expect(sessions[0]!.options.conversation).toMatchObject({ resume: false });
-    const id = sessions[0]!.options.conversation!.id;
+describe("SessionHub: sessions side by side (D41)", () => {
+  it("a new session from Home leaves the running one untouched and keeps their logs apart", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const watcher = tab(); // stays on the first session
+    a.receive({ type: "prompt", text: "first task" });
+    const first = agents[0]!;
+    const { decision } = first.ask(WRITE);
+    const firstAsk = a.lastAskId();
+    const firstId = a.viewing;
 
-    const restarted = restart();
-    expect(tab().seen).toEqual([
-      { type: "user_prompt", text: "remember this" },
-      { type: "agent_event", event: { kind: "text", text: "ok" } },
-    ]);
-    expect(sessions).toHaveLength(1); // nothing starts until someone prompts
-    restarted.receive({ type: "prompt", text: "what was it?" });
-    expect(sessions[1]!.options.conversation).toEqual({ id, resume: true });
+    a.receive({ type: "prompt", text: "second task", newSession: true });
+    expect(a.viewing).not.toBe(firstId); // only this tab moved…
+    expect(watcher.viewing).toBe(firstId); // …the other keeps watching its session
+    expect(first.stopped).toBe(false); // the first agent keeps running
+    expect(agents[1]!.options.conversation).toEqual({ id: a.viewing, resume: false });
+    expect(a.seen).toEqual([{ type: "user_prompt", text: "second task" }]);
+
+    first.emit({ kind: "text", text: "still working on the first task" });
+    await tick();
+    expect(watcher.seen).toContainEqual({ type: "agent_event", event: { kind: "text", text: "still working on the first task" } });
+    expect(a.seen).toEqual([{ type: "user_prompt", text: "second task" }]); // nothing leaked across
+
+    // The first session's ask is still open and can be answered from any tab.
+    a.receive({ type: "permission_decision", id: firstAsk, decision: { decision: "allow" } });
+    await expect(decision).resolves.toEqual({ decision: "allow" });
   });
 
-  it("cancels asks the previous run left open, and ignores answers to them", () => {
-    const { hub, sessions, tab, restart } = setup();
-    hub.receive({ type: "prompt", text: "edit" });
-    sessions[0]!.ask(WRITE); // still waiting when kratos "restarts"
+  it("opens any session of the project in a tab, replaying its log; rejects unknown ids", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    const firstId = a.viewing;
+    a.receive({ type: "prompt", text: "second task", newSession: true });
 
-    const restarted = restart();
+    a.receive({ type: "open_session", id: firstId });
+    expect(a.viewing).toBe(firstId);
+    expect(a.seen).toEqual([{ type: "user_prompt", text: "first task" }]);
+
+    a.receive({ type: "open_session", id: "nope" });
+    expect(a.viewing).toBe(firstId);
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("keeps every tab's session list current: titles, newest first, live status", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    const firstId = a.viewing;
+    expect(status(b.list, firstId)).toBe("working");
+
+    agents[0]!.ask(WRITE);
+    expect(status(b.list, firstId)).toBe("needs_approval");
+    a.receive({ type: "permission_decision", id: a.lastAskId(), decision: { decision: "allow" } });
+    expect(status(b.list, firstId)).toBe("working");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(status(b.list, firstId)).toBe("idle");
+
+    a.receive({ type: "prompt", text: "second task", newSession: true });
+    expect(b.list.map((s) => s.title)).toEqual(["second task", "first task"]);
+  });
+
+  it("uses the viewed session when it has no prompts yet, instead of creating another", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const id = a.viewing;
+    a.receive({ type: "prompt", text: "hello", newSession: true });
+    expect(a.viewing).toBe(id);
+    expect(agents[0]!.id).toBe(id);
+  });
+
+  it("close() withdraws every session's asks and stops every agent", async () => {
+    const t = setup();
+    const a = t.tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "second", newSession: true });
+    const asks = t.agents.map((agent) => agent.ask(WRITE).decision);
+
+    await t.hub.close();
+    for (const decision of asks) await expect(decision).resolves.toMatchObject({ decision: "deny" });
+    expect(t.agents.map((agent) => agent.stopped)).toEqual([true, true]);
+  });
+});
+
+describe("SessionHub across restarts (D36, D41)", () => {
+  it("restores the session list and the latest session; the agent resumes its conversation", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    a.receive({ type: "prompt", text: "second task", newSession: true });
+    agents[1]!.emit({ kind: "text", text: "ok" });
+    await tick();
+    const secondId = a.viewing;
+
+    restart();
     const late = tab();
-    const id = lastRequestId(late.seen);
-    expect(late.seen.at(-1)).toEqual({ type: "permission_resolved", id, outcome: "cancelled" });
+    expect(late.viewing).toBe(secondId);
+    expect(late.seen).toEqual([
+      { type: "user_prompt", text: "second task" },
+      { type: "agent_event", event: { kind: "text", text: "ok" } },
+    ]);
+    expect(late.list.map((s) => [s.title, s.status])).toEqual([
+      ["second task", "idle"],
+      ["first task", "idle"],
+    ]);
+    late.receive({ type: "prompt", text: "what was it?" });
+    expect(agents.at(-1)!.options.conversation).toEqual({ id: secondId, resume: true });
+  });
 
-    restarted.receive({ type: "permission_decision", id, decision: { decision: "allow" } });
+  it("cancels asks a previous run left open, once, and ignores answers to them", () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "edit" });
+    agents[0]!.ask(WRITE);
+
+    restart();
+    const late = tab();
+    const id = late.lastAskId();
+    expect(late.seen.at(-1)).toEqual({ type: "permission_resolved", id, outcome: "cancelled" });
+    late.receive({ type: "permission_decision", id, decision: { decision: "allow" } });
     expect(late.seen.filter((m) => m.type === "permission_resolved")).toHaveLength(1);
 
-    restart(); // a second restart must not cancel it again
+    restart();
     expect(tab().seen.filter((m) => m.type === "permission_resolved")).toHaveLength(1);
   });
 });

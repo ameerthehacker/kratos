@@ -156,6 +156,25 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D41. Sessions run side by side; each tab views one (step 3n, owner) — revises D32
+- Owner: starting new work must not cancel a running session. So a project has many sessions;
+  each keeps its own `claude` process, log and pending asks, and they run concurrently.
+- Owner choices: each tab views its own session (starting new work moves only that tab; new tabs
+  open the most recent session); sessions are reachable from the Recent list on Home *and* the
+  design's sessions sidebar, both with live status.
+- Design (my calls): `SessionRuntime` owns one session (today's hub logic); `SessionHub` is the
+  registry + per-tab subscriptions, loading runtimes lazily from the store. Status is derived
+  live — `needs_approval` (an ask is open) > `working` (a turn is in progress) > `idle`; not
+  persisted (after a restart every session is idle and asks were cancelled, D36). A session's
+  title is its first prompt, stored in a new `title` column. Ask ids are UUIDs, so a decision
+  from any tab is routed to whichever session owns the ask.
+- Superseded: D32's "one shared session per server" and "all tabs follow". Kept from D32: a
+  session's log is replayed to every tab that opens it; first decision wins; asks survive tabs
+  closing.
+- Discarded draft: a first 3n version stopped the old agent and cancelled its asks on switch —
+  replaced before commit after the owner's correction. Kept from it: never leave an agent
+  `stop()`/`interrupt()` promise unhandled (an adapter rejection would crash Node by default).
+
 ### D40. `pnpm dev`: server + UI together, in a throwaway dev project (owner request)
 - Root `dev` = `turbo run dev` (persistent, after `^build`): `apps/cli` via `tsx watch`
   (restarts on server changes; Node 24's own type stripping can't map our `.js` import paths),

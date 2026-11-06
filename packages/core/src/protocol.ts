@@ -11,7 +11,11 @@ import { AgentEvent, PermissionDecision, PermissionRequest } from "./agent.js";
 
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("prompt"), text: z.string().min(1) }),
+  /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
+   * session for it instead and moves this tab there; other sessions keep running (D41). */
+  z.object({ type: z.literal("prompt"), text: z.string().min(1), newSession: z.boolean().optional() }),
+  /** View another session in this tab: answered with `session` + that session's replay. */
+  z.object({ type: z.literal("open_session"), id: z.string() }),
   z.object({ type: z.literal("interrupt") }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
@@ -20,8 +24,21 @@ export const ClientMessage = z.discriminatedUnion("type", [
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
 
-/** Server → browser. Everything except pong/error is in the session log replayed to new tabs. */
+/** A session as shown in the Recent list / sidebar. Status is live: needs_approval > working > idle. */
+export const SessionSummary = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  status: z.enum(["idle", "working", "needs_approval"]),
+  updatedAt: z.number(),
+});
+export type SessionSummary = z.infer<typeof SessionSummary>;
+
+/** Server → browser. Everything except pong/error/session/sessions is in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
+  /** The session this tab now views; its log replay follows. On a new id, clear the log. */
+  z.object({ type: z.literal("session"), id: z.string() }),
+  /** All of this project's sessions, most recent first: on connect and whenever one changes. */
+  z.object({ type: z.literal("sessions"), list: z.array(SessionSummary) }),
   /** Reply to `ping`: server info + timestamp. */
   z.object({
     type: z.literal("pong"),

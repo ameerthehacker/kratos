@@ -14,6 +14,9 @@ const MIGRATIONS = fileURLToPath(new URL("../../drizzle", import.meta.url));
 
 export type StoredSession = typeof sessions.$inferSelect;
 
+/** Most recently active first; a tie (same millisecond) goes to the later-created session. */
+const NEWEST_FIRST = [desc(sessions.updatedAt), desc(sql`rowid`)];
+
 /** Kratos's SQLite database: sessions and their message logs (D36). Synchronous, like SQLite. */
 export class SessionStore {
   private constructor(
@@ -44,10 +47,28 @@ export class SessionStore {
       .select()
       .from(sessions)
       .where(eq(sessions.projectDir, projectDir))
-      .orderBy(desc(sessions.updatedAt))
+      .orderBy(...NEWEST_FIRST)
       .limit(1)
       .get();
     return latest ?? this.create(projectDir, agent);
+  }
+
+  get(sessionId: string): StoredSession | undefined {
+    return this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+  }
+
+  /** A project's sessions, most recently active first. */
+  list(projectDir: string): StoredSession[] {
+    return this.db.select().from(sessions).where(eq(sessions.projectDir, projectDir)).orderBy(...NEWEST_FIRST).all();
+  }
+
+  /** Give a session its title (its first prompt). Only the first call has an effect. */
+  setTitle(sessionId: string, title: string): void {
+    this.db
+      .update(sessions)
+      .set({ title })
+      .where(and(eq(sessions.id, sessionId), isNull(sessions.title)))
+      .run();
   }
 
   /** A session's log, in the order it was published. */

@@ -10,7 +10,7 @@ export const DEFAULT_HOST = "127.0.0.1";
 /** Built UI lives in apps/web/dist; this file runs from apps/cli/dist. */
 const WEB_DIST = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 
-/** Serves the UI and connects every browser tab (one WebSocket each) to the shared session hub. */
+/** Serves the UI and connects every browser tab (one WebSocket each) to the session hub. */
 export async function startServer(options: {
   port: number;
   /** Interface to listen on (D33). Default loopback: anyone who can connect can drive the agent. */
@@ -26,8 +26,8 @@ export async function startServer(options: {
   await app.register(fastifyWebsocket);
 
   app.get(WS_PATH, { websocket: true }, (socket) => {
-    const disconnect = hub.connect((message) => send(socket, message)); // replays the log first
-    socket.on("close", disconnect);
+    const tab = hub.connect((message) => send(socket, message)); // shows the latest session first
+    socket.on("close", tab.disconnect);
 
     socket.on("message", (raw) => {
       const parsed = ClientMessage.safeParse(safeJson(String(raw)));
@@ -36,7 +36,7 @@ export async function startServer(options: {
       } else if (parsed.data.type === "ping") {
         send(socket, { type: "pong", at: Date.now(), serverVersion: "0.0.0", cwd: options.cwd, agent: options.agent });
       } else {
-        hub.receive(parsed.data);
+        tab.receive(parsed.data);
       }
     });
   });

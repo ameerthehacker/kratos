@@ -22,7 +22,7 @@ UI, running Claude Code, enforcing plan → scoped step → proof → walkthroug
       `packages/adapter-claude-code`. Split per D24: this step = `protocol.ts` + `index.ts`.
       Accept: a throwaway script sends prompts and prints normalized events (deny, allow,
       multi-turn, interrupt).
-- [ ] **2c. Demo script** — `pnpm --filter @kratos/adapter-claude-code demo "<prompt>"`; owner
+- [x] **2c. Demo script** — `pnpm --filter @kratos/adapter-claude-code demo --cwd <dir> "<prompt>"`; owner
       answers permission prompts in the terminal. Scope: `src/demo.ts` (already drafted).
 - [x] **2b. Budget system v2** (D24) — budgets measure review load (insertions, in-scope files,
       config/lockfiles/docs excluded); steps declare an `estimate` up front; warn at 80%; over

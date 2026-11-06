@@ -156,6 +156,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D25. Demo requires an explicit `--cwd` (step 2c)
+- Found: pnpm runs package scripts from the package folder and `INIT_CWD` isn't set, so a
+  "current dir" default made Claude act inside `packages/adapter-claude-code`.
+- Decision: `demo --cwd <dir> "<prompt>"`, required, echoed before anything runs ("Claude Code will
+  act in: …"). Parsed with Node's built-in `parseArgs` — one flag in a dev script doesn't need
+  commander (D10 covers the user-facing `kratos` CLI).
+- Carry into step 3: the Kratos server must also take the target project dir explicitly.
+
 ### D24. Budget system v2: review load, estimate first, graduated response (step 2b, owner)
 - Problem: step 2 hit the budget three times — budgets were guessed then only checked mid-edit,
   counted deleted/replaced lines and config, counted other steps' WIP (whole-tree diff), and had

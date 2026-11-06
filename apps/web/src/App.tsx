@@ -1,47 +1,66 @@
-import { useEffect, useState } from "react";
-import { ReadyState } from "react-use-websocket";
-// The package is CJS-only and exposes the hook as `default`, which Vite 8 (Node-style interop)
-// hands us as the whole module object. Its named export from the module file works everywhere.
-import { useWebSocket } from "react-use-websocket/dist/lib/use-websocket";
-import { ServerMessage, WS_PATH, type ClientMessage } from "@kratos/core";
-
-const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${WS_PATH}`;
-
-const STATUS: Record<ReadyState, string> = {
-  [ReadyState.CONNECTING]: "connecting",
-  [ReadyState.OPEN]: "open",
-  [ReadyState.CLOSING]: "closing",
-  [ReadyState.CLOSED]: "closed",
-  [ReadyState.UNINSTANTIATED]: "idle",
-};
+import type { ServerMessage } from "@kratos/core";
+import { KratosLogo } from "@/components/kratos-logo";
+import { PromptCard } from "@/components/prompt-card";
+import { useKratos } from "@/hooks/use-kratos";
+import { cn } from "@/lib/utils";
 
 export function App() {
-  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(WS_URL, {
-    shouldReconnect: () => true,
-  });
-  const [log, setLog] = useState<ServerMessage[]>([]);
-
-  useEffect(() => {
-    if (lastJsonMessage === null) return;
-    const parsed = ServerMessage.safeParse(lastJsonMessage);
-    if (parsed.success) setLog((prev) => [...prev, parsed.data]);
-    else console.warn("ignoring unknown server message", lastJsonMessage);
-  }, [lastJsonMessage]);
-
-  const ping = () => sendJsonMessage({ type: "ping" } satisfies ClientMessage);
+  const { connected, info, log, send } = useKratos();
+  const agent = info?.agent ?? "Agent";
+  const sendPrompt = (text: string) => send({ type: "prompt", text });
+  const started = log.some((m) => m.type === "user_prompt");
 
   return (
-    <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 720 }}>
-      <h1>Kratos</h1>
-      <p>
-        Server: <strong>{STATUS[readyState]}</strong>{" "}
-        <button onClick={ping} disabled={readyState !== ReadyState.OPEN}>
-          Ping
-        </button>
-      </p>
-      <pre style={{ background: "#f4f4f4", padding: 12 }}>
-        {log.map((m) => JSON.stringify(m)).join("\n")}
-      </pre>
-    </main>
+    <div className="flex min-h-screen flex-col text-[15px] leading-[1.55] antialiased">
+      <header className="flex min-h-16 items-center gap-4 px-6 py-3">
+        <KratosLogo />
+        <span className="flex-1" />
+        {info && <span className="truncate font-mono text-xs text-muted-foreground" title={info.cwd}>{info.cwd}</span>}
+        <span
+          className={cn("size-2 shrink-0 rounded-full", connected ? "bg-primary" : "animate-pulse bg-wait")}
+          title={connected ? "Connected" : "Connecting…"}
+          aria-label={connected ? "Connected" : "Connecting"}
+        />
+      </header>
+
+      {started ? (
+        // 3c1: a bare list; 3c2 replaces it with the AI Elements conversation.
+        <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-6 px-6 pb-8">
+          <ol className="flex flex-1 flex-col gap-3">
+            {log.map((message, i) => (
+              <BareMessage key={i} message={message} />
+            ))}
+          </ol>
+          <PromptCard agent={agent} onSend={sendPrompt} disabled={!connected} rows={2} placeholder="Reply…" />
+        </main>
+      ) : (
+        <main className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-6 pt-[14vh] pb-20">
+          <h1 className="text-center font-heading text-[46px] font-semibold leading-[1.1] tracking-[-0.035em]">
+            What should we build?
+          </h1>
+          <PromptCard
+            agent={agent}
+            onSend={sendPrompt}
+            disabled={!connected}
+            placeholder="Describe the change. Kratos will come back with a plan you can review before anything is built."
+          />
+        </main>
+      )}
+    </div>
   );
+}
+
+function BareMessage({ message }: { message: ServerMessage }) {
+  if (message.type === "user_prompt") {
+    return <li className="self-end rounded-2xl bg-secondary px-4 py-2 whitespace-pre-wrap">{message.text}</li>;
+  }
+  if (message.type === "agent_event" && message.event.kind === "text") {
+    return <li className="whitespace-pre-wrap">{message.event.text}</li>;
+  }
+  const label =
+    message.type === "agent_event" ? message.event.kind.replace("_", " ")
+    : message.type === "permission_request" ? `asks to use ${message.request.tool}`
+    : message.type === "permission_resolved" ? `ask ${message.outcome}`
+    : message.type;
+  return <li className="font-mono text-xs text-muted-foreground">{label}</li>;
 }

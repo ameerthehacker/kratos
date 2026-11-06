@@ -156,6 +156,46 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D40. `pnpm dev`: server + UI together, in a throwaway dev project (owner request)
+- Root `dev` = `turbo run dev` (persistent, after `^build`): `apps/cli` via `tsx watch`
+  (restarts on server changes; Node 24's own type stripping can't map our `.js` import paths),
+  `apps/web` via Vite (HMR, proxies `/ws` → :4317), `core` + adapter via `tsc --watch`.
+- The dev server's agent works in `.dev/project` with history in `.dev/kratos.db` (git-ignored),
+  never in Kratos's own source or the user's real history — turbo runs scripts from the package
+  folder, so "current dir" would have been `apps/cli`. Override: `KRATOS_PROJECT=… KRATOS_DB=…`.
+- UI reconnects every 1s (was react-use-websocket's 5s default) so server restarts recover fast.
+- Verified: both start from one command; UI on :5173 connects through the proxy; touching a
+  server file restarts kratos cleanly (no EADDRINUSE) and the UI reconnects in ~0.3s; stopping
+  leaves no processes and frees both ports.
+
+### D39. UI building blocks (step 3c1)
+- shadcn init: Vite template, `base` component library (Base UI), `nova` preset; brings the
+  `cn` package (shadcn's own clsx + tailwind-merge replacement). Fonts via Fontsource packages,
+  bundled — no Google Fonts request from a local tool.
+- Logo: `src/assets/kratos-logo.svg`, imported as a component via `vite-plugin-svgr`
+  (`?react`) so inlined it follows the theme; colors are CSS variables with the design's dark
+  values as fallbacks, so the file is also a valid standalone SVG. (Owner request.)
+- Connection: `useKratos` reads messages with `onMessage`, not `lastJsonMessage` — the old UI
+  would have dropped all but the last message of a replay burst.
+- State management (owner question): **Zustand, from 3c2** — today only `App` consumes the
+  state; in 3c2 the message list, tool traces, Approve/Deny cards and Stop all need the log,
+  pending asks and `send`, plus derived state. `react-use-websocket` keeps owning the
+  connection and writes into the store; components select slices.
+- TypeScript 7 gotchas: no `baseUrl` (shadcn's Vite guide still adds it; `paths` alone work);
+  `vite-env.d.ts` needed for CSS/SVG imports.
+
+### D38. UI: shadcn + shadcn's AI Elements, owner's Home design, absolute minimum (step 3c, owner)
+- Kit: shadcn/ui with its AI Elements patterns (ui.shadcn.com/docs/ai-elements) — copied into
+  `apps/web/src/components`, decoupled from the AI SDK (state passed as props), so they fit
+  Kratos's own WebSocket protocol. Not the older `elements.ai-sdk.dev` registry: its docs say it
+  moves into shadcn and is deprecated at the end of November 2026.
+- Design: the owner's Kratos design artifact, Home screen — dark tokens (bg #111113, surface
+  #18181B, mint accent #7CCFA6…), Bricolage Grotesque (display), Geist, Geist Mono — mapped onto
+  shadcn's CSS variables.
+- Scope cut: Home + conversation only; replies rendered with Streamdown (owner's choice); no
+  sidebar/Recent (one session per project today, D36), no light theme, deny reasons, thinking or
+  attachments yet.
+
 ### D37. Node 24, enforced (step 3p1, owner)
 - `.nvmrc` = `24`; root `engines.node` = `>=24 <25`; `engineStrict: true` in `pnpm-workspace.yaml`
   so `pnpm install` refuses other versions (verified: Node 22 → `ERR_PNPM_UNSUPPORTED_ENGINE`).

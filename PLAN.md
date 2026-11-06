@@ -102,10 +102,18 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           CLI opens `<user data>/kratos/kratos.db` (env-paths). Tests: restart replays the log
           with the stale ask cancelled and the next prompt resumes the same id. Accept: real
           `claude`: tell it a word, restart kratos, ask for the word — it remembers.
-  - [ ] **3c. Browser UI** (~140) — header with project dir + connection status; prompt box;
-        event log (text, thinking, tool calls with results, turn ends); permission card with
-        Allow / Deny + reason; Interrupt button; rebuilds from replay. Accept: live demo with the
-        real `claude`; refresh keeps the conversation and any pending ask.
+  - [ ] **3c. Browser UI** (D38) — absolute minimum on shadcn + shadcn's AI Elements, following
+        the owner's Home design (dark, mint accent, Bricolage/Geist). Two slices (approved):
+    - [x] **3c1. Setup + Home** — Tailwind v4 + shadcn in `apps/web`, design tokens and fonts;
+          `useKratos` hook (WebSocket, ping→pong info, replayed + live log, send); Home screen
+          (logo header + project folder + connection dot, "What should we build?", prompt card
+          with agent chip + send); after the first prompt, a bare message list. Accept: send a
+          prompt from the browser to real `claude`, refresh keeps it.
+    - [ ] **3c2. Conversation** — move UI state into a Zustand store (D39); AI Elements chat: prompts as bubbles, replies via Streamdown,
+          tool calls as Trace, permission asks as Approve/Deny (Confirmation), bottom prompt box
+          with Stop. Accept: live demo with real `claude` incl. an approval; refresh keeps a
+          pending ask.
+    - Left out: sessions sidebar, Recent, light theme, deny reasons, thinking, attachments.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

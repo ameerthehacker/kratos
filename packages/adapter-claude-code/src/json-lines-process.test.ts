@@ -59,6 +59,16 @@ describe("JsonLinesProcess", () => {
     expect(exit.signal).toBeUndefined();
   });
 
+  it("stops the process when the consumer leaves messages() early, instead of hanging", async () => {
+    // Regression (found in T3): breaking out of the loop used to wait forever for the process.
+    const proc = fake(`process.stdin.resume(); process.stdin.on("end", () => process.exit(0)); console.log('{"n":1}')`);
+    for await (const message of proc.messages()) {
+      expect(message).toEqual({ n: 1 });
+      break;
+    }
+    expect(await proc.exited).toMatchObject({ requested: true, code: 0 });
+  });
+
   it("escalates to SIGKILL when the child ignores stdin close and SIGTERM", async () => {
     const proc = fake(
       `process.on("SIGTERM", () => {}); console.log('{"ready":true}'); setInterval(() => {}, 1000)`,

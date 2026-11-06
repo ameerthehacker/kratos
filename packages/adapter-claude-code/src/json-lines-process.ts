@@ -65,14 +65,23 @@ export class JsonLinesProcess {
     return true;
   }
 
-  /** Parsed stdout lines (non-JSON lines skipped). Ends when the process exits. Iterate once. */
+  /**
+   * Parsed stdout lines (non-JSON lines skipped). Ends when the process exits. Iterate once.
+   * If the consumer stops early (break/return), the process is stopped first: execa's line
+   * iterator only finishes closing once the process has exited, so otherwise it hangs forever.
+   */
   async *messages(): AsyncGenerator<unknown> {
-    for await (const line of this.child) {
-      try {
-        yield JSON.parse(line);
-      } catch {
-        // not a JSON line (e.g. stray log output): ignore
+    const lines = this.child[Symbol.asyncIterator]();
+    try {
+      while (true) {
+        const next = await lines.next();
+        if (next.done) return;
+        const message = parseJson(next.value);
+        if (message !== undefined) yield message;
       }
+    } finally {
+      if (this.running) await this.stop();
+      await lines.return?.();
     }
   }
 
@@ -89,5 +98,14 @@ export class JsonLinesProcess {
       clearTimeout(timer);
     }
     return this.exited;
+  }
+}
+
+/** undefined for lines that aren't JSON (e.g. stray log output); JSON itself never yields it. */
+function parseJson(line: string): unknown {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return undefined;
   }
 }

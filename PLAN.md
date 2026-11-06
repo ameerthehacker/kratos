@@ -51,7 +51,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       behaviour change). Cases: text; empty `thinking` dropped; `tool_use` → tool_call;
       `tool_result` with string / text-array / missing content + `is_error`; unknown block kinds
       skipped; sub-agent messages skipped; `result` success / error subtype / after interrupt.
-- [ ] **T3. Permission gate over the control protocol** (~170, may need an extension) — a small
+- [x] **T3. Permission gate over the control protocol** (~170, may need an extension) — a small
       fake `claude` script (speaks the D23 protocol, scripted by prompt) passed via `claudePath`:
       allow → `control_response` allow with original input; allow + `updatedInput` → forwarded;
       deny → message forwarded; **callback throws → deny (fails closed)**; `control_cancel_request`

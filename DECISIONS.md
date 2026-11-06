@@ -156,6 +156,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D29. Leaving `messages()` early stops the process (bug found by T3)
+- Bug: if a consumer `break`s out of `session.events` without calling `stop()` first, everything
+  hung forever. Closing execa's line iterator waits for the process to exit, but the process only
+  exits when its stdin is closed — which nobody did. Step 3's server (stop reading when a browser
+  disconnects) would have hit this.
+- Fix: `JsonLinesProcess.messages()` iterates execa's lines manually and, in `finally`, stops the
+  process *before* closing the iterator. Regression test in `json-lines-process.test.ts`.
+
+### D30. Gate tests run against a fake `claude` (`test/fake-claude.mjs`) (T3)
+- A ~80-line Node script that speaks the D23 protocol, scripted by prompt (`ask`, `unknown`,
+  `cancel`, `hang`, `crash`), refuses to start without the RPC-mode flags, and reports back what it
+  received as a `tool_result` so tests assert on the real wire messages.
+- Risk: it can drift from the real CLI (tests pass, real runs break). Guard: an opt-in smoke run
+  against the real `claude` (later, see the test plan).
+
 ### D28. Vitest at the root, tests next to code, excluded from builds (T1)
 - `pnpm test` = `vitest run` over the whole repo; `*.test.ts` sits beside the file it tests and is
   excluded from each package's `tsc` build (Vitest transpiles TS itself; tests aren't typechecked

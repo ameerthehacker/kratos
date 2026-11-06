@@ -47,6 +47,8 @@ apps/cli                   `kratos [project-dir]` (commander)
   src/store/               SQLite via Drizzle + better-sqlite3; schema → drizzle/ migrations (D36)
   src/logger.ts            pino: console (pretty, info) + ~/.kratos/logs rotating files (debug) (D44)
 apps/web                   Vite + React UI; react-use-websocket to ws://<host>/ws
+  src/lib/timeline.ts      session log → chat items (prompts, replies, tool steps) (D45)
+  src/components/conversation/  chat view: Streamdown replies, step groups, Shiki commands
 packages/core              zod schemas for the WebSocket protocol + the AgentAdapter interface
 packages/adapter-claude-code
   src/json-lines-process.ts  child-process lifecycle (execa), JSON lines in/out (D26)

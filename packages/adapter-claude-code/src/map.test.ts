@@ -20,8 +20,24 @@ describe("toEvents: assistant messages", () => {
     expect(events).toEqual([
       { kind: "thinking", text: "should use Write" },
       { kind: "text", text: "Writing it now." },
-      { kind: "tool_call", id: "t1", tool: "Write", input: { file_path: "a.txt" } },
+      { kind: "tool_call", id: "t1", tool: "Write", input: { file_path: "a.txt" }, action: { type: "edit", target: "a.txt" } },
     ]);
+  });
+
+  it("describes Claude's tools in agent-neutral actions (D45)", () => {
+    const action = (name: string, input: unknown) => {
+      const [event] = map(assistant({ type: "tool_use", id: "t", name, input }));
+      return event?.kind === "tool_call" ? event.action : undefined;
+    };
+    expect(action("Read", { file_path: "/r/a.ts" })).toEqual({ type: "read", target: "/r/a.ts" });
+    expect(action("Edit", { file_path: "a.ts", old_string: "x", new_string: "y\nz" })).toEqual({
+      type: "edit", target: "a.ts", added: 2, removed: 1,
+    });
+    expect(action("Bash", { command: "pnpm test", description: "Run tests" })).toEqual({
+      type: "run", command: "pnpm test", description: "Run tests",
+    });
+    expect(action("Grep", { pattern: "TODO" })).toEqual({ type: "search", target: "TODO" });
+    expect(action("SomethingNew", {})).toEqual({ type: "other" });
   });
 
   it("skips block kinds Kratos doesn't know, keeping the rest", () => {

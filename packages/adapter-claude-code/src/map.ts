@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@kratos/core";
 import { Block, type CliMessage } from "./protocol.js";
+import { toolAction } from "./tool-action.js";
 
 /**
  * Map one CLI message to our few normalized events; everything else is dropped.
@@ -15,7 +16,9 @@ export function toEvents(msg: CliMessage, interrupted: boolean): AgentEvent[] {
         if (b.type === "text") return [{ kind: "text", text: b.text }];
         // Thinking text can be omitted by the CLI, leaving empty blocks: skip those.
         if (b.type === "thinking") return b.thinking ? [{ kind: "thinking", text: b.thinking }] : [];
-        if (b.type === "tool_use") return [{ kind: "tool_call", id: b.id, tool: b.name, input: b.input }];
+        if (b.type === "tool_use") {
+          return [{ kind: "tool_call", id: b.id, tool: b.name, input: b.input, action: toolAction(b.name, b.input) }];
+        }
         return [];
       });
     case "user": // tool results go back to Claude as a "user" message

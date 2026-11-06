@@ -36,31 +36,33 @@ export function HomePage() {
   const recent = sessions.filter((s) => s.title !== null); // sessions with at least one prompt
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
-      <h1 className="text-center font-heading text-display font-semibold">What should we build?</h1>
-      <PromptCard
-        agent={<AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />}
-        onSend={start}
-        disabled={!connected}
-        placeholder="Describe the change. Kratos will come back with a plan you can review before anything is built."
-      />
-      {recent.length > 0 && (
-        <section aria-labelledby="recent" className="flex flex-col">
-          <h2 id="recent" className="mb-2 text-sm font-medium text-muted-foreground">
-            Recent
-          </h2>
-          {recent.map((session) => (
-            <Link
-              key={session.id}
-              to={`/s/${session.id}`}
-              className="-mx-2.5 flex min-h-12 items-center gap-3 rounded-lg px-2.5 hover:bg-accent"
-            >
-              <span className="flex-1 truncate">{sessionTitle(session)}</span>
-              <SessionStatus status={session.status} />
-            </Link>
-          ))}
-        </section>
-      )}
+    <main className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
+        <h1 className="text-center font-heading text-display font-semibold">What should we build?</h1>
+        <PromptCard
+          agent={<AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />}
+          onSend={start}
+          disabled={!connected}
+          placeholder="Describe the change. Kratos will come back with a plan you can review before anything is built."
+        />
+        {recent.length > 0 && (
+          <section aria-labelledby="recent" className="flex flex-col">
+            <h2 id="recent" className="mb-2 text-sm font-medium text-muted-foreground">
+              Recent
+            </h2>
+            {recent.map((session) => (
+              <Link
+                key={session.id}
+                to={`/s/${session.id}`}
+                className="-mx-2.5 flex min-h-12 items-center gap-3 rounded-lg px-2.5 hover:bg-accent"
+              >
+                <span className="flex-1 truncate">{sessionTitle(session)}</span>
+                <SessionStatus status={session.status} />
+              </Link>
+            ))}
+          </section>
+        )}
+      </div>
     </main>
   );
 }

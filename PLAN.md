@@ -158,11 +158,28 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             session's model. Verified with real `claude`: start on Haiku, switch to Sonnet,
             ask the agent which model it is. Done: also found and fixed two 3L bugs (log folder
             race on first start; session log lines carried `component` twice).
-    - [ ] **3c2. Conversation** — move UI state into a Zustand store (D39); AI Elements chat: prompts as bubbles, replies via Streamdown,
-          tool calls as Trace, permission asks as Approve/Deny (Confirmation), bottom prompt box
-          with Stop. Accept: live demo with real `claude` incl. an approval; refresh keeps a
-          pending ask.
-    - Left out: sessions sidebar, Recent, light theme, deny reasons, thinking, attachments.
+    - [ ] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
+          design's chat — only that part, not its agent pane/workbench). Two vertical slices:
+      - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:
+            your prompts as right-aligned bubbles; the agent's text as markdown (Streamdown);
+            consecutive tool calls grouped under "Claude · N steps" with a "Show raw" toggle;
+            each step = round tinted icon (read / edit / run / think / other) + a plain-words
+            title ("Read session.tsx", "Edited 2 lines in store.ts", "Ran the tests") + chips
+            (file, ✓/✗ result) + raw block when toggled (`$ command` highlighted, output
+            trimmed); thinking as a quiet "think" step; a cut-short turn as an event line.
+            Auto-scroll that sticks to the bottom (use-stick-to-bottom). Composer sticky at the
+            bottom. Accept: real `claude` run that reads, edits and runs a command renders as
+            steps; raw toggle shows the command + output; refresh replays the same view.
+            Done: verified with real `claude` (run → edit → re-run → read, markdown + code block).
+      - [ ] **3c2b. Asks + Stop** (~100) — a pending permission ask as the design's amber
+            "needs a call" card (what it wants to do, in plain words + raw) with Allow / Deny;
+            once settled it's a step ("Asked you: … · Allowed"). Send button turns into Stop
+            while the agent works (`interrupt`). Accept: real run with an approval and a denial;
+            refresh keeps a pending ask; Stop ends a turn.
+    - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
+- [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
+      theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),
+      likely with light/dark. Stored per user (not per project). To be designed with the owner.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

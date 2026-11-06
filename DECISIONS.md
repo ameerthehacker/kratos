@@ -156,6 +156,31 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D45. Conversation view: the owner's chat design, generic tool actions, library rendering (step 3c2a)
+- Owner: render chat messages and tool calls like the shared "Kelpie" design's chat (only that
+  part): prompts as bubbles, replies as plain text, tool calls as "Agent · N steps" groups of
+  plain-words steps (round tinted icon, title, chips) with a "Show raw" toggle.
+- Agent-neutral data: `tool_call` events carry an optional `action` (`read | edit | run | search
+  | web | task | other` + target / command / description / lines added/removed). The Claude
+  adapter derives it from its tool names (`tool-action.ts`); the UI only reads `action`, so it
+  never learns Claude's tool names (CLAUDE.md: only adapters know their agent). Logs from before
+  this have no `action` and show as "Used <tool>". Alternative: map Claude tool names in the web
+  app — rejected, it would tie the UI to one agent.
+- `buildTimeline()` (pure, tested) turns the log into items; a permission ask attaches to the
+  newest unfinished call of the same tool (the CLI sends the call before the ask).
+- Libraries (owner: "don't reinvent"): Streamdown for replies (markdown, safe by default) with its
+  official `@streamdown/code` plugin (Shiki) for code blocks; `react-shiki` (Shiki) for the raw
+  `$ command`, same github-dark theme; `use-stick-to-bottom` to keep the view pinned to new
+  messages. AI Elements (from the earlier plan) is not installed: its look isn't this design,
+  and the two libraries above are what it uses underneath. A hand-rolled command tokenizer
+  written first was replaced by Shiki on the owner's request.
+- Layout: viewport-high; each page scrolls its own content, and the session composer sits below
+  the scroll area (always visible, the design's sticky composer). Shiki makes the bundle large
+  (warning at build); lazy-loading it is a later optimisation.
+- Code theme: one constant + the Streamdown code plugin built from it (`lib/appearance.ts`), so
+  both highlighters always match; owner wants it user-configurable later (PLAN "Settings").
+- Reverse: the components live in `apps/web/src/components/conversation/`; `action` is optional.
+
 ### D44. Logging: pino → console + rotating files in ~/.kratos (step 3L, owner)
 - Owner: replace `console.*` with a proper logger that prints to the console *and* writes rotating
   log files under `~/.kratos` for debugging.

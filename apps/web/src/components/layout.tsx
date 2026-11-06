@@ -13,9 +13,10 @@ export function Layout() {
   const cwd = useKratos((s) => s.info?.cwd);
 
   return (
-    <div className="flex min-h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
+    // Viewport-high: each page scrolls its own content (the conversation pins to the bottom).
+    <div className="flex h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
       <SessionsSidebar />
-      <div className="flex min-w-0 flex-1 flex-col rounded-3xl bg-background">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-3xl bg-background">
         <header className="flex min-h-16 items-center gap-4 px-6 py-3">
           <Link
             to="/"

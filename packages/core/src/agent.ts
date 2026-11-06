@@ -9,13 +9,40 @@ import { z } from "zod";
 // ── Events: what the agent did ──────────────────────────────────────────────────────────
 // Data that crosses to the UI, so it's a zod schema (validated) with an inferred TS type.
 
+/**
+ * What a tool call does, in agent-neutral terms (D45): the adapter knows its agent's tools, the
+ * UI only knows these. Lets the UI say "Read store.ts" or "Ran the tests" without knowing that
+ * Claude calls them `Read` and `Bash`.
+ */
+export const ToolAction = z.object({
+  type: z.enum(["read", "edit", "run", "search", "web", "task", "other"]),
+  /** What it acts on: a file path, search pattern, URL or query. */
+  target: z.string().optional(),
+  /** For `run`: the shell command. */
+  command: z.string().optional(),
+  /** The agent's own one-line summary of the call, if it gave one. */
+  description: z.string().optional(),
+  /** For `edit`: lines written and replaced, when known. */
+  added: z.number().optional(),
+  removed: z.number().optional(),
+});
+export type ToolAction = z.infer<typeof ToolAction>;
+
 export const AgentEvent = z.discriminatedUnion("kind", [
   /** A complete block of the agent's reply (not token-by-token). */
   z.object({ kind: z.literal("text"), text: z.string() }),
   /** The agent's visible reasoning, when the agent exposes it. */
   z.object({ kind: z.literal("thinking"), text: z.string() }),
   /** The agent is calling a tool. `id` links it to its tool_result. */
-  z.object({ kind: z.literal("tool_call"), id: z.string(), tool: z.string(), input: z.unknown() }),
+  z.object({
+    kind: z.literal("tool_call"),
+    id: z.string(),
+    /** The agent's own tool name and input, as-is (shown raw on request). */
+    tool: z.string(),
+    input: z.unknown(),
+    /** Agent-neutral meaning of the call (D45); absent in logs from before it existed. */
+    action: ToolAction.optional(),
+  }),
   z.object({ kind: z.literal("tool_result"), id: z.string(), output: z.string(), isError: z.boolean() }),
   /** The agent finished responding to a prompt. The session stays open for the next send(). */
   z.object({

@@ -59,11 +59,16 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
       breakGroup();
       items.push({ type: "prompt", text: message.text });
     } else if (message.type === "permission_request") {
-      // The ask follows its tool call: attach it to the newest unanswered call of that tool.
-      let step = [...steps.values()].reverse().find((s) => !s.finished && !s.ask && s.tool === message.request.tool);
+      // The ask names its call (3c4); logs from before that are matched to the newest unanswered
+      // call of the same tool. Without any match, the ask still shows, from its own data.
+      const { request } = message;
+      let step = request.toolCallId
+        ? steps.get(request.toolCallId)
+        : [...steps.values()].reverse().find((s) => !s.finished && !s.ask && s.tool === request.tool);
       if (!step) {
-        // No matching call in the log (shouldn't happen): still show the ask, from its own data.
-        step = describe({ kind: "tool_call", id: `ask-${message.id}`, tool: message.request.tool, input: message.request.input }, cwd);
+        const call = { kind: "tool_call" as const, id: request.toolCallId ?? `ask-${message.id}`, tool: request.tool, input: request.input, action: request.action };
+        step = describe(call, cwd);
+        steps.set(call.id, step);
         addStep(step);
       }
       step.ask = { id: message.id, reason: message.request.reason };
@@ -73,7 +78,10 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
       if (step) {
         step.ask = undefined;
         if (message.outcome === "allowed") step.chips.push({ text: "You allowed this", tone: "ok" });
-        if (message.outcome === "denied") step.chips.push({ text: DENIED, tone: "bad" });
+        if (message.outcome === "denied") {
+          step.title = step.intent; // it never happened: "Write b.txt", not "Wrote b.txt"
+          step.chips.push({ text: DENIED, tone: "bad" });
+        }
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
       }
     } else {

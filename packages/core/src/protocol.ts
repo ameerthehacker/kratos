@@ -23,8 +23,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
-  /** Switch the viewed session's model, also while its agent is running (D43). */
-  z.object({ type: z.literal("set_model"), model: z.string() }),
+  /** Switch the viewed session's model, also while its agent is running (D43); null = the
+   * agent's default (3c4). */
+  z.object({ type: z.literal("set_model"), model: z.string().nullable() }),
   z.object({ type: z.literal("interrupt") }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),

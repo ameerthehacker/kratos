@@ -38,7 +38,7 @@ describe("buildTimeline (D45)", () => {
     expect(first.steps.map((s) => [s.kind, s.title, s.chips.map((c) => c.text), s.ask?.id])).toEqual([
       ["think", "Thought it through", [], undefined],
       ["read", "Read a.ts", ["src"], undefined],
-      ["edit", "Edited a.ts", ["src", "+2 −1", "You denied this"], undefined],
+      ["edit", "Edit a.ts", ["src", "+2 −1", "You denied this"], undefined], // denied: never happened
       ["run", "Ran the tests", [], "ask2"], // its ask is still open
     ]);
     expect(first.steps[3]?.intent).toBe("Run the tests");
@@ -48,5 +48,17 @@ describe("buildTimeline (D45)", () => {
     expect(second.steps[0]).toMatchObject({ kind: "other", title: "Used Mystery", raw: { call: 'Mystery {"a":1}', output: "nope" } });
     expect(second.steps[0]?.chips).toEqual([{ text: "Failed", tone: "bad" }]);
     expect(stopped).toEqual({ type: "event", text: "Stopped" });
+  });
+
+  it("attaches asks to their call by id, even two asks for the same tool out of order (3c4)", () => {
+    const call = (id: string, command: string) =>
+      agent({ kind: "tool_call", id, tool: "Bash", input: { command }, action: { type: "run", command } });
+    const ask = (id: string, toolCallId: string) =>
+      ({ type: "permission_request", id, request: { tool: "Bash", input: {}, toolCallId } }) as const;
+    const items = buildTimeline([call("c1", "rm a"), call("c2", "rm b"), ask("ask-for-c1", "c1"), ask("ask-for-c2", "c2")]);
+    expect(openAsks(items).map((s) => [s.id, s.ask?.id])).toEqual([
+      ["c1", "ask-for-c1"],
+      ["c2", "ask-for-c2"],
+    ]);
   });
 });

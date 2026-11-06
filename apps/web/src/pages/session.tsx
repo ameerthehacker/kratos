@@ -49,7 +49,7 @@ export function SessionPage() {
               harnesses={harnesses}
               value={{ harness: session?.harness ?? "", model: session?.model ?? null }}
               // Switches this session's model, live if its agent is running (D43). null = the default.
-              onChange={(choice) => choice.model !== session?.model && send({ type: "set_model", model: choice.model ?? "default" })}
+              onChange={(choice) => choice.model !== session?.model && send({ type: "set_model", model: choice.model })}
               harnessLocked
               disabled={!connected || viewing !== sessionId}
             />

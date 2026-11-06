@@ -156,6 +156,22 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D46. Agent boundary: null = default model, asks name their call (step 3c4, owner)
+- Owner asked whether we're coupled to Claude Code. A check found two leaks: the UI knew
+  Claude's `"default"` model id, and matched asks to steps by tool name + order (true only
+  because Claude sends the call before the ask).
+- Now: "the agent's default" is `null` everywhere outside adapters (`set_model`, session
+  model, `AgentSession.setModel(null)`); the adapter maps it to its agent's own name
+  (Claude: `"default"`) and marks that list entry `isDefault` so the picker can show it.
+  `PermissionRequest` carries `toolCallId` (Claude's `tool_use_id`, checked on the real CLI to
+  equal the `tool_use` block id) and the generic `action`; the timeline attaches asks by id,
+  keeping the name + order match only for logs from before this.
+- Also: a denied step keeps its present-tense title ("Write b.txt · You denied this").
+- Still agent-specific on purpose: raw `tool`/`input` (shown under "Show raw", no logic on it),
+  the Claude logo for harness `claude-code` (presentation), and `apps/cli/src/index.ts`
+  choosing the adapter.
+- Reverse: `toolCallId`/`action`/`isDefault` are optional; `null` could become a sentinel again.
+
 ### D45. Conversation view: the owner's chat design, generic tool actions, library rendering (step 3c2a)
 - Owner: render chat messages and tool calls like the shared "Kelpie" design's chat (only that
   part): prompts as bubbles, replies as plain text, tool calls as "Agent · N steps" groups of

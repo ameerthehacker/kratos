@@ -38,6 +38,8 @@ export const CliMessage = z.discriminatedUnion("type", [
       tool_name: z.string().optional(),
       input: z.record(z.string(), z.unknown()).optional(),
       decision_reason: z.string().optional(),
+      /** Which tool_use block this ask is about (verified on the real CLI, 3c4). */
+      tool_use_id: z.string().optional(),
     }),
   }),
   z.object({ type: z.literal("control_cancel_request"), request_id: z.string() }),

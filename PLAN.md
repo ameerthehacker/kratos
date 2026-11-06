@@ -185,6 +185,22 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             adapter adds the edit text to `action` (`edits: [{before, after}]`, capped).
             Accept: real `claude` write (new file), edit (diff) and bash asks, allow + deny.
             Done: all three verified (write allowed, edit denied, bash allowed).
+      - [x] **3c4. Decouple the last Claude-isms** (~60 + tests, owner asked "are we coupled?")
+            1. Default model = `null` in our protocol: `set_model { model: string | null }`;
+               `AgentSession.setModel(null)` and `startSession` without a model mean "the agent's
+               default". The Claude adapter maps null → its `"default"` id; the adapter's
+               `listModels` marks the default entry (`isDefault`) instead of the UI knowing the
+               `"default"` id. UI: picker and session page send/compare `null` only.
+            2. Asks name their call: `PermissionRequest` gains `toolCallId?` (Claude: its
+               `tool_use_id`, verified on the real CLI — same id as the `tool_use` block) and
+               `action?` (same mapping as tool calls). `buildTimeline` attaches an ask by that
+               id; the tool-name + order match stays only as a fallback for old logs.
+            Scope: core `agent.ts`/`protocol.ts`, adapter `index.ts`/`map`/`fetchModels`,
+            hub/runtime `setModel`, web `agent-picker`, `session.tsx`, `timeline.ts`.
+            Accept: tests for null model start/switch, ask-by-id (incl. two asks for the same
+            tool), and grep shows no `"default"` model id outside the adapter; real `claude`
+            run: switch to Default mid-session, allow/deny an ask. Done (D46): Haiku → Default
+            answered as Opus 5.5 live; stored model NULL; asks stored with their toolCallId.
     - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),

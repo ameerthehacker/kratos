@@ -8,6 +8,7 @@ import {
   type Conversation,
   type RequestPermission,
 } from "@kratos/core";
+import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
@@ -52,12 +53,17 @@ async function fetchModels(claudePath: string): Promise<AgentModel[]> {
       description: m.description ?? "",
       // Aliases ("default", "opus", …) always mean the newest; full ids are pinned versions.
       group: m.value.startsWith("claude-") ? "other" : "latest",
+      // Kratos says "no model chosen" with null; Claude's name for that is this entry (3c4).
+      ...(m.value === CLAUDE_DEFAULT_MODEL ? { isDefault: true } : {}),
     }));
   } finally {
     await proc.stop();
     await reading;
   }
 }
+
+/** Claude's own model id for "its default"; Kratos uses null for that and maps it here (3c4). */
+const CLAUDE_DEFAULT_MODEL = "default";
 
 const CLI_ARGS = [
   "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
@@ -101,7 +107,13 @@ function startSession(
     let response: object;
     try {
       const d = await requestPermission(
-        { tool: request.tool_name, input, reason: request.decision_reason },
+        {
+          tool: request.tool_name,
+          input,
+          reason: request.decision_reason,
+          toolCallId: request.tool_use_id,
+          action: toolAction(request.tool_name, input),
+        },
         { signal: abort.signal },
       );
       response = d.decision === "allow"
@@ -150,7 +162,8 @@ function startSession(
       // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`.
       control.request({ subtype: "interrupt" }).catch(() => {});
     },
-    setModel: async (model) => void (await control.request({ subtype: "set_model", model })), // D43
+    // null = back to the agent's default, which Claude calls "default" (D43, 3c4).
+    setModel: async (model) => void (await control.request({ subtype: "set_model", model: model ?? CLAUDE_DEFAULT_MODEL })),
     async stop() {
       for (const abort of pending.values()) abort.abort();
       await proc.stop();

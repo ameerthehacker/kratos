@@ -61,7 +61,15 @@ describe("Claude Code adapter: permission gate", () => {
     const seen: PermissionRequest[] = [];
     const events = await runTurn("ask", async (req) => (seen.push(req), { decision: "allow" }));
 
-    expect(seen).toEqual([{ tool: "Write", input: WRITE_INPUT, reason: "edits need approval" }]);
+    expect(seen).toEqual([
+      {
+        tool: "Write",
+        input: WRITE_INPUT,
+        reason: "edits need approval",
+        toolCallId: "t1", // the CLI's tool_use_id: the ask names its call (3c4)
+        action: { type: "edit", target: "a.txt", added: 1, edits: [{ before: "", after: "hi" }] },
+      },
+    ]);
     expect(answerSeenByCli(events)).toMatchObject({
       subtype: "success",
       request_id: "r1",
@@ -160,13 +168,13 @@ describe("Claude Code adapter: models (D43)", () => {
     const first = adapter.listModels();
     expect(adapter.listModels()).toBe(first); // cached: no second CLI start
     expect(await first).toEqual([
-      { id: "default", label: "Default (recommended)", description: "Best for everyday tasks", group: "latest" },
+      { id: "default", label: "Default (recommended)", description: "Best for everyday tasks", group: "latest", isDefault: true },
       { id: "haiku", label: "Haiku 5.5", description: "Fastest", group: "latest" },
       { id: "claude-opus-4-8", label: "Opus 4.8", description: "Pinned older version", group: "other" },
     ]);
   });
 
-  it("starts on the chosen model (--model) and switches it live (set_model)", async () => {
+  it("starts on the chosen model (--model), switches it live (set_model), and back to the default", async () => {
     const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
       cwd: process.cwd(),
       requestPermission: async () => ({ decision: "allow" }),
@@ -188,6 +196,9 @@ describe("Claude Code adapter: models (D43)", () => {
       await session.setModel("claude-opus-4-8"); // resolves once the CLI confirms
       session.send("model");
       expect(await nthReport(2)).toBe("claude-opus-4-8");
+      await session.setModel(null); // Kratos's "agent default" → Claude's own name for it (3c4)
+      session.send("model");
+      expect(await nthReport(3)).toBe("default");
     } finally {
       await session.stop();
       await pump;

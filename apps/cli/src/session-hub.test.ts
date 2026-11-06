@@ -31,8 +31,8 @@ class FakeSession implements AgentSession {
   async interrupt() {
     this.interrupts++;
   }
-  readonly modelSwitches: string[] = [];
-  async setModel(model: string) {
+  readonly modelSwitches: (string | null)[] = [];
+  async setModel(model: string | null) {
     this.modelSwitches.push(model);
   }
   async stop() {
@@ -416,6 +416,14 @@ describe("SessionHub: harness & model (D43)", () => {
     const late = tab();
     late.receive({ type: "prompt", text: "after restart" });
     expect(agents.at(-1)!.options).toMatchObject({ model: "claude-opus-4-8", conversation: { resume: true } });
+
+    // Back to the agent's default: null all the way through (3c4) — the next start passes no model.
+    late.receive({ type: "set_model", model: null });
+    expect(agents.at(-1)!.modelSwitches).toEqual([null]);
+    expect(late.list.find((s) => s.id === late.viewing)?.model).toBeNull();
+    restart();
+    tab().receive({ type: "prompt", text: "after second restart" });
+    expect(agents.at(-1)!.options.model).toBeUndefined();
   });
 
   it("rejects a harness it doesn't run, without starting anything", () => {

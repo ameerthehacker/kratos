@@ -78,8 +78,9 @@ export class SessionRuntime {
     this.session?.interrupt().catch(this.reportFailure("Interrupt"));
   }
 
-  /** Use another model from now on: switched live if the agent is running, else at its next start. */
-  setModel(model: string): void {
+  /** Use another model from now on (null = the agent's default): switched live if the agent is
+   * running, else at its next start. */
+  setModel(model: string | null): void {
     this.model = model;
     this.logger.info({ model, live: this.session !== undefined }, "model set");
     this.deps.store.setModel(this.id, model);
@@ -107,7 +108,7 @@ export class SessionRuntime {
       model: this.model ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
-    this.logger.info({ model: this.model ?? "default", resume: this.agentStarted }, "agent started");
+    this.logger.info({ model: this.model ?? "(agent default)", resume: this.agentStarted }, "agent started");
     this.deps.store.markAgentStarted(this.id);
     this.agentStarted = true;
     void this.pump(session);

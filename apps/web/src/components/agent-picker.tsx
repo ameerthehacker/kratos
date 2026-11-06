@@ -15,9 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** The model id the CLI uses for "its own default" — the same as no model chosen (null). */
-const DEFAULT_MODEL = "default";
-
 export type AgentChoice = { harness: string; model: string | null };
 
 /**
@@ -36,8 +33,12 @@ export function AgentPicker(props: {
   const models = harness?.models ?? [];
   const latest = models.filter((m) => m.group === "latest");
   const other = models.filter((m) => m.group === "other");
-  const selected = props.value.model ?? DEFAULT_MODEL;
-  const pickModel = (id: string) => props.onChange({ ...props.value, model: id === DEFAULT_MODEL ? null : id });
+  // No model chosen (null) is shown as the agent's own default entry, whatever its id (3c4).
+  const selected = props.value.model ?? models.find((m) => m.isDefault)?.id ?? "";
+  const pickModel = (id: string) => {
+    const isDefault = models.find((m) => m.id === id)?.isDefault ?? false;
+    props.onChange({ ...props.value, model: isDefault ? null : id });
+  };
 
   return (
     <DropdownMenu>
@@ -121,7 +122,7 @@ function HarnessIcon({ id }: { id: string }) {
 
 /** What the chip shows for a model: its label, the raw id if the agent doesn't list it, or "Default". */
 function modelLabel(models: AgentModel[], id: string | null): string {
-  const found = models.find((m) => m.id === (id ?? DEFAULT_MODEL));
+  const found = models.find((m) => (id === null ? m.isDefault : m.id === id));
   if (found) return shortLabel(found.label);
   return id ?? "Default";
 }

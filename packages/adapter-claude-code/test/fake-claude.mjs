@@ -40,7 +40,7 @@ const turns = {
   // Ask permission for a Write; report exactly what the adapter answered.
   async ask() {
     toolUse();
-    const response = await ask({ subtype: "can_use_tool", tool_name: "Write", input, decision_reason: "edits need approval" });
+    const response = await ask({ subtype: "can_use_tool", tool_name: "Write", input, decision_reason: "edits need approval", tool_use_id: "t1" });
     report(JSON.stringify(response), response.response?.behavior === "deny");
     finish();
   },

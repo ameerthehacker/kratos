@@ -63,6 +63,10 @@ export type AgentEvent = z.infer<typeof AgentEvent>;
 export const PermissionRequest = z.object({
   tool: z.string(),
   input: z.unknown(),
+  /** The `tool_call` event this ask is about, when the agent says (3c4): asks attach by id. */
+  toolCallId: z.string().optional(),
+  /** Agent-neutral meaning of the call (D45), as on `tool_call`. */
+  action: ToolAction.optional(),
   /** Why the agent's own rules wanted a check, if it says. */
   reason: z.string().optional(),
 });
@@ -100,6 +104,8 @@ export const AgentModel = z.object({
   label: z.string(),
   description: z.string(),
   group: z.enum(["latest", "other"]),
+  /** This entry is the agent's own default: choosing it means "no model chosen" (null, 3c4). */
+  isDefault: z.boolean().optional(),
 });
 export type AgentModel = z.infer<typeof AgentModel>;
 
@@ -126,10 +132,10 @@ export interface AgentSession {
   send(prompt: string): void;
   /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
   interrupt(): Promise<void>;
-  /** Switch the running conversation to another model (from listModels). Resolves when the agent
-   * confirms — which it reports on its output, so `events` must be being consumed (the hub always
-   * does). */
-  setModel(model: string): Promise<void>;
+  /** Switch the running conversation to another model (from listModels); `null` = back to the
+   * agent's default (3c4). Resolves when the agent confirms — which it reports on its output, so
+   * `events` must be being consumed (the hub always does). */
+  setModel(model: string | null): Promise<void>;
   /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }

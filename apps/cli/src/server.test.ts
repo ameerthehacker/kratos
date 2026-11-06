@@ -89,7 +89,7 @@ describe("kratos server", () => {
       expect(tab.messages.find(is("permission_resolved"))).toMatchObject({ id: ask.id, outcome: "allowed" });
       // The server's log tells the same story (D44).
       const logged = (msg: string) => lines.find((l) => l.msg === msg);
-      expect(logged("agent started")).toMatchObject({ component: "session", model: "default", resume: false });
+      expect(logged("agent started")).toMatchObject({ component: "session", model: "(agent default)", resume: false });
       expect(raw.filter((l) => l.includes('"agent started"'))[0]!.match(/"component"/g)).toHaveLength(1); // no hub+session
       expect(logged("permission asked")).toMatchObject({ ask: ask.id, tool: "Write" });
       expect(logged("permission settled")).toMatchObject({ ask: ask.id, outcome: "allowed" });

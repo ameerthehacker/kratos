@@ -121,7 +121,7 @@ function HarnessIcon({ id }: { id: string }) {
 }
 
 /** What the chip shows for a model: its label, the raw id if the agent doesn't list it, or "Default". */
-function modelLabel(models: AgentModel[], id: string | null): string {
+export function modelLabel(models: AgentModel[], id: string | null): string {
   const found = models.find((m) => (id === null ? m.isDefault : m.id === id));
   if (found) return shortLabel(found.label);
   return id ?? "Default";

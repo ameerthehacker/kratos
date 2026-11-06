@@ -57,7 +57,7 @@ export function SessionPage() {
           onSend={(text) => send({ type: "prompt", text })}
           onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
           disabled={!connected || viewing !== sessionId}
-          rows={2}
+          size="compact"
           placeholder="Reply…"
         />
       </div>

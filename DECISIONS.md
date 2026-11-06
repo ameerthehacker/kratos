@@ -156,6 +156,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D48. Relative times: date-fns (step 3d1)
+- Recent rows say when a session was last active ("5 minutes ago"). Library-first for dates
+  (CLAUDE.md): `date-fns` `formatDistanceToNowStrict` — tree-shakeable, the common choice.
+  Alternative: the built-in `Intl.RelativeTimeFormat`, which needs hand-picked units/rounding.
+- Reverse: one call in `components/recent-list.tsx`.
+
 ### D47. Copying prompts: copy-to-clipboard (step 3c5, owner)
 - Owner: a copy button on your prompts. Library-first: `copy-to-clipboard` v4 (async; tries the
   Clipboard API, falls back to `execCommand("copy")`; its `window.prompt` last resort is off).

@@ -105,6 +105,9 @@ importers:
       copy-to-clipboard:
         specifier: ^4.0.2
         version: 4.0.2
+      date-fns:
+        specifier: ^4.4.0
+        version: 4.4.0
       diff:
         specifier: ^9.0.0
         version: 9.0.0

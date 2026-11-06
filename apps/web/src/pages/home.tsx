@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
 import { PromptCard } from "@/components/prompt-card";
-import { SessionStatus, sessionTitle } from "@/components/session-status";
+import { RecentList } from "@/components/recent-list";
 import { useHomeChoice } from "@/lib/home-choice";
 import { useKratos } from "@/lib/kratos-store";
 
@@ -43,25 +43,9 @@ export function HomePage() {
           agent={<AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />}
           onSend={start}
           disabled={!connected}
-          placeholder="Describe the change. Kratos will come back with a plan you can review before anything is built."
+          placeholder="Describe a change…"
         />
-        {recent.length > 0 && (
-          <section aria-labelledby="recent" className="flex flex-col">
-            <h2 id="recent" className="mb-2 text-sm font-medium text-muted-foreground">
-              Recent
-            </h2>
-            {recent.map((session) => (
-              <Link
-                key={session.id}
-                to={`/s/${session.id}`}
-                className="-mx-2.5 flex min-h-12 items-center gap-3 rounded-lg px-2.5 hover:bg-accent"
-              >
-                <span className="flex-1 truncate">{sessionTitle(session)}</span>
-                <SessionStatus status={session.status} />
-              </Link>
-            ))}
-          </section>
-        )}
+        <RecentList sessions={recent} harnesses={harnesses} />
       </div>
     </main>
   );

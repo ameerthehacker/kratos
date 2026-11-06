@@ -207,6 +207,23 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             multi-line prompt in the real UI and read the clipboard back. Done: the copied text
             (seen on the copy event) is the exact multi-line prompt.
     - Left out: light theme, deny reasons, attachments, timestamps per step (not sent yet).
+    - [ ] **3d. UI/UX polish (owner, before step 4)**
+      - [x] **3d1. Home prompt box** (~40) — modern look, design picked by the owner from two
+            sketches (owner picked A, minimal, with the focus glow): short placeholder ("Describe a
+            change…"), 16px text that grows as you type (CSS `field-sizing`), soft accent glow
+            on focus, keyboard hints; B adds starter chips that fill in a first sentence.
+            Accept: screenshots of Home empty / typing / focused. Done: shared by Home and the
+            reply box (`size` large / compact); hints hide below 640px. Also (owner): Recent
+            restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
+            + chevron, the 8 newest then "Show all".
+      - [ ] **3d2. Done sessions** (~150) — mark a session done; the sidebar splits into
+            **Working** and **Done** (owner kept the names), Home's Recent hides done ones.
+            Mark/reopen from: a new session header (title + status + "Mark as done"/"Reopen"),
+            a hover check on sidebar rows, and on Recent rows. Sending a prompt to a done
+            session reopens it. Data: `sessions.done_at` (migration 0003), `SessionSummary.done`,
+            ClientMessage `set_done {id, done}` (by id: rows can act on any session of this
+            project). Accept: hub tests (mark, reopen on prompt, other-project id refused),
+            real run: mark from each of the three places, reload keeps it.
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),
       likely with light/dark. Stored per user (not per project). To be designed with the owner.

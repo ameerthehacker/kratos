@@ -65,6 +65,11 @@ const turns = {
   async crash() {
     process.exit(1);
   },
+  // Report the command-line arguments the adapter started us with.
+  async args() {
+    report(JSON.stringify(process.argv.slice(2)));
+    finish();
+  },
 };
 
 for await (const line of createInterface({ input: process.stdin })) {

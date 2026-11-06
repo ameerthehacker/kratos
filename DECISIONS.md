@@ -178,6 +178,10 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   decided by a persisted `agent_started` flag (resuming an id Claude never saw would fail). Asks
   still pending from a previous run are resolved as `cancelled` on load: the process that asked is
   gone; Claude can ask again after resuming.
+- 3p2: `startSession` takes an optional `conversation: { id, resume }` (one object, so "resume
+  without an id" can't be expressed); omitted = fresh unnamed conversation. Verified with the real
+  CLI: `--session-id` + codeword, process stopped, new process with `--resume` recalled it; a fresh
+  conversation (control) did not.
 - Risks: pnpm blocks dependency build scripts by default, so better-sqlite3's native binary must
   be explicitly allowed; `--resume` failing (e.g. Claude's transcript deleted) would make every
   restart fail — handle if seen.

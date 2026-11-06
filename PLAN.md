@@ -94,7 +94,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           open(path), latest-or-create for a project, append message, load log, mark agent
           started. pnpm allowed to build better-sqlite3's native binary. Tests on a temp DB file:
           migrations run, latest-per-project, ordered append/load, reopen keeps data.
-    - [ ] **3p2. Resume plumbing** (~50) — `startSession` gains `conversationId` + `resume`
+    - [x] **3p2. Resume plumbing** (~50) — `startSession` gains `conversationId` + `resume`
           (core, generic); Claude adapter passes `--session-id <id>` (new) or `--resume <id>`;
           fake claude reports its args so a test proves both.
     - [ ] **3p3. Hub + CLI on the store** (~110) — hub loads the log on start, persists every

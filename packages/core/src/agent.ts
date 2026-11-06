@@ -55,11 +55,23 @@ export type RequestPermission = (
 
 // ── Adapter + session: behaviour, so plain TS interfaces ────────────────────────────────
 
+/**
+ * Which conversation a session belongs to (D36). `id` is chosen by Kratos and handed to the
+ * agent; `resume: false` starts the conversation under that id, `resume: true` continues it.
+ * Agents that can't name or resume conversations may ignore this.
+ */
+export type Conversation = { id: string; resume: boolean };
+
 /** A coding agent Kratos knows how to drive. One adapter per agent (e.g. "claude-code"). */
 export interface AgentAdapter {
   readonly id: string;
   readonly displayName: string;
-  startSession(options: { cwd: string; requestPermission: RequestPermission }): AgentSession;
+  /** Without `conversation`, the agent starts a fresh, unnamed conversation. */
+  startSession(options: {
+    cwd: string;
+    requestPermission: RequestPermission;
+    conversation?: Conversation;
+  }): AgentSession;
 }
 
 /** One running conversation with an agent. */

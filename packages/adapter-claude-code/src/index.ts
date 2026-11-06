@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import which from "which";
-import { AgentEvent, type AgentAdapter, type AgentSession, type RequestPermission } from "@kratos/core";
+import {
+  AgentEvent,
+  type AgentAdapter,
+  type AgentSession,
+  type Conversation,
+  type RequestPermission,
+} from "@kratos/core";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
 import { CliMessage } from "./protocol.js";
@@ -14,7 +20,8 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
   return {
     id: "claude-code",
     displayName: "Claude Code",
-    startSession: ({ cwd, requestPermission }) => startSession(claudePath, cwd, requestPermission),
+    startSession: ({ cwd, requestPermission, conversation }) =>
+      startSession(claudePath, cwd, requestPermission, conversation),
   };
 }
 
@@ -23,12 +30,23 @@ const CLI_ARGS = [
   "--permission-prompt-tool=stdio", // permission asks come to us as control_request lines
 ];
 
+/** Name the conversation (new) or continue it (resume) — Claude keeps its own transcript (D36). */
+function conversationArgs(conversation?: Conversation): string[] {
+  if (!conversation) return [];
+  return conversation.resume ? ["--resume", conversation.id] : ["--session-id", conversation.id];
+}
+
 type ControlRequest = Extract<CliMessage, { type: "control_request" }>;
 
-function startSession(claudePath: string, cwd: string, requestPermission: RequestPermission): AgentSession {
+function startSession(
+  claudePath: string,
+  cwd: string,
+  requestPermission: RequestPermission,
+  conversation?: Conversation,
+): AgentSession {
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol.
-  const proc = new JsonLinesProcess(claudePath, CLI_ARGS, { cwd });
+  const proc = new JsonLinesProcess(claudePath, [...CLI_ARGS, ...conversationArgs(conversation)], { cwd });
 
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentEvent, AgentSession, PermissionRequest, RequestPermission } from "@kratos/core";
+import type { AgentEvent, AgentSession, Conversation, PermissionRequest, RequestPermission } from "@kratos/core";
 import { createClaudeCodeAdapter } from "./index.js";
 
 /** A fake `claude` that speaks the real control protocol, scripted by prompt (see the file). */
@@ -12,8 +12,13 @@ async function runTurn(
   prompt: string,
   requestPermission: RequestPermission,
   onEvent?: (event: AgentEvent, session: AgentSession) => void,
+  conversation?: Conversation,
 ): Promise<AgentEvent[]> {
-  const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({ cwd: process.cwd(), requestPermission });
+  const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+    cwd: process.cwd(),
+    requestPermission,
+    conversation,
+  });
   session.send(prompt);
   const events: AgentEvent[] = [];
   for await (const event of session.events) {
@@ -122,5 +127,29 @@ describe("Claude Code adapter: turn control", () => {
     const events = await runTurn("crash", async () => ({ decision: "allow" }));
     expect(events.at(-1)).toMatchObject({ kind: "turn_end", reason: "error" });
     expect((events.at(-1) as { error: string }).error).toMatch(/claude exited unexpectedly/);
+  });
+});
+
+describe("Claude Code adapter: conversations", () => {
+  /** The CLI arguments the adapter started the (fake) claude with. */
+  async function argsFor(conversation?: Conversation): Promise<string[]> {
+    const events = await runTurn("args", async () => ({ decision: "allow" }), undefined, conversation);
+    const result = events.find((e) => e.kind === "tool_result");
+    return result?.kind === "tool_result" ? JSON.parse(result.output) : [];
+  }
+  const ID = "6f1c2b9e-0d4a-4c1e-9a77-3b1f1f2a9c10";
+
+  it("names a new conversation with --session-id, continues one with --resume, else neither", async () => {
+    const fresh = await argsFor();
+    expect(fresh).not.toContain("--session-id");
+    expect(fresh).not.toContain("--resume");
+
+    const named = await argsFor({ id: ID, resume: false });
+    expect(named.slice(named.indexOf("--session-id"))).toEqual(["--session-id", ID]);
+    expect(named).not.toContain("--resume");
+
+    const resumed = await argsFor({ id: ID, resume: true });
+    expect(resumed.slice(resumed.indexOf("--resume"))).toEqual(["--resume", ID]);
+    expect(resumed).not.toContain("--session-id");
   });
 });

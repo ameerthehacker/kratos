@@ -6,6 +6,7 @@ import { SessionHub } from "./session-hub.js";
 class FakeSession implements AgentSession {
   readonly prompts: string[] = [];
   interrupts = 0;
+  stopped = false;
   private stream!: ReadableStreamDefaultController<AgentEvent>;
   readonly events = new ReadableStream<AgentEvent>({ start: (c) => void (this.stream = c) });
 
@@ -17,6 +18,7 @@ class FakeSession implements AgentSession {
     this.interrupts++;
   }
   async stop() {
+    this.stopped = true;
     this.stream.close();
   }
   emit(event: AgentEvent) {
@@ -128,6 +130,18 @@ describe("SessionHub", () => {
     expect(a.seen.filter((m) => m.type === "permission_resolved")).toEqual([
       { type: "permission_resolved", id, outcome: "cancelled" },
     ]);
+  });
+
+  it("close() withdraws open asks and stops the agent session", async () => {
+    const { hub, sessions, tab } = setup();
+    const a = tab();
+    hub.receive({ type: "prompt", text: "edit" });
+    const { decision } = sessions[0]!.ask(WRITE);
+
+    await hub.close();
+    await expect(decision).resolves.toMatchObject({ decision: "deny" });
+    expect(a.seen.at(-1)).toMatchObject({ type: "permission_resolved", outcome: "cancelled" });
+    expect(sessions[0]!.stopped).toBe(true);
   });
 
   it("forwards interrupts, and starts a fresh agent session after the old one ended", async () => {

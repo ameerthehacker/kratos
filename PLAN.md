@@ -72,18 +72,21 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       (D31, D32). Split into three working slices (approved by owner):
   - [x] **3a. Session hub + protocol** (~200) — `packages/core` protocol gains: client `prompt`,
         `interrupt`, `permission_decision`; server `user_prompt`, `agent_event`,
-        `permission_request`, `permission_resolved`. To keep every slice building, `hello` gains
-        `cwd`/`agent` in 3b and ping/pong go with the old UI in 3c.
+        `permission_request`, `permission_resolved`. (In 3b, `hello` was dropped: `pong` carries
+        the server info instead — D34.)
         `apps/cli/src/session-hub.ts`: owns the agent session (started on first prompt, restarted
         after it ends), the message log (replayed to each new tab), pending asks (first decision
         wins, resolution broadcast, CLI-withdrawn asks marked cancelled), broadcast to tabs.
         Tests with an in-memory fake adapter: late tab gets full replay incl. a pending ask; first
         decision wins + broadcast; stale decision ignored; withdrawn ask → cancelled; lazy start
         and restart; closing all tabs leaves the ask pending.
-  - [ ] **3b. WebSocket + CLI wiring** (~60) — `server.ts` connects each socket to the hub and
+  - [x] **3b. WebSocket + CLI wiring** (~60) — `server.ts` connects each socket to the hub and
         validates client messages with zod; `kratos [project-dir]` defaults to the current dir,
         prints "Claude Code will act in: …"; real Claude adapter. Accept: one WS round trip against
-        the fake claude in a test.
+        the fake claude in a test. Added on owner request: `--host` (D33), `pong` with server info
+        instead of `hello` (D34); graceful SIGINT/SIGTERM shutdown (D35).
+  - [ ] **3p. Persistence (SQLite)** — requested by owner before the UI: the session log (and
+        whatever else we decide) survives server restarts. TO BE PLANNED with the owner.
   - [ ] **3c. Browser UI** (~140) — header with project dir + connection status; prompt box;
         event log (text, thinking, tool calls with results, turn ends); permission card with
         Allow / Deny + reason; Interrupt button; rebuilds from replay. Accept: live demo with the

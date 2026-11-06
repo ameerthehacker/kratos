@@ -26,6 +26,9 @@ importers:
       '@fastify/websocket':
         specifier: ^11.3.7
         version: 11.3.7
+      '@kratos/adapter-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/adapter-claude-code
       '@kratos/core':
         specifier: workspace:*
         version: link:../../packages/core

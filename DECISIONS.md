@@ -156,6 +156,22 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D33. `--host` option, default `127.0.0.1` (step 3b, owner)
+- `kratos -H/--host <host>`; default loopback. Any other host prints a startup warning: anyone who
+  can reach it can make the agent edit files and run commands in the project — there's no login.
+- Revisit when Kratos gets auth; until then, non-loopback is for trusted networks only.
+
+### D34. `ping`/`pong` carry server info; no `hello` (step 3b, owner)
+- A tab sends `ping` on connect (and any time, as a heartbeat); `pong` returns `{at, serverVersion,
+  cwd, agent}`. The session log replay arrives on connect regardless of ping.
+- Replaces the pushed `hello` message; ping/pong are no longer scaffold to be removed in 3c.
+
+### D35. Shutdown on SIGINT/SIGTERM via `process.on`, not `once` (step 3b)
+- Found: with `once`, kratos died with exit 130 mid-shutdown. execa's exit cleanup (`signal-exit`)
+  re-raises the signal when it sees no other listener, and `once` had already removed ours. The
+  `claude` child still died, but via emergency cleanup instead of `hub.close()`. With `on` + a
+  guard, both signals exit 0 in ~1s with no `claude` left.
+
 ### D31. `kratos [project-dir]`, defaulting to the current dir (step 3, owner)
 - Alternatives: required argument (D25's approach for the demo).
 - Why: owner's preference — works like `code .`. The resolved folder is printed at startup and

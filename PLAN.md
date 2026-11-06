@@ -85,8 +85,23 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         prints "Claude Code will act in: …"; real Claude adapter. Accept: one WS round trip against
         the fake claude in a test. Added on owner request: `--host` (D33), `pong` with server info
         instead of `hello` (D34); graceful SIGINT/SIGTERM shutdown (D35).
-  - [ ] **3p. Persistence (SQLite)** — requested by owner before the UI: the session log (and
-        whatever else we decide) survives server restarts. TO BE PLANNED with the owner.
+  - [ ] **3p. Persistence (SQLite)** (D36) — the session log *and Claude's memory* survive a
+        kratos restart. One DB in the user data folder; latest session per project resumes.
+        Three working slices (approved by owner):
+    - [x] **3p1. Session store** (~180) — Drizzle schema (`sessions`: id = Claude conversation
+          id, project_dir, agent, agent_started, timestamps; `messages`: session_id, seq, JSON
+          message, created_at), drizzle-kit SQL migrations applied on open, `SessionStore`:
+          open(path), latest-or-create for a project, append message, load log, mark agent
+          started. pnpm allowed to build better-sqlite3's native binary. Tests on a temp DB file:
+          migrations run, latest-per-project, ordered append/load, reopen keeps data.
+    - [ ] **3p2. Resume plumbing** (~50) — `startSession` gains `conversationId` + `resume`
+          (core, generic); Claude adapter passes `--session-id <id>` (new) or `--resume <id>`;
+          fake claude reports its args so a test proves both.
+    - [ ] **3p3. Hub + CLI on the store** (~110) — hub loads the log on start, persists every
+          message, marks stale asks cancelled, starts the agent with resume = "started before";
+          CLI opens `<user data>/kratos/kratos.db` (env-paths). Tests: restart replays the log
+          with the stale ask cancelled and the next prompt resumes the same id. Accept: real
+          `claude`: tell it a word, restart kratos, ask for the word — it remembers.
   - [ ] **3c. Browser UI** (~140) — header with project dir + connection status; prompt box;
         event log (text, thinking, tool calls with results, turn ends); permission card with
         Allow / Deny + reason; Interrupt button; rebuilds from replay. Accept: live demo with the

@@ -156,6 +156,32 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D37. Node 24, enforced (step 3p1, owner)
+- `.nvmrc` = `24`; root `engines.node` = `>=24 <25`; `engineStrict: true` in `pnpm-workspace.yaml`
+  so `pnpm install` refuses other versions (verified: Node 22 → `ERR_PNPM_UNSUPPORTED_ENGINE`).
+  `@types/node` ^24 everywhere. pnpm comes from Node 24's corepack, matching `packageManager`.
+- nvm's *global* default was left at 22 on purpose (it affects other projects); run `nvm use` in
+  this repo. Switching before installing better-sqlite3 mattered: its native binding is built for
+  one Node ABI (Node 24 = ABI 137).
+- `allowBuilds`: better-sqlite3 `true` (native binding), esbuild `false` (from drizzle-kit; its
+  script only verifies a binary that arrives via optional deps).
+
+### D36. Persistence: SQLite via Drizzle + better-sqlite3, user data folder, resumable (step 3p, owner)
+- Owner choices: history *and* Claude's memory survive restarts; one `kratos.db` in the OS user
+  data folder (`env-paths`; macOS `~/Library/Application Support/kratos`), never in the project;
+  Drizzle ORM + better-sqlite3 (typed schema, drizzle-kit SQL migrations); the latest session per
+  project resumes, older ones kept but not browsable yet.
+- Alternatives considered: history only; DB inside each project; plain better-sqlite3; built-in
+  `node:sqlite` (zero deps but prints an ExperimentalWarning on Node 22); a session list now.
+- Design (my calls): the Kratos session id is also Claude's conversation id — first start
+  `claude --session-id <id>`, every later start (crash or kratos restart) `claude --resume <id>`,
+  decided by a persisted `agent_started` flag (resuming an id Claude never saw would fail). Asks
+  still pending from a previous run are resolved as `cancelled` on load: the process that asked is
+  gone; Claude can ask again after resuming.
+- Risks: pnpm blocks dependency build scripts by default, so better-sqlite3's native binary must
+  be explicitly allowed; `--resume` failing (e.g. Claude's transcript deleted) would make every
+  restart fail — handle if seen.
+
 ### D33. `--host` option, default `127.0.0.1` (step 3b, owner)
 - `kratos -H/--host <host>`; default loopback. Any other host prints a startup warning: anyone who
   can reach it can make the agent edit files and run commands in the project — there's no login.

@@ -1,3 +1,14 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Dependencies allowed to run install scripts. better-sqlite3 downloads/builds its native SQLite
+# binding for the current Node version (D36). Everything else stays blocked.
+allowBuilds:
+  better-sqlite3: true
+  # Pulled in by drizzle-kit; its script only verifies the platform binary, which comes via
+  # optional dependencies anyway.
+  esbuild: false
+
+# Refuse to install on a Node version outside package.json "engines" (Node 24, D37).
+engineStrict: true

@@ -56,6 +56,7 @@ outside an adapter may depend on a specific agent.
 ## Commands
 
 ```bash
+nvm use               # Node 24 (.nvmrc); pnpm install refuses other versions
 pnpm install          # install workspace deps
 pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck

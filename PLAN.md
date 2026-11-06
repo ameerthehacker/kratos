@@ -24,6 +24,11 @@ UI, running Claude Code, enforcing plan → scoped step → proof → walkthroug
       multi-turn, interrupt).
 - [x] **2c. Demo script** — `pnpm --filter @kratos/adapter-claude-code demo --cwd <dir> "<prompt>"`; owner
       answers permission prompts in the terminal. Scope: `src/demo.ts` (already drafted).
+- [x] **2d. Process manager class** (D26) — generic `JsonLinesProcess` (execa): spawn, send JSON
+      line, iterate parsed stdout lines, `exited`, graceful `stop()` (close stdin → SIGTERM →
+      SIGKILL), safe writes after exit, kill on Kratos exit. Adapter becomes protocol-only and
+      reports a mid-turn crash as `turn_end: error`. Scope: adapter `src/` + package.json.
+      Accept: real CLI run still passes; crash, write-after-exit, stop and orphan checks pass.
 - [x] **2b. Budget system v2** (D24) — budgets measure review load (insertions, in-scope files,
       config/lockfiles/docs excluded); steps declare an `estimate` up front; warn at 80%; over
       budget → owner chooses extend / checkpoint / split. Scope: `.claude/**`.

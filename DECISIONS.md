@@ -156,6 +156,23 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D26. `JsonLinesProcess`: one class owns child-process lifecycle, built on execa (step 2d, owner)
+- Why: process handling was mixed into the Claude adapter, and some cases were unhandled: EPIPE
+  when writing after a crash would crash Kratos, a crash mid-turn ended the stream silently,
+  `stop()` killed instantly, and a Kratos crash could orphan `claude` processes.
+- Decision: a generic class (no Claude knowledge) — `send(json) → boolean`, `messages()` (parsed
+  stdout lines, junk skipped), `exited` (never rejects; says whether the stop was requested),
+  `stop(graceMs)`: close stdin → SIGTERM after grace → SIGKILL (execa `forceKillAfterDelay`).
+  execa settings: `buffer: false` (long-lived; default would hold all output in memory),
+  `reject: false`, `cleanup: true` (no orphans). Adapters keep only their protocol.
+- Adapter now emits `turn_end: error "claude exited unexpectedly: …"` if the process ends without
+  `stop()`.
+- Placement: in the adapter package for now (Node-only, so not `core`, which the browser
+  imports). Move to a shared `packages/process` when a second CLI adapter needs it.
+- Verified: 10 lifecycle checks with fake processes (crash, junk lines, write-after-exit, EPIPE
+  race, graceful stop 3ms, stubborn → SIGKILL ~700ms, missing command, adapter crash surfacing,
+  no orphans when the parent exits) + the real-CLI run (claude exits ~0.5s after stdin closes).
+
 ### D25. Demo requires an explicit `--cwd` (step 2c)
 - Found: pnpm runs package scripts from the package folder and `INIT_CWD` isn't set, so a
   "current dir" default made Claude act inside `packages/adapter-claude-code`.

@@ -1,8 +1,7 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
 import which from "which";
 import { AgentEvent, type AgentAdapter, type AgentSession, type RequestPermission } from "@kratos/core";
+import { JsonLinesProcess } from "./json-lines-process.js";
 import { Block, CliMessage } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
@@ -26,11 +25,9 @@ const CLI_ARGS = [
 type ControlRequest = Extract<CliMessage, { type: "control_request" }>;
 
 function startSession(claudePath: string, cwd: string, requestPermission: RequestPermission): AgentSession {
-  // One long-lived process per conversation (D14); JSON lines on stdin/stdout, stderr passes through.
-  const child = spawn(claudePath, CLI_ARGS, { cwd, stdio: ["pipe", "pipe", "inherit"] });
-  let spawnError: Error | undefined;
-  child.once("error", (err) => (spawnError = err));
-  const write = (msg: object) => child.stdin.write(JSON.stringify(msg) + "\n");
+  // One long-lived process per conversation (D14). The process class owns spawning, streams,
+  // signals and cleanup (D26); this adapter only speaks Claude's protocol.
+  const proc = new JsonLinesProcess(claudePath, CLI_ARGS, { cwd });
 
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
@@ -39,7 +36,7 @@ function startSession(claudePath: string, cwd: string, requestPermission: Reques
   async function answer({ request_id, request }: ControlRequest) {
     if (request.subtype !== "can_use_tool" || !request.tool_name) {
       const error = `Kratos does not handle control request "${request.subtype}"`;
-      write({ type: "control_response", response: { subtype: "error", request_id, error } });
+      proc.send({ type: "control_response", response: { subtype: "error", request_id, error } });
       return;
     }
     const abort = new AbortController();
@@ -61,13 +58,13 @@ function startSession(claudePath: string, cwd: string, requestPermission: Reques
     }
     // If the CLI withdrew the ask (control_cancel_request), it no longer wants an answer.
     if (!abort.signal.aborted) {
-      write({ type: "control_response", response: { subtype: "success", request_id, response } });
+      proc.send({ type: "control_response", response: { subtype: "success", request_id, response } });
     }
   }
 
   async function* events(): AsyncGenerator<AgentEvent> {
-    for await (const line of createInterface({ input: child.stdout })) {
-      const parsed = CliMessage.safeParse(parseJson(line));
+    for await (const raw of proc.messages()) {
+      const parsed = CliMessage.safeParse(raw);
       if (!parsed.success) continue; // a line kind Kratos doesn't use
       const msg = parsed.data;
       if (msg.type === "control_request") void answer(msg);
@@ -77,22 +74,26 @@ function startSession(claudePath: string, cwd: string, requestPermission: Reques
         if (msg.type === "result") interrupted = false;
       }
     }
-    if (spawnError) throw spawnError;
+    // stdout ended. If nobody asked it to stop, claude died (or never started): say so.
+    const exit = await proc.exited;
+    if (!exit.requested) {
+      const why = exit.message ?? `exit code ${exit.code ?? "?"}`;
+      yield { kind: "turn_end", reason: "error", error: `claude exited unexpectedly: ${why}` };
+    }
   }
 
   return {
     events: events(),
     send(prompt) {
-      write({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+      proc.send({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
     },
     async interrupt() {
       interrupted = true;
-      write({ type: "control_request", request_id: randomUUID(), request: { subtype: "interrupt" } });
+      proc.send({ type: "control_request", request_id: randomUUID(), request: { subtype: "interrupt" } });
     },
     async stop() {
       for (const abort of pending.values()) abort.abort();
-      child.stdin.end();
-      child.kill();
+      await proc.stop();
     },
   };
 }
@@ -139,12 +140,4 @@ function textOf(content: string | Array<{ type: string; text?: string }> | undef
   if (content === undefined) return "";
   if (typeof content === "string") return content;
   return content.map((part) => (part.type === "text" ? part.text : `[${part.type}]`)).join("\n");
-}
-
-function parseJson(line: string): unknown {
-  try {
-    return JSON.parse(line);
-  } catch {
-    return undefined;
-  }
 }

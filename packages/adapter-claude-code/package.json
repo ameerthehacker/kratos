@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@kratos/core": "workspace:*",
+    "execa": "^10.2.1",
     "which": "^7.0.0",
     "zod": "^4.6.7"
   },

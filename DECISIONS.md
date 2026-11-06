@@ -176,7 +176,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   `/editor-icons/<id>.png` for detected ids only (404 otherwise). Off macOS: a generic icon.
 - The chip shows the editor you used last (remembered per browser), else the first one found,
   else a folder. The connection dot moved into the chip, with a tooltip saying what it means
-  (shadcn Tooltip, opening below; rendered as a span since it sits inside the chip's button).
+  (shadcn Tooltip, opening below; rendered as a span).
+- One-click open (3d5, owner): the chip is a split pill — the logo and name open the project in
+  the chip's editor (Finder if none was found), the chevron opens the menu. The dot sits
+  between the two buttons, not inside one, so its tooltip doesn't nest in the button's.
+  The menu marks the pill's editor "Default" — the same one a click opens, picked or first
+  found — so the mark and the chip never disagree (it was "Last used", only after a pick).
+  Whatever you pick from the list becomes the default, Reveal in Finder included (owner; it had
+  been left out on purpose, so picking Finder seemed to change nothing).
 - Reverse: drop the menu; `pong.editors` and `open_in` are additive.
 
 ### D49. Done sessions (step 3d2, owner)

@@ -217,6 +217,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d5. One-click open** (~30, owner, D50) — the project pill is split: clicking the logo
+            and name opens the project in the chip's editor (last used, else the first found;
+            Finder if there's none); the chevron opens the menu to pick another. The connection
+            dot sits between them, outside both buttons (its tooltip doesn't fight theirs).
+            Accept: click opens the editor (log line); chevron opens the menu; typecheck, tests.
+            Done: click → VS Code opened ("opened the project in an editor"); chevron → menu.
+            Also (owner): the menu marks the pill's editor "Default" (was "Last used", shown only
+            once you'd picked one); any pick from the list becomes the default, Finder included.
       - [x] **3d4. Sidebar hides fully** (~40, owner, D49) — closed, the sidebar island is gone
             (no 64px rail); a "Show sessions" button sits at the left of the main header, like
             the design. Open/closed is remembered per browser (in `kratos.sidebar`), closed by

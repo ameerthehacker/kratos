@@ -17,10 +17,10 @@ import { clientLog } from "@/lib/log";
 import { cn } from "@/lib/utils";
 
 /**
- * The header's project chip (3d3): the logo of the editor you used last (else the first found,
- * else a folder), the
- * project name, and the connection dot (with a tooltip saying what it means). Its menu shows the
- * full path and opens the project in an editor the server found on this machine (with that app's
+ * The header's project chip (3d3): the logo of what you opened it with last — an editor or
+ * Finder (else the first editor found, else a folder), the project name, and the connection dot (with a tooltip saying what it means).
+ * Clicking the logo and name opens the project in that editor (3d5); the chevron's menu shows the
+ * full path and opens it in another editor the server found on this machine (with that app's
  * real icon), reveals it in the file manager, or copies the path.
  */
 export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors: Editor[]; connected: boolean }) {
@@ -29,24 +29,44 @@ export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors:
   const name = cwd.split("/").filter(Boolean).pop() ?? cwd;
   const files = editors.find((e) => e.id === "files");
   const apps = editors.filter((e) => e.id !== "files");
-  // The chip's logo: the editor you used last, else the first one found (owner); a folder if none.
-  const chipEditor = apps.find((e) => e.id === last) ?? apps[0];
+  // The pill's default: whatever you picked last from the list, Finder included (owner); else
+  // the first editor found, else Finder. One click opens it (3d5); the chevron offers the others.
+  const primary = editors.find((e) => e.id === last) ?? apps[0] ?? files;
   const openIn = (editor: Editor) => {
-    if (editor.id !== "files") setLast(editor.id);
+    setLast(editor.id);
     send({ type: "open_in", editor: editor.id });
   };
+  const defaultMark = (editor: Editor) =>
+    editor.id === primary?.id && <span className="ml-auto text-xs text-muted-foreground">Default</span>;
+  const segment = "inline-flex h-full items-center outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring";
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={`Project ${name}`}
-        className="inline-flex h-8 max-w-64 items-center gap-2 rounded-full bg-secondary pr-2.5 pl-2 text-xs whitespace-nowrap text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {chipEditor ? <EditorIcon editor={chipEditor} /> : <FolderOpen className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-        <span className="truncate font-medium">{name}</span>
+      {/* A split pill: open | dot | menu. The dot sits outside both buttons so tooltips don't nest. */}
+      <div className="inline-flex h-8 max-w-64 items-center gap-1.5 rounded-full bg-secondary text-xs whitespace-nowrap text-secondary-foreground">
+        {primary ? (
+          <Tooltip>
+            <TooltipTrigger
+              onClick={() => openIn(primary)}
+              aria-label={`Open ${name} in ${primary.id === "files" ? primary.label.replace(/^Reveal in /, "") : primary.label}`}
+              className={cn(segment, "min-w-0 gap-2 rounded-l-full pr-1.5 pl-2")}
+            >
+              <EditorIcon editor={primary} />
+              <span className="truncate font-medium">{name}</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{primary.id === "files" ? primary.label : `Open in ${primary.label}`}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="flex min-w-0 items-center gap-2 pl-2">
+            <FolderOpen className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate font-medium">{name}</span>
+          </span>
+        )}
         <ConnectionDot connected={connected} />
-        <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.2} aria-hidden="true" />
-      </DropdownMenuTrigger>
+        <DropdownMenuTrigger aria-label={`More ways to open ${name}`} className={cn(segment, "rounded-r-full pr-2.5 pl-1.5")}>
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.2} aria-hidden="true" />
+        </DropdownMenuTrigger>
+      </div>
       <DropdownMenuContent align="end" className="w-72">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="truncate font-mono font-normal" title={cwd}>
@@ -61,7 +81,7 @@ export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors:
               <DropdownMenuItem key={editor.id} onClick={() => openIn(editor)}>
                 <EditorIcon editor={editor} />
                 {editor.label}
-                {editor.id === last && <span className="ml-auto text-xs text-muted-foreground">Last used</span>}
+                {defaultMark(editor)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>
@@ -72,6 +92,7 @@ export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors:
             <DropdownMenuItem onClick={() => openIn(files)}>
               <EditorIcon editor={files} />
               {files.label}
+              {defaultMark(files)}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
@@ -95,7 +116,7 @@ function EditorIcon({ editor }: { editor: Editor }) {
   return <Fallback className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
 }
 
-/** Is this tab connected to the Kratos server? A span trigger: it sits inside the chip's button. */
+/** Is this tab connected to the Kratos server? A span, not a button: it only explains itself. */
 export function ConnectionDot({ connected }: { connected: boolean }) {
   return (
     <Tooltip>

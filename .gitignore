@@ -3,3 +3,5 @@ dist/
 .turbo/
 *.log
 .DS_Store
+# `pnpm dev`: throwaway project folder + database the dev server's agent works in
+.dev/

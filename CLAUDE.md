@@ -66,6 +66,8 @@ outside an adapter may depend on a specific agent.
 ```bash
 nvm use               # Node 24 (.nvmrc); pnpm install refuses other versions
 pnpm install          # install workspace deps
+pnpm dev              # server (tsx watch) + UI (Vite, http://localhost:5173) + package watchers;
+                      # agent works in .dev/project (override: KRATOS_PROJECT=<dir> pnpm dev)
 pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck
 pnpm test             # vitest: all tests, no real claude needed

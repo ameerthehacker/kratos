@@ -13,7 +13,7 @@ UI, running Claude Code, enforcing plan → scoped step → proof → walkthroug
       (Fastify, zod, commander, react-use-websocket; hooks: picomatch, simple-git, shell-quote).
       Scope: `apps/**`, `packages/core/**`, `.claude/**`, root config. Accept: build + typecheck
       pass, server and hook checks re-run with the same results as step 0.
-- [ ] **1. Agent interface review** — owner reviews and finalizes the draft `AgentAdapter` /
+- [x] **1. Agent interface review** — owner reviews and finalizes the draft `AgentAdapter` /
       `AgentEvent` types in `packages/core/src/agent.ts`. Scope: `packages/core/**`.
       Accept: owner can explain each type; decisions logged.
 - [ ] **2. Claude Code adapter** — drive the Claude Code CLI via the official

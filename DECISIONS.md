@@ -79,3 +79,34 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Alternatives: spawn `claude -p --output-format stream-json` and parse it ourselves.
 - Why: official library for driving Claude Code; it runs the same CLI, with typed messages,
   permission callbacks (`canUseTool`) and hooks — the exact seams Kratos needs for gates.
+
+### D14. One event stream per session, not per turn (step 1, owner)
+- Alternatives: `send()` returns that turn's events (old draft).
+- Why: matches the Claude Agent SDK (one long-lived `query()` stream); the server/UI subscribe
+  once; enables interrupt and mid-turn steering. Turns are marked by `turn_end` events.
+- Reverse: wrap `events` + `send` into a per-turn helper that reads until `turn_end`.
+
+### D15. Permission gate is an async callback `requestPermission` (step 1, owner)
+- Alternatives: `permission_request` event + `session.respond(id, …)`; no gating in adapters.
+- Why: maps 1:1 to the SDK's `canUseTool`; no request-id bookkeeping. Kratos's policy (scope,
+  budget, ask the owner in the UI) lives in the callback. Allow may carry `updatedInput` so the
+  owner can edit a command before it runs; deny carries a message the agent sees.
+- Reverse: emit an event from inside the callback and resolve it from `respond()`.
+
+### D16. No usage/cost events in v1 (step 1, owner)
+- Why: not needed until the UI shows per-step cost. The SDK reports it on each result, so adding
+  an optional `usage` field to `turn_end` later is non-breaking.
+
+### D17. Complete blocks, not token deltas (step 1, owner)
+- Why: fewer events, simpler UI and logs. Reverse: add a `text_delta` kind (SDK option
+  `includePartialMessages`).
+
+### D18. `thinking` event + `turn_end` instead of `done` (step 1)
+- Why: showing the agent's reasoning serves the "understand why" goal; `done` was ambiguous once
+  the stream outlives a turn. Agents without visible reasoning simply never emit `thinking`.
+
+### D19. Events and permission data are zod schemas; adapter/session are TS interfaces (step 1)
+- Why: events and decisions cross the WebSocket (validated per CLAUDE.md); adapters and sessions
+  are behaviour (functions), which zod doesn't model usefully.
+- Deferred: session resume (SDK `resume: sessionId`), per-event ids/timestamps — add when the UI
+  needs history or reconnect.

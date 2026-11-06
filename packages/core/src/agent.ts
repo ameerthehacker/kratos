@@ -1,34 +1,75 @@
+import { z } from "zod";
+
 /**
- * DRAFT — to be reviewed and finalized in PLAN step 1. Nothing implements this yet.
- *
  * The generic seam between Kratos and any coding agent (Claude Code, Codex CLI, …).
- * Kratos only ever talks to agents through these types, so the UI, plan, and gates
- * never depend on one vendor's output format.
+ * Kratos only ever talks to agents through these types, so the UI, plan, and gates never
+ * depend on one vendor's output format. Decisions: DECISIONS.md D14–D19.
  */
+
+// ── Events: what the agent did ──────────────────────────────────────────────────────────
+// Data that crosses to the UI, so it's a zod schema (validated) with an inferred TS type.
+
+export const AgentEvent = z.discriminatedUnion("kind", [
+  /** A complete block of the agent's reply (not token-by-token). */
+  z.object({ kind: z.literal("text"), text: z.string() }),
+  /** The agent's visible reasoning, when the agent exposes it. */
+  z.object({ kind: z.literal("thinking"), text: z.string() }),
+  /** The agent is calling a tool. `id` links it to its tool_result. */
+  z.object({ kind: z.literal("tool_call"), id: z.string(), tool: z.string(), input: z.unknown() }),
+  z.object({ kind: z.literal("tool_result"), id: z.string(), output: z.string(), isError: z.boolean() }),
+  /** The agent finished responding to a prompt. The session stays open for the next send(). */
+  z.object({
+    kind: z.literal("turn_end"),
+    reason: z.enum(["completed", "interrupted", "error"]),
+    error: z.string().optional(),
+  }),
+]);
+export type AgentEvent = z.infer<typeof AgentEvent>;
+
+// ── Permission gate: Kratos decides before the agent runs a tool ────────────────────────
+
+export const PermissionRequest = z.object({
+  tool: z.string(),
+  input: z.unknown(),
+  /** Why the agent's own rules wanted a check, if it says. */
+  reason: z.string().optional(),
+});
+export type PermissionRequest = z.infer<typeof PermissionRequest>;
+
+export const PermissionDecision = z.discriminatedUnion("decision", [
+  /** Run it. `updatedInput` lets the owner edit e.g. a command before it runs. */
+  z.object({ decision: z.literal("allow"), updatedInput: z.unknown().optional() }),
+  /** Don't run it. `message` is shown to the agent so it can change course. */
+  z.object({ decision: z.literal("deny"), message: z.string() }),
+]);
+export type PermissionDecision = z.infer<typeof PermissionDecision>;
+
+/**
+ * Called by the adapter before every tool use the agent asks permission for, and awaited.
+ * `signal` aborts if the turn is interrupted while waiting (e.g. close the approval prompt).
+ */
+export type RequestPermission = (
+  request: PermissionRequest,
+  options: { signal: AbortSignal },
+) => Promise<PermissionDecision>;
+
+// ── Adapter + session: behaviour, so plain TS interfaces ────────────────────────────────
 
 /** A coding agent Kratos knows how to drive. One adapter per agent (e.g. "claude-code"). */
 export interface AgentAdapter {
   readonly id: string;
   readonly displayName: string;
-  /** Start a conversation with the agent in `cwd`. */
-  startSession(options: { cwd: string }): AgentSession;
+  startSession(options: { cwd: string; requestPermission: RequestPermission }): AgentSession;
 }
 
 /** One running conversation with an agent. */
 export interface AgentSession {
-  /** Send a user prompt; yields normalized events until the agent finishes its turn. */
-  send(prompt: string): AsyncIterable<AgentEvent>;
-  /** Interrupt the agent and clean up its process. */
+  /** Every event for the whole conversation. Ends when the session stops. Iterate it once. */
+  readonly events: AsyncIterable<AgentEvent>;
+  /** Send a prompt. Events arrive on `events`; the turn ends with a `turn_end` event. */
+  send(prompt: string): void;
+  /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
+  interrupt(): Promise<void>;
+  /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }
-
-/**
- * What the agent did, normalized across agents. Open questions for step 1:
- * - do we need token/cost usage events?
- * - how do we represent "agent wants permission" so Kratos can gate it?
- */
-export type AgentEvent =
-  | { kind: "text"; text: string }
-  | { kind: "tool_call"; id: string; tool: string; input: unknown }
-  | { kind: "tool_result"; id: string; output: string; isError: boolean }
-  | { kind: "done"; reason: "completed" | "stopped" | "error"; error?: string };

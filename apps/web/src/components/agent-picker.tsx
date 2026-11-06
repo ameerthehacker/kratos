@@ -44,7 +44,7 @@ export function AgentPicker(props: {
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={props.disabled || !harness}
-        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs whitespace-nowrap text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <HarnessIcon id={props.value.harness} />
         {harness?.name ?? "Connecting…"}

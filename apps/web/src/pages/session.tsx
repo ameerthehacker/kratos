@@ -1,9 +1,12 @@
 import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
+import type { SessionSummary } from "@kratos/core";
 import { AgentPicker } from "@/components/agent-picker";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
+import { DoneButton } from "@/components/done-button";
+import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
 import { buildTimeline, openAsks } from "@/lib/timeline";
@@ -39,6 +42,7 @@ export function SessionPage() {
 
   return (
     <main className="flex min-h-0 flex-1 flex-col">
+      {session && <SessionHeader session={session} />}
       <Conversation items={items} agent={agentName} />
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
@@ -62,5 +66,25 @@ export function SessionPage() {
         />
       </div>
     </main>
+  );
+}
+
+/** The open session's title bar (3d2): what it is, its status, and Mark as done / Reopen. */
+function SessionHeader({ session }: { session: SessionSummary }) {
+  return (
+    <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 pb-3">
+      <h1 className="min-w-0 flex-1 truncate text-base font-medium" title={sessionTitle(session)}>
+        {sessionTitle(session)}
+      </h1>
+      {session.done ? (
+        <span className="inline-flex items-center gap-1.5 text-xs text-add">
+          <span className="size-2 rounded-full bg-add" aria-hidden="true" />
+          Done
+        </span>
+      ) : (
+        <SessionStatus status={session.status} />
+      )}
+      <DoneButton session={session} variant="full" />
+    </div>
   );
 }

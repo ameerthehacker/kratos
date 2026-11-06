@@ -68,6 +68,15 @@ export class SessionStore {
     this.db.update(sessions).set({ model }).where(eq(sessions.id, sessionId)).run();
   }
 
+  /** Mark a session done, or reopen it (3d2). Housekeeping: it doesn't change its place in Recent. */
+  setDone(sessionId: string, done: boolean): void {
+    this.db
+      .update(sessions)
+      .set({ doneAt: done ? new Date() : null })
+      .where(eq(sessions.id, sessionId))
+      .run();
+  }
+
   setTitle(sessionId: string, title: string): void {
     this.db
       .update(sessions)

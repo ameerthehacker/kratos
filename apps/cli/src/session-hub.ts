@@ -74,6 +74,8 @@ export class SessionHub {
         }
         // The model chosen on Home applies to the session this prompt starts (D43).
         if (!target.hasPrompts && message.model) target.setModel(message.model);
+        // New work on a done session means it isn't done (owner, 3d2).
+        if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
         target.prompt(message.text);
         return;
       }
@@ -83,6 +85,15 @@ export class SessionHub {
       case "open_session":
         if (this.store.get(message.id)?.projectDir === this.cwd) this.view(send, message.id);
         else send({ type: "error", message: `No session ${message.id} in this project` });
+        return;
+      case "set_done":
+        if (this.store.get(message.id)?.projectDir !== this.cwd) {
+          send({ type: "error", message: `No session ${message.id} in this project` });
+          return;
+        }
+        this.store.setDone(message.id, message.done);
+        this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
+        this.broadcastSessionList();
         return;
       case "interrupt":
         viewing.interrupt();
@@ -137,6 +148,7 @@ export class SessionHub {
         updatedAt: s.updatedAt.getTime(),
         harness: s.agent,
         model: s.model,
+        done: s.doneAt !== null,
       })),
     };
   }

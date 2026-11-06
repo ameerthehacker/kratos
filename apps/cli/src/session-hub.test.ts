@@ -254,6 +254,27 @@ describe("SessionHub: sessions side by side (D41)", () => {
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
   });
 
+  it("marks any session done by id, for every tab, without reordering; a new prompt reopens it (3d2)", () => {
+    const { tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    const firstId = a.viewing;
+    a.receive({ type: "prompt", text: "second task", newSession: true }); // a now views the second
+    const order = a.list.map((s) => s.id);
+
+    b.receive({ type: "set_done", id: firstId, done: true }); // from a tab not viewing it
+    for (const t of [a, b]) expect(t.list.find((s) => s.id === firstId)?.done).toBe(true);
+    expect(a.list.map((s) => s.id)).toEqual(order); // housekeeping: Recent order unchanged
+
+    b.receive({ type: "open_session", id: firstId });
+    b.receive({ type: "prompt", text: "one more thing" }); // new work: not done any more
+    expect(a.list.find((s) => s.id === firstId)?.done).toBe(false);
+
+    b.receive({ type: "set_done", id: "nope", done: true });
+    expect(b.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
   it("keeps every tab's session list current: titles, newest first, live status", async () => {
     const { agents, tab } = setup();
     const a = tab();

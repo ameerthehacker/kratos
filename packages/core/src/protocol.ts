@@ -27,6 +27,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * agent's default (3c4). */
   z.object({ type: z.literal("set_model"), model: z.string().nullable() }),
   z.object({ type: z.literal("interrupt") }),
+  /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
+  z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
   /** Ask for server info; answered with `pong`. Send on connect. */
@@ -50,6 +52,8 @@ export const SessionSummary = z.object({
   /** Harness (adapter id) and model it runs with; model null = the agent's default. */
   harness: z.string(),
   model: z.string().nullable(),
+  /** The owner marked it done (3d2): listed under "Done", hidden from Recent. */
+  done: z.boolean(),
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 

@@ -17,6 +17,8 @@ export const sessions = sqliteTable(
     title: text("title"),
     /** The model the session runs with (D43); null = the agent's default. `agent` = harness id. */
     model: text("model"),
+    /** When the owner marked the session done (3d2); null = still being worked on. */
+    doneAt: integer("done_at", { mode: "timestamp_ms" }),
     /** Set the first time the agent process starts; from then on, starts must resume. */
     agentStartedAt: integer("agent_started_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

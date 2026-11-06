@@ -33,7 +33,8 @@ export function HomePage() {
     pending.current = { text, viewing, seen: log.length };
     send({ type: "prompt", text, newSession: true, harness: choice?.harness, model: choice?.model ?? undefined });
   };
-  const recent = sessions.filter((s) => s.title !== null); // sessions with at least one prompt
+  // Sessions with at least one prompt, not marked done (owner, 3d2: done ones live in the sidebar).
+  const recent = sessions.filter((s) => s.title !== null && !s.done);
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto">

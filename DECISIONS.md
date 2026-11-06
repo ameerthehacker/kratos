@@ -156,6 +156,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D49. Done sessions (step 3d2, owner)
+- Owner: mark a chat done; the sidebar has **Working** and **Done** sections (owner kept the
+  names even though "working" is also a live status); marking moves it. Owner's answers: a new
+  prompt reopens a done session; mark/reopen from the session header, sidebar rows and Recent
+  rows; Recent hides done sessions.
+- Data: `sessions.done_at` (migration 0003, null = not done), `SessionSummary.done`,
+  ClientMessage `set_done {id, done}` — by id, so a row can act on any session of the project
+  (other projects' ids are refused, like `open_session`). Marking is housekeeping: it doesn't
+  bump `updatedAt`, so Recent order stays put.
+- UI: one `DoneButton` (icon for rows, shown on hover/focus; labelled pill in the new session
+  header). In rows it sits beside the link, not inside it (a button can't live in a link).
+- Sections collapse (owner): Done starts collapsed; the open/closed state is remembered per
+  browser (zustand `persist`, `kratos.sidebar`), since the sidebar remounts when toggled.
+- Reverse: drop the column/message; the UI only filters on `done`.
+
 ### D48. Relative times: date-fns (step 3d1)
 - Recent rows say when a session was last active ("5 minutes ago"). Library-first for dates
   (CLAUDE.md): `date-fns` `formatDistanceToNowStrict` — tree-shakeable, the common choice.

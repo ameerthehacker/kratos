@@ -215,15 +215,17 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Accept: screenshots of Home empty / typing / focused. Done: shared by Home and the
             reply box (`size` large / compact); hints hide below 640px. Also (owner): Recent
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
-            + chevron, the 8 newest then "Show all".
-      - [ ] **3d2. Done sessions** (~150) — mark a session done; the sidebar splits into
+            + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
+      - [x] **3d2. Done sessions** (~150, D49) — mark a session done; the sidebar splits into
             **Working** and **Done** (owner kept the names), Home's Recent hides done ones.
             Mark/reopen from: a new session header (title + status + "Mark as done"/"Reopen"),
             a hover check on sidebar rows, and on Recent rows. Sending a prompt to a done
             session reopens it. Data: `sessions.done_at` (migration 0003), `SessionSummary.done`,
             ClientMessage `set_done {id, done}` (by id: rows can act on any session of this
             project). Accept: hub tests (mark, reopen on prompt, other-project id refused),
-            real run: mark from each of the three places, reload keeps it.
+            real run: mark from each of the three places, reload keeps it. Done: all three
+            places + reopen verified on a copy of the dev DB; reopen-on-prompt by hub test.
+            Also (owner): both sections collapse; Done starts collapsed; remembered per browser.
 - [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
       theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),
       likely with light/dark. Stored per user (not per project). To be designed with the owner.

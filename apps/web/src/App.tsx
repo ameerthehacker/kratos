@@ -11,7 +11,7 @@ export function App() {
   const started = log.some((m) => m.type === "user_prompt");
 
   return (
-    <div className="flex min-h-screen flex-col text-[15px] leading-[1.55] antialiased">
+    <div className="flex min-h-screen flex-col text-body antialiased">
       <header className="flex min-h-16 items-center gap-4 px-6 py-3">
         <KratosLogo />
         <span className="flex-1" />
@@ -25,7 +25,7 @@ export function App() {
 
       {started ? (
         // 3c1: a bare list; 3c2 replaces it with the AI Elements conversation.
-        <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-6 px-6 pb-8">
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 pb-8">
           <ol className="flex flex-1 flex-col gap-3">
             {log.map((message, i) => (
               <BareMessage key={i} message={message} />
@@ -34,8 +34,8 @@ export function App() {
           <PromptCard agent={agent} onSend={sendPrompt} disabled={!connected} rows={2} placeholder="Reply…" />
         </main>
       ) : (
-        <main className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-6 pt-[14vh] pb-20">
-          <h1 className="text-center font-heading text-[46px] font-semibold leading-[1.1] tracking-[-0.035em]">
+        <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
+          <h1 className="text-center font-heading text-display font-semibold">
             What should we build?
           </h1>
           <PromptCard

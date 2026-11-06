@@ -58,6 +58,19 @@ Data flow: browser tab ⇄ WebSocket ⇄ server ⇄ SessionHub (⇄ SQLite) ⇄ 
 Messages crossing a boundary (WebSocket, files, agent output) are validated with zod schemas from
 `packages/core`; TS types are `z.infer`-ed from them, never written separately.
 
+## UI conventions (apps/web)
+
+- **No hardcoded Tailwind values** like `text-[15px]`, `leading-[1.55]`, `max-w-[760px]`,
+  `size-[7px]`, `#7CCFA6`. Use, in this order:
+  1. the standard Tailwind scale — including fractional steps (`size-4.5` = 18px), and accept
+     ±1–2px from the design rather than hardcoding it;
+  2. a named design token in `apps/web/src/index.css` (`@theme`, e.g. `text-body`, `text-display`)
+     when the design genuinely needs a size the scale lacks and it's used, or meaningful, app-wide;
+  3. an arbitrary value only when neither works for a true one-off — with a comment saying why.
+- Colors only via theme variables (`bg-primary`, `text-muted-foreground`, `bg-wait`, …), never hex.
+- Exception: shadcn-generated files in `src/components/ui/` stay as generated (`shadcn add`
+  overwrites them); their selector variants like `[&_svg]:…` have no non-bracket form anyway.
+
 Agents plug in through `AgentAdapter` (packages/core). Claude Code is the first adapter; nothing
 outside an adapter may depend on a specific agent.
 

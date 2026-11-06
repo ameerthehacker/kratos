@@ -36,11 +36,11 @@ export function PromptCard(props: {
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={props.placeholder}
-        className="field-sizing-fixed min-h-0 resize-none border-0 bg-transparent px-2 py-1.5 text-[17px] leading-relaxed shadow-none focus-visible:ring-0 md:text-[17px] dark:bg-transparent"
+        className="field-sizing-fixed min-h-0 resize-none border-0 bg-transparent px-2 py-1.5 text-lg shadow-none focus-visible:ring-0 md:text-lg dark:bg-transparent"
       />
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-[13px] text-secondary-foreground">
-          <span className="size-[7px] rounded-full bg-primary" aria-hidden="true" />
+        <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs text-secondary-foreground">
+          <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
           {props.agent}
         </span>
         <span className="flex-1" />
@@ -51,7 +51,7 @@ export function PromptCard(props: {
           aria-label="Send"
           className="size-11 rounded-full disabled:bg-secondary disabled:text-faint disabled:opacity-100"
         >
-          <ArrowUp className="size-[18px]" strokeWidth={2.4} />
+          <ArrowUp className="size-4.5" strokeWidth={2.4} />
         </Button>
       </div>
     </form>

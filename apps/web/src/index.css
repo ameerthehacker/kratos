@@ -7,6 +7,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Design type scale (owner's design, D38) for sizes the standard Tailwind scale doesn't cover.
+   Use as `text-body` / `text-display`; never as arbitrary values in components (CLAUDE.md). */
+@theme {
+    --text-body: 0.9375rem; /* 15px: the app's base text */
+    --text-body--line-height: 1.55;
+    --text-display: 2.875rem; /* 46px: Home heading */
+    --text-display--line-height: 1.1;
+    --text-display--letter-spacing: -0.035em;
+}
+
 /* Fonts and extra status colors from the owner's Kratos design (D38). */
 @theme inline {
     --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;

@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "dev": "mkdir -p ../../.dev/project && tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../../.dev/project}\" --db \"${KRATOS_DB:-../../.dev/kratos.db}\""
+    "dev": "tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../..}\" --db \"${KRATOS_DB:-../../.kratos/kratos.db}\""
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",

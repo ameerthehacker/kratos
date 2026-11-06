@@ -195,9 +195,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Root `dev` = `turbo run dev` (persistent, after `^build`): `apps/cli` via `tsx watch`
   (restarts on server changes; Node 24's own type stripping can't map our `.js` import paths),
   `apps/web` via Vite (HMR, proxies `/ws` → :4317), `core` + adapter via `tsc --watch`.
-- The dev server's agent works in `.dev/project` with history in `.dev/kratos.db` (git-ignored),
-  never in Kratos's own source or the user's real history — turbo runs scripts from the package
-  folder, so "current dir" would have been `apps/cli`. Override: `KRATOS_PROJECT=… KRATOS_DB=…`.
+- ~~The dev server's agent works in `.dev/project` with history in `.dev/kratos.db`~~ —
+  **changed (owner):** it works in the **repo root** (Kratos is built with Kratos: dogfooding is
+  the milestone-1 goal), history in `.kratos/kratos.db` (git-ignored), never in the user's real
+  history. turbo runs scripts from the package folder, so the path is explicit (`../..`), not
+  "current dir". Override: `KRATOS_PROJECT=… KRATOS_DB=…`.
+- Trade-off of dogfooding under `tsx watch`: if the agent edits server code (`apps/cli`,
+  `packages/*`), kratos restarts and that agent's turn is cut off (the session itself resumes,
+  D36). UI edits hot-reload without a restart.
 - UI reconnects every 1s (was react-use-websocket's 5s default) so server restarts recover fast.
 - Verified: both start from one command; UI on :5173 connects through the proxy; touching a
   server file restarts kratos cleanly (no EADDRINUSE) and the UI reconnects in ~0.3s; stopping

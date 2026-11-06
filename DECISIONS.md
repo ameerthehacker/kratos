@@ -192,6 +192,9 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   header). In rows it sits beside the link, not inside it (a button can't live in a link).
 - Sections collapse (owner): Done starts collapsed; the open/closed state is remembered per
   browser (zustand `persist`, `kratos.sidebar`), since the sidebar remounts when toggled.
+- Sidebar hides fully (3d4, owner, per the design): closed, the island is gone — no icon rail —
+  and a "Show sessions" button sits at the left of the main header. Whether it's open is kept
+  in the same `kratos.sidebar` store (closed by default), so it survives reloads.
 - Reverse: drop the column/message; the UI only filters on `done`.
 
 ### D48. Relative times: date-fns (step 3d1)

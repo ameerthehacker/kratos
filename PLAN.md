@@ -217,6 +217,11 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d4. Sidebar hides fully** (~40, owner, D49) — closed, the sidebar island is gone
+            (no 64px rail); a "Show sessions" button sits at the left of the main header, like
+            the design. Open/closed is remembered per browser (in `kratos.sidebar`), closed by
+            default as today. Accept: toggle both ways in the browser; typecheck, tests.
+            Done: closed → no rail, header toggle; opened → survives reload; 63 tests pass.
       - [x] **3d3. Project chip + open in editor** (~150, owner, D50) — the header's raw path becomes a
             pill (folder icon, project name, chevron; full path in the menu). The menu opens the
             project in an installed editor (VS Code, Cursor, Zed, Windsurf, WebStorm, IntelliJ,

@@ -92,8 +92,9 @@ pnpm dev              # server (tsx watch) + UI (Vite, http://localhost:5173) + 
 pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck
 pnpm test             # vitest: all tests, no real claude needed
-pnpm start            # run kratos (after build) → http://localhost:4317 (acts in this repo!)
-node apps/cli/dist/index.js <dir> [--port] [--host] [--db] [--log-dir] [--log-level]  # another project
+pnpm start            # run kratos (after build) → opens http://localhost:4317 (acts in this repo!)
+node apps/cli/dist/index.js <dir> [--port] [--host] [--db] [--log-dir] [--log-level] [--no-open]  # another project
+pnpm build:binary     # single binary for this machine → apps/cli/dist-bin/kratos (pkg, D57)
 tail -f ~/.kratos/logs/current.log    # debug log (JSON lines, rotated 10 MB × 5); `| pnpm exec pino-pretty` to read
 pnpm dev:web          # Vite dev server with /ws proxied to a running kratos
 pnpm --filter @kratos/cli db:generate   # after editing src/store/schema.ts

@@ -390,13 +390,13 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             sharp's side by side (same crop and size). Planned as: it's only used to trim macOS editor icons and drags in
             libvips, which a single binary can't easily carry. macOS's own `sips` converts and
             crops; the transparent edge is found with `pngjs` (pure JS). Icons look as before.
-      - [ ] **3u3. Single binary** (~200) — Node 24's Single Executable Applications: `esbuild`
-            bundles the server to one file; the SEA config embeds it plus assets (web UI, Drizzle
-            migrations, `better-sqlite3`'s native `.node`), unpacked on first run to
-            `~/.kratos/runtime/<version>/` (`better-sqlite3`'s `nativeBinding` option, the static
-            root and the migrations folder point there). `pnpm build:binary` → `kratos` for this
-            machine; macOS needs re-signing after injection. Accept: the binary alone, copied
-            elsewhere, serves the UI, keeps sessions, runs `claude`, shows editor icons.
+      - [x] **3u3. Single binary** (~250 incl. a discarded first try) — `@yao-pkg/pkg` in SEA
+            mode (owner: use a package if it makes this easy): esbuild bundles the server, pkg
+            packs it with the web UI, migrations and SQLite's prebuilds into stock Node and
+            signs it. Logger moved off worker threads. `pnpm build:binary` → `dist-bin/kratos`.
+            Also (owner): the UI opens in the browser at start; `--no-open` skips it. Checked:
+            the binary alone, copied elsewhere, serves the UI, keeps sessions across restarts,
+            runs `claude`, shows editor icons, `--version`.
       - [ ] **3u4. Release workflow + tap** (~150, GitHub Actions) — on `release: published`:
             a matrix (macos arm64/x64, ubuntu x64/arm64) builds the binary with the tag's
             version, smoke-tests `kratos --version`, uploads `kratos-<v>-<os>-<arch>.tar.gz`

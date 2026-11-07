@@ -7,3 +7,6 @@ dist/
 .kratos/
 # Astro: generated types
 .astro/
+
+# `pnpm build:binary`: the single binary and its build files (3u3)
+dist-bin/

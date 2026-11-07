@@ -2,6 +2,7 @@
 import { statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
+import open from "open";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { DEFAULT_PORT } from "@kratos/core";
 import { diskFiles } from "./attachment-files.js";
@@ -15,7 +16,7 @@ import { kratosVersion } from "./version.js";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 
-type Options = { port: string; host: string; db: string; logDir: string; logLevel: string };
+type Options = { port: string; host: string; db: string; logDir: string; logLevel: string; open: boolean };
 
 const version = kratosVersion(); // 3u1: a release's version, or the commit this runs from
 
@@ -29,11 +30,12 @@ const program = new Command()
   .option("--db <file>", "SQLite file for session history", DEFAULT_DB)
   .option("--log-dir <dir>", "folder for rotating log files (always at debug level)", DEFAULT_LOG_DIR)
   .option("--log-level <level>", "console log level: debug, info, warn, error", "info")
+  .option("--no-open", "don't open the web UI in your browser")
   .action(async (projectDir: string | undefined, opts: Options) => {
     const cwd = resolve(projectDir ?? process.cwd()); // D31
     if (!statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) program.error(`Not a folder: ${cwd}`);
 
-    const log = createLogger({ logDir: resolve(opts.logDir), consoleLevel: opts.logLevel }); // D44
+    const log = await createLogger({ logDir: resolve(opts.logDir), consoleLevel: opts.logLevel }); // D44
     const adapter = (() => {
       try {
         return createClaudeCodeAdapter();
@@ -52,7 +54,8 @@ const program = new Command()
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
     const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version });
     const shownHost = LOOPBACK.has(opts.host) ? "localhost" : opts.host;
-    log.info(`kratos ${version.version} running at http://${shownHost}:${server.port}`);
+    const url = `http://${shownHost}:${server.port}`;
+    log.info(`kratos ${version.version} running at ${url}`);
     log.info(`${adapter.displayName} will act in: ${cwd}`);
     log.info(`Session history: ${dbPath}`);
     log.info(`Logs: ${resolve(opts.logDir)}/current.log`);
@@ -62,6 +65,8 @@ const program = new Command()
           `edit files and run commands in ${cwd}. There is no login yet.`,
       );
     }
+    // The UI opens in the default browser (3u3, owner); `--no-open` for `pnpm dev` and headless use.
+    if (opts.open) open(url).catch((err: unknown) => log.warn({ err }, `Couldn't open a browser: visit ${url}`));
 
     // Ctrl-C / kill: stop the agent process cleanly before exiting. `on`, not `once`: execa's exit
     // cleanup re-raises the signal (killing us mid-shutdown) if it sees no other listener left.
@@ -72,7 +77,7 @@ const program = new Command()
       log.info({ signal }, "shutting down");
       await server.close(); // stops the agent; its last messages are written to the store
       store.close();
-      log.flush(() => process.exit(0)); // the log transport runs in a worker: let it finish writing
+      log.flush(() => process.exit(0)); // let the log file finish writing
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);

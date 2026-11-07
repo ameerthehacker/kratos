@@ -2,18 +2,16 @@ import Fastify, { LogController, type FastifyReply, type FastifyRequest } from "
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket, { type WebSocket } from "@fastify/websocket";
 import { extname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createReadStream } from "node:fs";
 import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
 import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editors.js";
 import { silentLogger, type Logger } from "./logger.js";
+import { WEB_DIST } from "./paths.js";
 import type { SessionHub } from "./session-hub.js";
 import type { KratosVersion } from "./version.js";
 
 export const DEFAULT_HOST = "127.0.0.1";
 
-/** Built UI lives in apps/web/dist; this file runs from apps/cli/dist. */
-const WEB_DIST = fileURLToPath(new URL("../../web/dist/", import.meta.url));
 
 /** Serves the UI and connects every browser tab (one WebSocket each) to the session hub. */
 export async function startServer(options: {

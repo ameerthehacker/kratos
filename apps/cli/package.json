@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "dev": "tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../..}\" --db \"${KRATOS_DB:-../../.kratos/kratos.db}\""
+    "dev": "tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../..}\" --db \"${KRATOS_DB:-../../.kratos/kratos.db}\" --no-open",
+    "build:binary": "node scripts/build-binary.mjs"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",
@@ -34,8 +35,18 @@
     "@types/pngjs": "^6.0.5",
     "@types/which": "^3.0.4",
     "@types/ws": "^8.18.2",
+    "@yao-pkg/pkg": "^6.25.0",
     "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
+  },
+  "pkg": {
+    "assets": [
+      "drizzle/**/*",
+      "../web/dist/**/*",
+      "dist/node_modules/better-sqlite3/prebuilds/*.node"
+    ],
+    "sea": true
   }
 }

@@ -201,8 +201,8 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Owner: show the version as the design does, right in production, clicking opens its GitHub
   release; releases ship through a Homebrew tap updated by publishing a GitHub release; macOS and
   Linux; a single binary that serves the web UI; later, one-click self-update (3u5).
-- Repos (owner): `ameerthehacker/kratos`, tap `ameerthehacker/homebrew-kratos`. Neither exists
-  yet — creating and pushing them is the owner's (outward-facing).
+- Repos (owner): `ameerthehacker/kratos` (now the `origin`), tap `ameerthehacker/homebrew-kratos`
+  — creating and pushing them is the owner's (outward-facing).
 - Version source (3u1): one place, `apps/cli/package.json` `version`, which the release workflow
   sets from the tag. `0.0.0` means unreleased: Kratos then shows the short commit hash of the
   checkout it runs from (`git rev-parse --short HEAD` in its own folder, not the project's) —
@@ -219,6 +219,37 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   centres it on a transparent square, and `sips` resizes to 64px. Checked side by side against
   sharp's cached icons (VS Code, Xcode, Finder): same crop and size; pixels differ only by
   resampling (~2-3% mean per channel). Icons already cached keep being served.
+- Single binary (3u3): `@yao-pkg/pkg` in its SEA mode (owner: use an existing package if it
+  makes native binaries easy). It downloads stock Node for the target from nodejs.org (checksum
+  verified, cached in `~/.pkg-cache`), packs our files into Node's official SEA blob with a
+  virtual filesystem, injects it and ad hoc signs on macOS. Our code reads its files at the same
+  paths as from source (`src/paths.ts`), and pkg extracts native addons to `~/.cache/pkg/<hash>/`
+  on first run. `scripts/build-binary.mjs`: esbuild bundles `src/index.ts` to `dist/kratos.mjs`
+  (ESM; a `require` shim in the banner for CommonJS deps), then `pkg` with the `"pkg"` config in
+  apps/cli/package.json (assets: web UI, migrations, better-sqlite3's prebuilds).
+  - Why the esbuild step: pkg's resolver can't follow pnpm's symlinked node_modules (it failed on
+    execa's deps, and recreated better-sqlite3's folder as a dangling link). So everything is
+    bundled except better-sqlite3, which is copied as a real folder (package.json, lib/,
+    prebuilds/; no runtime deps) to `dist/node_modules/` beside the bundle. Its prebuild is chosen
+    at runtime by platform, which pkg can't see, so the prebuilds are listed as assets.
+  - Tried first, hand-rolled: esbuild to CJS + `node --experimental-sea-config` + postject +
+    codesign, unpacking assets ourselves to `~/.kratos/runtime/<version>/` and loading SQLite via
+    `nativeBinding` (~120 lines incl. a files module). It worked (130 MB) but was ours to keep;
+    pkg does the same steps and can build other targets from one machine (it fetches their Node).
+    Rejected: Bun's `--compile` (no better-sqlite3), classic pkg (patched Node from pkg-fetch),
+    nexe/boxednode (stale / builds Node from source).
+  - Logger: pino's worker-thread transports load files by path, which a binary can't; the console
+    and the rotating file now go through `pino.multistream` in-process (`createLogger` is async).
+  - Node: the binary is built on the Node that runs the build, 26 since D59 (esbuild target
+    `node26`); pkg fetches the same major for other targets.
+  - Size: 167 MB on macOS arm64 with Node 24 (Node itself is 117 MB; web UI 11 MB; SQLite prebuilds for all
+    platforms 16 MB). An unreleased (0.0.0) binary shows "dev": no git checkout beside it.
+  - pkg warns it can't pack `open`'s bundled `xdg-open` script; `open` falls back to the system's
+    `xdg-open` on Linux, so nothing is lost.
+  - Reverse: delete the script and the `"pkg"` config; `pnpm build` + `pnpm start` still work.
+- Opens the browser (owner, 3u3): `kratos` opens the UI in the default browser once it listens
+  (`open`, already used for editors); `--no-open` skips it. `pnpm dev` passes `--no-open` (the UI
+  is on Vite's port there, and tsx restarts would reopen it). Failing to open only warns.
 
 
 ### D56. Steering prompts: the agent holds them, Kratos follows each by id (step 3t, owner)

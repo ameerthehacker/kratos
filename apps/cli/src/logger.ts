@@ -1,6 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { pino, type Logger, type TransportTargetOptions } from "pino";
+import { pino, type Logger } from "pino";
+import pretty from "pino-pretty";
+import roll from "pino-roll";
 
 export type { Logger };
 
@@ -11,15 +13,13 @@ const FILE_LEVEL = "debug";
  * at debug in `${logDir}/kratos.N.log`, rotated at 10 MB keeping 5 files (pino-roll), with
  * `current.log` linking to the active one.
  */
-export function logTargets(options: { logDir: string; consoleLevel?: string }): TransportTargetOptions[] {
-  return [
-    {
-      target: "pino-pretty",
+export function logTargets(options: { logDir: string; consoleLevel?: string }) {
+  return {
+    console: {
       level: options.consoleLevel ?? "info",
       options: { destination: 1, colorize: true, singleLine: true, translateTime: "SYS:HH:MM:ss", ignore: "pid,hostname" },
     },
-    {
-      target: "pino-roll",
+    file: {
       level: FILE_LEVEL,
       options: {
         file: join(options.logDir, "kratos.log"),
@@ -31,18 +31,30 @@ export function logTargets(options: { logDir: string; consoleLevel?: string }): 
         mkdir: true,
       },
     },
-  ];
+  };
 }
 
-/** Kratos's logger. Components log through children: `log.child({ component: "hub" })`. */
-export function createLogger(options: { logDir: string; consoleLevel?: string }): Logger {
+/**
+ * Kratos's logger. Components log through children: `log.child({ component: "hub" })`. Both
+ * outputs run in-process (`multistream`), not as pino transports: transports load their modules
+ * by name in worker threads, which a single binary can't do (3u3, D57).
+ */
+export async function createLogger(options: { logDir: string; consoleLevel?: string }): Promise<Logger> {
   const consoleLevel = options.consoleLevel ?? "info";
   // The logger itself must pass everything any target wants (the lower of the two levels).
   const level = pino.levels.values[consoleLevel]! < pino.levels.values[FILE_LEVEL]! ? consoleLevel : FILE_LEVEL;
   // pino-roll's own `mkdir` is async but it creates current.log right away: on a fresh folder the
   // symlink would fail (ENOENT) and crash the worker. Make the folder first.
   mkdirSync(options.logDir, { recursive: true });
-  return pino({ level }, pino.transport({ targets: logTargets(options) }));
+  const targets = logTargets(options);
+  const file = await roll(targets.file.options);
+  return pino(
+    { level },
+    pino.multistream([
+      { level: targets.console.level as pino.Level, stream: pretty(targets.console.options) },
+      { level: targets.file.level as pino.Level, stream: file },
+    ]),
+  );
 }
 
 /** For tests and library use: a logger that drops everything. */

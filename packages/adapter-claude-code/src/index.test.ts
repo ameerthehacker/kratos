@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentEvent, AgentSession, Conversation, PermissionRequest, RequestPermission } from "@kratos/core";
+import type { AgentEvent, AgentSession, AskQuestions, Conversation, PermissionRequest, QuestionRequest, RequestPermission } from "@kratos/core";
 import { createClaudeCodeAdapter } from "./index.js";
 
 /** A fake `claude` that speaks the real control protocol, scripted by prompt (see the file). */
@@ -328,5 +328,60 @@ describe("Claude Code adapter: permission modes (D53)", () => {
     } finally {
       await done();
     }
+  });
+});
+
+describe("Claude Code adapter: questions (D54)", () => {
+  /** Run the fake's question turn; what the CLI got back, and what Kratos was asked. */
+  async function questionTurn(askQuestions?: AskQuestions) {
+    const asked: QuestionRequest[] = [];
+    const permission = vi.fn<RequestPermission>();
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: permission,
+      askQuestions: askQuestions && (async (request, options) => (asked.push(request), askQuestions(request, options))),
+    });
+    session.send("question");
+    let response: { behavior: string; updatedInput?: { answers?: Record<string, string> }; message?: string } | undefined;
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") response = JSON.parse(event.output);
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    expect(permission).not.toHaveBeenCalled(); // questions never go to the permission gate
+    return { response, asked };
+  }
+
+  it("asks Kratos in agent-neutral terms and answers with the CLI's labels, joined picks and own text", async () => {
+    const { response, asked } = await questionTurn(async () => ({
+      outcome: "answered",
+      answers: [{ selected: ["Opus"] }, { selected: ["Red", "Blue"], other: "  teal  " }],
+    }));
+    expect(asked).toEqual([
+      {
+        toolCallId: "t1",
+        questions: [
+          {
+            header: "Model",
+            question: "Which model?",
+            multiSelect: false,
+            options: [{ label: "Opus", description: "Smartest", recommended: true }, { label: "Haiku" }],
+          },
+          { header: "Colors", question: "Which colors?", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }, { label: "Green" }] },
+        ],
+      },
+    ]);
+    expect(response?.behavior).toBe("allow");
+    expect(response?.updatedInput?.answers).toEqual({ "Which model?": "Opus (Recommended)", "Which colors?": "Red, Blue, teal" });
+  });
+
+  it("tells the agent to decide for itself when the owner skips", async () => {
+    const { response } = await questionTurn(async () => ({ outcome: "skipped" }));
+    expect(response).toMatchObject({ behavior: "deny", message: expect.stringContaining("Make your own call") });
+  });
+
+  it("refuses the questions (never a bare allow) when nobody can answer them", async () => {
+    const { response } = await questionTurn(undefined);
+    expect(response).toMatchObject({ behavior: "deny", message: expect.stringContaining("couldn't show these questions") });
   });
 });

@@ -12,7 +12,7 @@ import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { CliMessage, GetSettingsResponse, InitializeResponse, SetPermissionModeResponse } from "./protocol.js";
+import { AskUserQuestionInput, CliMessage, GetSettingsResponse, InitializeResponse, SetPermissionModeResponse } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -85,6 +85,11 @@ const PERMISSION_MODES: AgentPermissionMode[] = [
 ];
 const CLAUDE_DEFAULT_MODE = "default";
 
+/** Claude's question tool (D54), its "this one's my pick" label suffix, and what a skip tells it. */
+const ASK_TOOL = "AskUserQuestion";
+const RECOMMENDED = /\s*\(recommended\)\s*$/i;
+const SKIPPED = "The user skipped these questions. Make your own call and carry on.";
+
 /** Claude's own model id for "its default"; Kratos uses null for that and maps it here (3c4). */
 const CLAUDE_DEFAULT_MODEL = "default";
 
@@ -106,7 +111,7 @@ function startSession(
   options: Parameters<AgentAdapter["startSession"]>[0],
   listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
-  const { cwd, requestPermission, conversation, model, effort, permissionMode } = options;
+  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
   // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
@@ -127,7 +132,11 @@ function startSession(
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
 
-  /** The gate: ask Kratos, then reply to the CLI. Fails closed (deny) if the callback throws. */
+  /**
+   * Answer one of the CLI's `can_use_tool` asks: questions go to `askQuestions` (D54), every other
+   * tool to the permission gate. Fails closed (deny) if Kratos's callback throws; sends nothing if
+   * the CLI withdrew the ask meanwhile (control_cancel_request).
+   */
   async function answer({ request_id, request }: ControlRequest) {
     if (request.subtype !== "can_use_tool" || !request.tool_name) {
       const error = `Kratos does not handle control request "${request.subtype}"`;
@@ -139,28 +148,66 @@ function startSession(
     const input = request.input ?? {};
     let response: object;
     try {
-      const d = await requestPermission(
-        {
-          tool: request.tool_name,
-          input,
-          reason: request.decision_reason,
-          toolCallId: request.tool_use_id,
-          action: toolAction(request.tool_name, input),
-        },
-        { signal: abort.signal },
-      );
-      response = d.decision === "allow"
-        ? { behavior: "allow", updatedInput: d.updatedInput ?? input }
-        : { behavior: "deny", message: d.message };
+      response = request.tool_name === ASK_TOOL
+        ? await askOwner(input, request.tool_use_id, abort.signal)
+        : await gate(request.tool_name, input, request, abort.signal);
     } catch (err) {
       response = { behavior: "deny", message: `Kratos permission check failed: ${String(err)}` };
     } finally {
       pending.delete(request_id);
     }
-    // If the CLI withdrew the ask (control_cancel_request), it no longer wants an answer.
     if (!abort.signal.aborted) {
       proc.send({ type: "control_response", response: { subtype: "success", request_id, response } });
     }
+  }
+
+  /** The permission gate: allow (maybe with edited input) or deny with the owner's message. */
+  async function gate(tool: string, input: Record<string, unknown>, request: ControlRequest["request"], signal: AbortSignal) {
+    const d = await requestPermission(
+      { tool, input, reason: request.decision_reason, toolCallId: request.tool_use_id, action: toolAction(tool, input) },
+      { signal },
+    );
+    return d.decision === "allow" ? { behavior: "allow", updatedInput: d.updatedInput ?? input } : { behavior: "deny", message: d.message };
+  }
+
+  /**
+   * The agent's questions (D54), verified on the real CLI: the answer is the tool's input plus
+   * `answers: {"<question>": "<label>"}` (several picks, and the owner's own text, joined with
+   * ", "); skipping is a deny the agent carries on from. Never allow without answers — the CLI
+   * reads that as "the user did not answer".
+   */
+  async function askOwner(input: Record<string, unknown>, toolCallId: string | undefined, signal: AbortSignal) {
+    const parsed = AskUserQuestionInput.safeParse(input);
+    if (!askQuestions || !parsed.success) {
+      return { behavior: "deny", message: "Kratos couldn't show these questions to the user. Make your own call and carry on." };
+    }
+    const asked = parsed.data.questions;
+    const reply = await askQuestions(
+      {
+        toolCallId,
+        questions: asked.map((q) => ({
+          header: q.header ?? "",
+          question: q.question,
+          multiSelect: q.multiSelect ?? false,
+          options: q.options.map((o) => ({
+            label: o.label.replace(RECOMMENDED, ""),
+            ...(o.description ? { description: o.description } : {}),
+            ...(RECOMMENDED.test(o.label) ? { recommended: true } : {}),
+          })),
+        })),
+      },
+      { signal },
+    );
+    if (reply.outcome === "skipped") return { behavior: "deny", message: SKIPPED };
+    const answers = Object.fromEntries(
+      asked.map((q, i) => {
+        const answer = reply.answers[i] ?? { selected: [] };
+        // Back to the agent's own labels ("Opus (Recommended)"), which it knows.
+        const picked = answer.selected.map((label) => q.options.find((o) => o.label.replace(RECOMMENDED, "") === label)?.label ?? label);
+        return [q.question, [...picked, ...(answer.other?.trim() ? [answer.other.trim()] : [])].join(", ")];
+      }),
+    );
+    return { behavior: "allow", updatedInput: { ...input, answers } };
   }
 
   async function* events(): AsyncGenerator<AgentEvent> {

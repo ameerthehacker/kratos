@@ -86,6 +86,8 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
         }
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
       }
+    } else if (message.type === "question_request" || message.type === "question_resolved") {
+      // The agent's questions (D54): shown by the question card in 3r2; nothing here yet.
     } else {
       const event = message.event;
       if (event.kind === "text") {

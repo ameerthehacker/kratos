@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { formatDistanceToNowStrict } from "date-fns";
-import { ChevronRight, Hand, MessageSquare } from "lucide-react";
+import { ChevronRight, Hand, MessageCircleQuestion, MessageSquare } from "lucide-react";
 import type { Harness, SessionSummary } from "@kratos/core";
 import { modelLabel } from "@/components/agent-picker";
 import { DoneButton } from "@/components/done-button";
@@ -48,6 +48,7 @@ function RecentRow({ session, harnesses }: { session: SessionSummary; harnesses:
           <span className="truncate">{sessionTitle(session)}</span>
           <span className="truncate text-xs text-muted-foreground">
             {session.status === "needs_approval" && <span className="text-wait">Needs your OK · </span>}
+            {session.status === "needs_answer" && <span className="text-wait">Needs your answer · </span>}
             {session.status === "working" && <span className="text-run">Working · </span>}
             {modelLabel(models, session.model)} · {when}
           </span>
@@ -71,10 +72,11 @@ function StatusTile({ status }: { status: SessionSummary["status"] }) {
       aria-hidden="true"
       className={cn(
         "flex size-8 shrink-0 items-center justify-center rounded-xl",
-        status === "needs_approval" ? "bg-wait/10 text-wait" : "bg-secondary text-muted-foreground",
+        status === "needs_approval" || status === "needs_answer" ? "bg-wait/10 text-wait" : "bg-secondary text-muted-foreground",
       )}
     >
       {status === "needs_approval" && <Hand className="size-3.5" />}
+      {status === "needs_answer" && <MessageCircleQuestion className="size-3.5" />}
       {status === "working" && <span className="size-2 animate-pulse rounded-full bg-run" />}
       {status === "idle" && <MessageSquare className="size-3.5" />}
     </span>

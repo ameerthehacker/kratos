@@ -233,6 +233,44 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Bypass opens a consent dialog first (what it turns off, that it's this session only).
             Later, not in this step: a proper plan-approval card for `ExitPlanMode` (today it
             shows as a generic "Use ExitPlanMode" ask).
+    - [ ] **3r. Agent questions** (owner, D54) — when the agent asks you a multiple-choice
+          question mid-turn (Claude Code's `AskUserQuestion`), Kratos shows the design's question
+          card ("Proposal · question widget") and sends your answers back. Found on the real CLI
+          (2.1.308, tiny Haiku turns): it arrives as a `can_use_tool` ask for `AskUserQuestion`
+          (`requires_user_interaction: true`) with `questions: [{question, header, multiSelect,
+          options: [{label, description}]}]`. Answer = allow with the input plus
+          `answers: {"<question>": "<label>"}` — several picks joined with ", ", any typed text
+          accepted as-is ("Other"); several questions answered in one go. Skip = deny with a
+          message (the agent carries on). Allow without answers = "the user did not answer", so
+          Kratos never sends that. (Per-answer `annotations.notes` also works; the design has no
+          notes, so not used.)
+      - [x] **3r1. Backend** (~250 incl. tests) — done: end to end over WebSocket with real
+            `claude` (Haiku): two questions, "(Recommended)" → flag, status needs_answer, a
+            malformed answer refused with its reason, the answer (picks + own text) reached the
+            agent, which restated it.
+            - core: agent-neutral `AgentQuestion {header, question, multiSelect, options:
+              [{label, description?, recommended?}]}`; `QuestionReply` = answered (per question:
+              `selected` labels + optional `other` text) | skipped; `startSession({ askQuestions })`
+              — a second callback beside `requestPermission`, same abort signal semantics.
+            - Claude adapter: routes `AskUserQuestion` asks to `askQuestions` instead of the
+              permission gate; "(Recommended)" at the end of a label → `recommended: true` (answers
+              still use the agent's own labels); maps the reply to `answers` / a skip message
+              ("decide yourself"); fails closed (deny) if Kratos can't ask.
+            - protocol: server `question_request {id, request}` and `question_resolved {id,
+              outcome: answered | skipped | cancelled, answers?}` (in the session log, so replay
+              shows the outcome); client `question_answer {id, reply}`, checked by the server
+              (known labels, one pick for single choice, every question answered);
+              `SessionSummary.status` gains `needs_answer` ("Needs your answer").
+            - runtime: open questions like asks — first answer from any tab wins, withdrawn on
+              interrupt/stop → cancelled, left open by a restart → cancelled ("Not answered"),
+              skipped on shutdown.
+            - web: the timeline only skips the new messages for now (UI is 3r2).
+            - Tests: fake claude learns a question turn (single, multi + Other, skip); adapter +
+              hub tests incl. invalid answers, two tabs, interrupt, restart.
+      - [ ] **3r2. UI** (~250) — the design's question card in the ask dock (tabs per question,
+            radio/checkbox rows with Recommended, "Other" field, keys 1–4 / ↵ / Esc, Back / Next /
+            Send answers, Skip), the step "Asking 2 questions" → "Asked …" with answer chips,
+            "Needs your answer" in sidebar and header.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

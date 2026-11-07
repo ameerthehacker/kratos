@@ -156,6 +156,35 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D54. Agent questions: their own callback and messages, answers checked by the server (step 3r, owner)
+- Owner: support the agent asking questions (Claude's AskUserQuestion), per the design's question
+  card ("Proposal · question widget"); backend first.
+- Found on the real CLI (2.1.308, tiny Haiku turns): the question is a `can_use_tool` ask for
+  `AskUserQuestion` (`requires_user_interaction: true`), input `questions: [{question, header,
+  multiSelect, options: [{label, description}]}]`. Answer = allow with that input plus
+  `answers: {"<question>": "<labels and own text, joined with ', '>"}`; skip = deny with a
+  message, and the agent carries on; allow *without* answers = "the user did not answer" —
+  so Kratos never sends it. `annotations: {"<question>": {notes}}` also works (unused: the design
+  has no notes).
+- Shape: agent-neutral `AgentQuestion` / `QuestionRequest` / `QuestionReply` (answered: per
+  question `selected` labels + optional `other` text; or skipped) in core, and a second session
+  callback `askQuestions` beside `requestPermission` rather than squeezing questions into
+  PermissionDecision: they aren't allow/deny, and the UI shows them differently. The adapter
+  routes AskUserQuestion there; without a callback, or with input it can't read, it denies
+  ("make your own call"), never a bare allow.
+- Claude marks its pick by ending a label with "(Recommended)": the adapter turns that into
+  `recommended: true` (the design's tag) and maps answers back to the agent's own labels.
+- Protocol: `question_request` / `question_resolved {outcome: answered | skipped | cancelled,
+  answers?}` are in the session log, so a replay shows how questions ended (answers included);
+  `question_answer {id, reply}` is checked by the server with core's `checkQuestionReply` (one
+  answer per question, known labels, one choice for single-choice, nothing empty) and refused
+  with the reason otherwise. Late answers (another tab won, or withdrawn) are ignored quietly,
+  like late permission decisions. Status `needs_answer` ("Needs your answer", amber) wins over
+  `needs_approval`.
+- Withdrawn by the agent, or left open by a restart → `cancelled` ("Not answered"); shutdown →
+  cancelled, and the agent hears "skipped".
+- Reverse: additive — drop the callback (questions are then refused) and the messages.
+
 ### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)
 - Owner: choose permission modes like the harnesses allow (auto, accept edits, …), including
   Bypass, but only after a consent dialog; Home remembers the pick like model and effort.

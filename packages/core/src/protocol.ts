@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { AgentEvent, AgentModel, AgentPermissionMode, PermissionDecision, PermissionRequest } from "./agent.js";
+import {
+  AgentEvent,
+  AgentModel,
+  AgentPermissionMode,
+  PermissionDecision,
+  PermissionRequest,
+  QuestionAnswer,
+  QuestionReply,
+  QuestionRequest,
+} from "./agent.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -41,6 +50,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
+  /** Answer to a `question_request`; the first valid answer from any tab wins (D54). */
+  z.object({ type: z.literal("question_answer"), id: z.string(), reply: QuestionReply }),
   /** Open the project folder in one of the editors listed in `pong` (3d3). */
   z.object({ type: z.literal("open_in"), editor: z.string() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
@@ -59,7 +70,7 @@ export type ClientMessage = z.infer<typeof ClientMessage>;
 export const SessionSummary = z.object({
   id: z.string(),
   title: z.string().nullable(),
-  status: z.enum(["idle", "working", "needs_approval"]),
+  status: z.enum(["idle", "working", "needs_approval", "needs_answer"]),
   updatedAt: z.number(),
   /** Harness (adapter id) and model it runs with; model null = the agent's default. */
   harness: z.string(),
@@ -122,6 +133,16 @@ export const ServerMessage = z.discriminatedUnion("type", [
     type: z.literal("permission_resolved"),
     id: z.string(),
     outcome: z.enum(["allowed", "denied", "cancelled"]),
+  }),
+  /** The agent asks the owner questions (D54); answer with `question_answer` and this id. */
+  z.object({ type: z.literal("question_request"), id: z.string(), request: QuestionRequest }),
+  /** Questions settled: answered (with the answers, for the record), skipped by the owner, or
+   * cancelled — withdrawn by the agent, or left open by a restart ("Not answered"). */
+  z.object({
+    type: z.literal("question_resolved"),
+    id: z.string(),
+    outcome: z.enum(["answered", "skipped", "cancelled"]),
+    answers: z.array(QuestionAnswer).optional(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

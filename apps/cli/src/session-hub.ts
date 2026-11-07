@@ -108,6 +108,15 @@ export class SessionHub {
       case "interrupt":
         viewing.interrupt();
         return;
+      case "question_answer": {
+        // Question ids are unique across sessions: the owner checks and takes the answer (D54).
+        // Already settled (another tab answered first, or the agent withdrew it): nothing to do,
+        // like a late permission decision — every tab gets question_resolved anyway.
+        const owner = [...this.runtimes.values()].find((runtime) => runtime.hasQuestion(message.id));
+        const problem = owner?.answerQuestion(message.id, message.reply);
+        if (problem) send({ type: "error", message: `Couldn't send your answer: ${problem}` });
+        return;
+      }
       case "permission_decision":
         // Ask ids are unique across sessions: let the owner take it (first decision wins).
         for (const runtime of this.runtimes.values()) if (runtime.decide(message.id, message.decision)) return;

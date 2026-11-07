@@ -45,7 +45,7 @@ export function Conversation(props: { items: TimelineItem[]; agent: string; stat
         {/* Last in the scroll, so it follows the newest message (3d6). Mounted for the whole
             turn (its timer counts from the start); hidden while an ask waits for you. */}
         {props.status && props.status !== "idle" && (
-          <WorkingIndicator activity={currentActivity(items)} paused={props.status === "needs_approval"} />
+          <WorkingIndicator activity={currentActivity(items)} paused={props.status === "needs_approval" || props.status === "needs_answer"} />
         )}
       </StickToBottom.Content>
     </StickToBottom>

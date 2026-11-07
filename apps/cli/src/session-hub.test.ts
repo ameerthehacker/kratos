@@ -7,6 +7,8 @@ import type {
   AgentSession,
   Harness,
   PermissionRequest,
+  QuestionAnswer,
+  QuestionRequest,
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
@@ -58,6 +60,11 @@ class FakeSession implements AgentSession {
   }
   emit(event: AgentEvent) {
     this.stream.enqueue(event);
+  }
+  /** Ask questions the way an adapter would (D54); `withdraw` simulates the CLI cancelling them. */
+  question(request: QuestionRequest) {
+    const abort = new AbortController();
+    return { reply: this.options.askQuestions!(request, { signal: abort.signal }), withdraw: () => abort.abort() };
   }
   /** Ask permission the way an adapter would; `withdraw` simulates the CLI cancelling it. */
   ask(request: PermissionRequest) {
@@ -123,6 +130,7 @@ function setup() {
       get viewing() {
         return state.sessionIds.at(-1)!;
       },
+      lastQuestionId: () => state.seen.findLast((m): m is Extract<ServerMessage, { type: "question_request" }> => m.type === "question_request")!.id,
       lastAskId: () => state.seen.findLast((m): m is Extract<ServerMessage, { type: "permission_request" }> => m.type === "permission_request")!.id,
     };
   };
@@ -635,5 +643,83 @@ describe("SessionHub: permission modes (D53)", () => {
     await tick();
     expect(agents[0]!.modeSwitches).toEqual([]);
     expect(a.seen.at(-1)).toMatchObject({ type: "error", message: 'Fake has no permission mode "turbo"' });
+  });
+});
+
+describe("SessionHub: agent questions (D54)", () => {
+  const REQUEST: QuestionRequest = {
+    toolCallId: "t1",
+    questions: [
+      { header: "Model", question: "Which model?", multiSelect: false, options: [{ label: "Opus", recommended: true }, { label: "Haiku" }] },
+      { header: "Colors", question: "Which colors?", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }] },
+    ],
+  };
+  const status = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.status;
+  const resolved = (t: { seen: ServerMessage[] }) => t.seen.filter((m) => m.type === "question_resolved");
+
+  it("shows the questions to every tab, marks the session as needing an answer, and passes the answer on", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const { reply } = agents[0]!.question(REQUEST);
+    expect(a.seen.at(-1)).toEqual({ type: "question_request", id: a.lastQuestionId(), request: REQUEST });
+    expect(status(a)).toBe("needs_answer");
+
+    const answers = [{ selected: ["Opus"] }, { selected: ["Red"], other: "teal" }];
+    a.receive({ type: "question_answer", id: a.lastQuestionId(), reply: { outcome: "answered", answers } });
+    expect(await reply).toEqual({ outcome: "answered", answers });
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id: a.lastQuestionId(), outcome: "answered", answers }]);
+    expect(status(a)).toBe("working");
+  });
+
+  it("refuses answers that don't fit the questions, and keeps them open", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.question(REQUEST);
+    const id = a.lastQuestionId();
+    const tries: Array<[QuestionAnswer[], string]> = [
+      [[{ selected: ["Opus"] }], "Expected 2 answers, got 1"],
+      [[{ selected: ["Sonnet"] }, { selected: ["Red"] }], '"Sonnet" is not an option of "Model"'],
+      [[{ selected: ["Opus"], other: "mine" }, { selected: ["Red"] }], '"Model" takes one answer'],
+      [[{ selected: ["Opus"] }, { selected: [], other: "  " }], '"Colors" has no answer'],
+    ];
+    for (const [answers, problem] of tries) {
+      a.receive({ type: "question_answer", id, reply: { outcome: "answered", answers } });
+      expect(a.seen.at(-1)).toEqual({ type: "error", message: `Couldn't send your answer: ${problem}` });
+    }
+    expect(resolved(a)).toEqual([]);
+    expect(status(a)).toBe("needs_answer");
+  });
+
+  it("takes the first answer from any tab, skips included, and ignores a late one quietly", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const { reply } = agents[0]!.question(REQUEST);
+    const id = a.lastQuestionId();
+    b.receive({ type: "question_answer", id, reply: { outcome: "skipped" } });
+    a.receive({ type: "question_answer", id, reply: { outcome: "answered", answers: [{ selected: ["Opus"] }, { selected: ["Red"] }] } });
+    expect(await reply).toEqual({ outcome: "skipped" });
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id, outcome: "skipped" }]);
+    expect(a.seen.some((m) => m.type === "error")).toBe(false);
+  });
+
+  it("marks questions the agent withdrew, or a restart left open, as cancelled", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const first = agents[0]!.question(REQUEST);
+    first.withdraw();
+    expect(await first.reply).toEqual({ outcome: "skipped" }); // the agent no longer reads it
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id: a.lastQuestionId(), outcome: "cancelled" }]);
+
+    agents[0]!.question(REQUEST); // still open when Kratos restarts
+    const openId = a.lastQuestionId();
+    restart();
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "question_resolved").at(-1)).toEqual({ type: "question_resolved", id: openId, outcome: "cancelled" });
+    expect(status(late)).toBe("idle");
   });
 });

@@ -82,3 +82,18 @@ describe("currentActivity (3d6)", () => {
     expect(activity(prompt, read, { type: "permission_request", id: "a", request: { tool: "Read", input: {}, toolCallId: "r" } })).toBeNull();
   });
 });
+
+describe("buildTimeline: agent questions (D54)", () => {
+  it("skips question messages for now (the question card comes in 3r2)", () => {
+    const items = buildTimeline([
+      { type: "user_prompt", text: "go" },
+      { type: "question_request", id: "q1", request: { questions: [{ header: "H", question: "Q?", multiSelect: false, options: [{ label: "A" }] }] } },
+      { type: "question_resolved", id: "q1", outcome: "answered", answers: [{ selected: ["A"] }] },
+      agent({ kind: "text", text: "thanks" }),
+    ]);
+    expect(items).toEqual([
+      { type: "prompt", text: "go" },
+      { type: "reply", text: "thanks" },
+    ]);
+  });
+});

@@ -92,6 +92,74 @@ export type RequestPermission = (
   options: { signal: AbortSignal },
 ) => Promise<PermissionDecision>;
 
+// ── Questions: the agent asks the owner to choose (D54) ─────────────────────────────────
+
+/** One multiple-choice question from the agent, in agent-neutral terms (e.g. Claude's
+ * AskUserQuestion). The owner may always type their own answer instead ("Other"). */
+export const AgentQuestion = z.object({
+  /** A short tab label ("Placement"). */
+  header: z.string(),
+  question: z.string(),
+  multiSelect: z.boolean(),
+  options: z.array(
+    z.object({
+      label: z.string(),
+      description: z.string().optional(),
+      /** The option the agent recommends (shown, never pre-picked). */
+      recommended: z.boolean().optional(),
+    }),
+  ),
+});
+export type AgentQuestion = z.infer<typeof AgentQuestion>;
+
+export const QuestionRequest = z.object({
+  questions: z.array(AgentQuestion).min(1),
+  /** The `tool_call` event that carries the questions, when the agent says. */
+  toolCallId: z.string().optional(),
+});
+export type QuestionRequest = z.infer<typeof QuestionRequest>;
+
+/** The owner's answer to one question: picked option labels and/or their own text. */
+export const QuestionAnswer = z.object({ selected: z.array(z.string()), other: z.string().optional() });
+export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
+
+export const QuestionReply = z.discriminatedUnion("outcome", [
+  /** One answer per question, in the same order. */
+  z.object({ outcome: z.literal("answered"), answers: z.array(QuestionAnswer) }),
+  /** The owner skipped: the agent decides for itself. */
+  z.object({ outcome: z.literal("skipped") }),
+]);
+export type QuestionReply = z.infer<typeof QuestionReply>;
+
+/**
+ * Called by the adapter when the agent asks the owner questions, and awaited. `signal` aborts
+ * if the agent withdraws them (e.g. the turn is interrupted). Like RequestPermission.
+ */
+export type AskQuestions = (request: QuestionRequest, options: { signal: AbortSignal }) => Promise<QuestionReply>;
+
+/**
+ * Why a reply doesn't fit its questions, or null if it does: one answer per question, only the
+ * question's own option labels, at most one choice for a single-choice question, and every
+ * question answered (an option or non-empty own text). Skipping always fits.
+ */
+export function checkQuestionReply(request: QuestionRequest, reply: QuestionReply): string | null {
+  if (reply.outcome === "skipped") return null;
+  if (reply.answers.length !== request.questions.length) {
+    return `Expected ${request.questions.length} answers, got ${reply.answers.length}`;
+  }
+  for (const [i, question] of request.questions.entries()) {
+    const answer = reply.answers[i]!;
+    const labels = new Set(question.options.map((o) => o.label));
+    const unknown = answer.selected.find((label) => !labels.has(label));
+    if (unknown !== undefined) return `"${unknown}" is not an option of "${question.header}"`;
+    if (new Set(answer.selected).size !== answer.selected.length) return `"${question.header}" lists an option twice`;
+    const choices = answer.selected.length + (answer.other?.trim() ? 1 : 0);
+    if (choices === 0) return `"${question.header}" has no answer`;
+    if (!question.multiSelect && choices > 1) return `"${question.header}" takes one answer`;
+  }
+  return null;
+}
+
 // ── Adapter + session: behaviour, so plain TS interfaces ────────────────────────────────
 
 /**
@@ -153,6 +221,8 @@ export interface AgentAdapter {
     effort?: string;
     /** One of `permissionModes`; without it, the agent's default mode (D53). */
     permissionMode?: string;
+    /** Where the agent's questions go (D54); without it, questions are refused. */
+    askQuestions?: AskQuestions;
   }): AgentSession;
 }
 

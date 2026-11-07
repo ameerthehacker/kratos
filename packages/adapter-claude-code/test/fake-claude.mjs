@@ -114,6 +114,19 @@ const turns = {
     report(mode);
     finish();
   },
+  // Ask the owner questions like the real CLI (AskUserQuestion, D54); report what came back.
+  async question() {
+    const input = {
+      questions: [
+        { question: "Which model?", header: "Model", multiSelect: false, options: [{ label: "Opus (Recommended)", description: "Smartest" }, { label: "Haiku" }] },
+        { question: "Which colors?", header: "Colors", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }, { label: "Green" }] },
+      ],
+    };
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion", input }] }, parent_tool_use_id: null });
+    const response = await ask({ subtype: "can_use_tool", tool_name: "AskUserQuestion", input, tool_use_id: "t1", requires_user_interaction: true });
+    report(JSON.stringify(response.response), response.response?.behavior === "deny");
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));

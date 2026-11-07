@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentAdapter,
-  AgentSession,
-  PermissionDecision,
-  PermissionRequest,
-  ServerMessage,
-  SessionSummary,
+import {
+  checkQuestionReply,
+  type AgentAdapter,
+  type AgentSession,
+  type PermissionDecision,
+  type PermissionRequest,
+  type QuestionReply,
+  type QuestionRequest,
+  type ServerMessage,
+  type SessionSummary,
 } from "@kratos/core";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./store/store.js";
@@ -19,6 +22,8 @@ type Outcome = "allowed" | "denied" | "cancelled";
  */
 export class SessionRuntime {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
+  /** The agent's open questions (D54): what was asked, and how to answer. */
+  private readonly questions = new Map<string, { request: QuestionRequest; resolve: (reply: QuestionReply) => void }>();
   private readonly log: ServerMessage[];
   /** Has the agent ever been started for this conversation? Then every start must resume (D36). */
   private agentStarted: boolean;
@@ -58,6 +63,9 @@ export class SessionRuntime {
     for (const askId of unresolvedAsks(this.log)) {
       this.publish({ type: "permission_resolved", id: askId, outcome: "cancelled" }, { activity: false });
     }
+    for (const questionId of unresolvedQuestions(this.log)) {
+      this.publish({ type: "question_resolved", id: questionId, outcome: "cancelled" }, { activity: false });
+    }
   }
 
   /** The log so far, for replaying to a tab that opens this session. */
@@ -70,6 +78,7 @@ export class SessionRuntime {
   }
 
   get status(): SessionSummary["status"] {
+    if (this.questions.size > 0) return "needs_answer";
     return this.pending.size > 0 ? "needs_approval" : this.turnOpen ? "working" : "idle";
   }
 
@@ -171,10 +180,29 @@ export class SessionRuntime {
     return this.settle(askId, decision.decision === "allow" ? "allowed" : "denied", decision);
   }
 
-  /** Server shutdown: withdraw open asks and stop the agent. */
+  /** Is this one of this session's open questions? */
+  hasQuestion(questionId: string): boolean {
+    return this.questions.has(questionId);
+  }
+
+  /** Answer one of this session's questions (D54); the first valid answer wins. Returns why the
+   * reply doesn't fit, or null once it's sent to the agent. */
+  answerQuestion(questionId: string, reply: QuestionReply): string | null {
+    const open = this.questions.get(questionId);
+    if (!open) return "This question is no longer open";
+    const problem = checkQuestionReply(open.request, reply);
+    if (problem) return problem;
+    this.settleQuestion(questionId, reply.outcome, reply);
+    return null;
+  }
+
+  /** Server shutdown: withdraw open asks and questions, and stop the agent. */
   async close(): Promise<void> {
     for (const askId of [...this.pending.keys()]) {
       this.settle(askId, "cancelled", { decision: "deny", message: "Kratos is shutting down" }, { activity: false });
+    }
+    for (const questionId of [...this.questions.keys()]) {
+      this.settleQuestion(questionId, "cancelled", { outcome: "skipped" }, { activity: false });
     }
     await this.session?.stop();
   }
@@ -187,6 +215,7 @@ export class SessionRuntime {
       effort: this.effortChoice ?? undefined,
       permissionMode: this.mode ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
+      askQuestions: (request, { signal }) => this.askQuestions(request, signal),
     });
     this.logger.info(
       {
@@ -249,6 +278,33 @@ export class SessionRuntime {
     return decision;
   }
 
+  /** Called by the adapter when the agent asks the owner questions: publish them, wait for a tab
+   * to answer (or the agent to withdraw them — then the agent hears "skipped", unread). */
+  private askQuestions(request: QuestionRequest, signal: AbortSignal): Promise<QuestionReply> {
+    const questionId = randomUUID();
+    const reply = new Promise<QuestionReply>((resolve) => this.questions.set(questionId, { request, resolve }));
+    this.logger.debug({ question: questionId, count: request.questions.length }, "questions asked");
+    this.publish({ type: "question_request", id: questionId, request });
+    this.deps.onChange();
+    signal.addEventListener("abort", () => this.settleQuestion(questionId, "cancelled", { outcome: "skipped" }), { once: true });
+    return reply;
+  }
+
+  /** Settle questions once (first answer wins). The log keeps the answers, so a replay can show
+   * them; "cancelled" = withdrawn or never answered. */
+  private settleQuestion(questionId: string, outcome: "answered" | "skipped" | "cancelled", reply: QuestionReply, options?: { activity: false }): void {
+    const open = this.questions.get(questionId);
+    if (!open) return;
+    this.questions.delete(questionId);
+    this.logger.debug({ question: questionId, outcome }, "questions settled");
+    this.publish(
+      { type: "question_resolved", id: questionId, outcome, ...(reply.outcome === "answered" ? { answers: reply.answers } : {}) },
+      options,
+    );
+    open.resolve(reply);
+    this.deps.onChange();
+  }
+
   /** Resolve an ask once; unknown or already-settled ids are ignored (first decision wins). */
   private settle(askId: string, outcome: Outcome, decision: PermissionDecision, options?: { activity: false }): boolean {
     const resolve = this.pending.get(askId);
@@ -277,6 +333,16 @@ export class SessionRuntime {
     this.deps.store.append(this.id, message, options);
     this.deps.onMessage(message);
   }
+}
+
+/** Ids of question requests in the log that never got a question_resolved. */
+function unresolvedQuestions(log: ServerMessage[]): string[] {
+  const open = new Set<string>();
+  for (const message of log) {
+    if (message.type === "question_request") open.add(message.id);
+    else if (message.type === "question_resolved") open.delete(message.id);
+  }
+  return [...open];
 }
 
 /** Ids of permission requests in the log that never got a permission_resolved. */

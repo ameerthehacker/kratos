@@ -72,6 +72,21 @@ export const InitializeResponse = z.object({
   ),
 });
 
+/** The input of Claude's AskUserQuestion tool, as the real CLI sends it (D54). */
+export const AskUserQuestionInput = z.object({
+  questions: z
+    .array(
+      z.object({
+        question: z.string(),
+        header: z.string().optional(),
+        multiSelect: z.boolean().optional(),
+        options: z.array(z.object({ label: z.string(), description: z.string().optional() })),
+      }),
+    )
+    .min(1),
+});
+export type AskUserQuestionInput = z.infer<typeof AskUserQuestionInput>;
+
 /** The answer to `set_permission_mode`: the mode the CLI applied ("manual" comes back as "default"). */
 export const SetPermissionModeResponse = z.object({ mode: z.string() });
 

@@ -1,4 +1,4 @@
-import type { AgentEvent, QuestionAnswer, QuestionRequest, ServerMessage, ToolAction } from "@kratos/core";
+import type { AgentEvent, AttachmentRef, QuestionAnswer, QuestionRequest, ServerMessage, ToolAction } from "@kratos/core";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
 export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" | "note" | "plain"; label?: string };
@@ -30,7 +30,7 @@ export type Step = {
 export type OpenAsk = { id: string; reason?: string };
 
 export type TimelineItem =
-  | { type: "prompt"; text: string }
+  | { type: "prompt"; text: string; attachments?: AttachmentRef[] }
   | { type: "reply"; text: string }
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
@@ -63,7 +63,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
   for (const message of log) {
     if (message.type === "user_prompt") {
       breakGroup();
-      items.push({ type: "prompt", text: message.text });
+      items.push({ type: "prompt", text: message.text, ...(message.attachments ? { attachments: message.attachments } : {}) });
     } else if (message.type === "permission_request") {
       // The ask names its call (3c4); logs from before that are matched to the newest unanswered
       // call of the same tool. Without any match, the ask still shows, from its own data.

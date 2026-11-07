@@ -183,6 +183,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Serving: `GET /attachments/:id` — looked up by id, only this project's sessions, ids checked as
   UUIDs before any disk access (no path from the browser). Never run in the page: text kinds are
   served as `text/plain`, with `nosniff` and a `default-src 'none'` CSP.
+- UI (3s2, design "Proposal 3s2 · attachments", options 1 + B): "+" first in the composer row;
+  drop on the card (only the card is the target) or paste; files are checked in the tab with
+  core's `classifyAttachment` / `checkAttachmentSet` before sending, so the server's refusals
+  rarely happen. Images as 56px thumbnails from a local object URL (freed on remove, send and
+  unmount), other files as chips; a refused file stays red until removed and blocks send; over
+  the count/total, the extra files aren't added and an amber note names them. Files are read
+  with `FileReader` (data URL → base64), sizes shown with `pretty-bytes`. Dropping, pasting and
+  the "+" file picker are `react-dropzone`'s (`useDropzone`: the card is the drop root; `noClick`,
+  `noKeyboard`, plain file input) — owner: library over hand-rolled drag events (it handles the
+  drag-leave flicker over child elements and pasted files); it accepts everything, so our own
+  check marks refused files visibly instead of dropping them. Kept ours: renaming a pasted
+  "image.png" to "pasted-image.png". The composer's file logic lives in `useDraftFiles`; the card
+  only lays things out (owner: "prompt card is getting big"). Sent: thumbnails open a
+  shadcn Dialog lightbox; PDFs and text open `/attachments/<id>` in a new tab (never rendered in
+  the page). Vite's dev server proxies `/attachments` like `/ws`.
 - Reverse: additive — the table and folder can stay; drop `attachments` from the prompt.
 
 ### D54. Agent questions: their own callback and messages, answers checked by the server (step 3r, owner)

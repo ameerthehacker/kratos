@@ -86,10 +86,11 @@ export function SessionPage() {
               />
             </>
           }
-          onSend={(text) => {
+          onSend={(text, attachments) => {
             askToNotify(); // once, from this click (3r3)
-            send({ type: "prompt", text });
+            send({ type: "prompt", text, ...(attachments.length > 0 ? { attachments } : {}) });
           }}
+          attachments={harnesses.find((h) => h.id === session?.harness)?.attachments}
           onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
           disabled={!connected || viewing !== sessionId}
           size="compact"

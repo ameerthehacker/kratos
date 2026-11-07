@@ -306,9 +306,18 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               starts; a refused prompt isn't sent, and the tab is told why.
             - Tests: fake claude reports the blocks it got; adapter, hub, store, server (serving
               and refusing ids) tests.
-      - [ ] **3s2. UI** — needs a design first: the canvas has nothing on attachments yet (attach
-            button / drag and drop / paste, chips or thumbnails in the composer, the prompt bubble,
-            errors).
+      - [x] **3s2. UI** (~330) — the design's "Proposal 3s2 · attachments", its pick: "+" first
+            in the composer row (option 1) and thumbnails for images + chips for other files (B).
+            Drop files on the card (it tints: "Drop to attach…"), paste a screenshot
+            ("pasted-image.png"); files are checked in the tab with core's rules — a file that can't
+            go stays red ("Can't attach"), the card's ring turns red, the reason sits under it, send
+            is off until it's removed; files over the count/total aren't added (amber note that
+            fades), "+" is off at 10. Sent prompts show images as thumbnails (lightbox: name, size,
+            Open original) and other files as chips that open in a new tab; a missing file shows
+            "Not available". Checked with real `claude` (PNG + PDF + untyped notes → "Red,
+            PINEAPPLE, 4711"; a zip refused; paste; 12 files → 10 + note; lightbox). Not built:
+            the red drag state for unsupported files (browsers often don't say the type until
+            the drop).
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

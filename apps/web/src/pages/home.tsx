@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
-import type { Harness } from "@kratos/core";
+import type { AttachmentUpload, Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
 import { PermissionPicker } from "@/components/permission-picker";
 import { askToNotify } from "@/hooks/use-attention";
@@ -36,7 +36,7 @@ export function HomePage() {
     }
   }, [log, viewing, navigate]);
 
-  const start = (text: string) => {
+  const start = (text: string, attachments: AttachmentUpload[]) => {
     pending.current = { text, viewing, seen: log.length };
     askToNotify(); // once, from this click: so Kratos can tell you when the agent needs you
     send({
@@ -47,6 +47,7 @@ export function HomePage() {
       model: choice?.model ?? undefined,
       effort: choice?.effort ?? undefined,
       permissionMode: permissionMode ?? undefined,
+      ...(attachments.length > 0 ? { attachments } : {}),
       confirmDangerous: dangerous || undefined,
     });
   };
@@ -74,6 +75,7 @@ export function HomePage() {
             </>
           }
           onSend={start}
+          attachments={harness?.attachments}
           disabled={!connected}
           placeholder="Describe a change…"
         />

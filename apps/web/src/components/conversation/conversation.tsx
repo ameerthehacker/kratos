@@ -24,7 +24,7 @@ export function Conversation(props: { items: TimelineItem[]; agent: string; stat
         {items.map((item, i) => {
           switch (item.type) {
             case "prompt":
-              return <PromptBubble key={i} text={item.text} />;
+              return <PromptBubble key={i} text={item.text} attachments={item.attachments} />;
             case "reply":
               return (
                 <Streamdown key={i} mode="static" plugins={{ code: codePlugin }} className="min-w-0">

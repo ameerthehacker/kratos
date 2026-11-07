@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import copyToClipboard from "copy-to-clipboard";
 import { Check, Copy } from "lucide-react";
+import type { AttachmentRef } from "@kratos/core";
+import { SentFiles } from "@/components/attachments";
 import { clientLog } from "@/lib/log";
 
-/** One of your prompts: a right-aligned bubble, with a copy button under it on hover/focus (3c5). */
-export function PromptBubble({ text }: { text: string }) {
+/** One of your prompts: a right-aligned bubble, with a copy button under it on hover/focus (3c5),
+ * and the files sent with it above (3s2). */
+export function PromptBubble({ text, attachments = [] }: { text: string; attachments?: AttachmentRef[] }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -21,6 +24,7 @@ export function PromptBubble({ text }: { text: string }) {
 
   return (
     <div className="group flex max-w-4/5 flex-col items-end gap-1 self-end">
+      <SentFiles files={attachments} />
       <div className="rounded-2xl bg-secondary px-4 py-2.5 whitespace-pre-wrap">{text}</div>
       <button
         type="button"

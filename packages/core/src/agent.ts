@@ -106,6 +106,9 @@ export const AgentModel = z.object({
   group: z.enum(["latest", "other"]),
   /** This entry is the agent's own default: choosing it means "no model chosen" (null, 3c4). */
   isDefault: z.boolean().optional(),
+  /** How hard it can think, lowest first, in the agent's own words (e.g. "low" … "max"; D51).
+   * Absent = this model has no effort control. */
+  efforts: z.array(z.string()).optional(),
 });
 export type AgentModel = z.infer<typeof AgentModel>;
 
@@ -115,12 +118,14 @@ export interface AgentAdapter {
   readonly displayName: string;
   /** The models this agent offers, as the agent itself reports them (never hardcoded). */
   listModels(): Promise<AgentModel[]>;
-  /** Without `conversation`, a fresh, unnamed conversation; without `model`, the agent's default. */
+  /** Without `conversation`, a fresh, unnamed conversation; without `model` or `effort`, the
+   * agent's default. An `effort` the model lacks is the agent's to handle (Claude clamps it; D51). */
   startSession(options: {
     cwd: string;
     requestPermission: RequestPermission;
     conversation?: Conversation;
     model?: string;
+    effort?: string;
   }): AgentSession;
 }
 
@@ -136,6 +141,12 @@ export interface AgentSession {
    * agent's default (3c4). Resolves when the agent confirms — which it reports on its output, so
    * `events` must be being consumed (the hub always does). */
   setModel(model: string | null): Promise<void>;
+  /** Switch the effort level (one of the current model's `efforts`); rejects a level it doesn't
+   * list. Resolves when the agent confirms; like setModel, needs `events` consumed (D51). */
+  setEffort(effort: string): Promise<void>;
+  /** The effort level the agent is really using now (it may differ from what was asked, e.g.
+   * after a model switch); null = none (the model has no effort control, or the agent won't say). */
+  effort(): Promise<string | null>;
   /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }

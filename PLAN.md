@@ -158,6 +158,34 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             session's model. Verified with real `claude`: start on Haiku, switch to Sonnet,
             ask the agent which model it is. Done: also found and fixed two 3L bugs (log folder
             race on first start; session log lines carried `component` twice).
+      - [x] **3m3. Effort: backend** (~200 incl. tests, owner, D51) — how hard the agent thinks.
+            Found on the real CLI (2.1.308): each model lists its levels (`initialize` →
+            `supportedEffortLevels`, e.g. low/medium/high/xhigh/max; some lack xhigh, old Haiku
+            has none); `--effort` sets it at start; `apply_flag_settings {effortLevel}` changes
+            it live; `get_settings` → `applied.effort` is the level really in use. Claude's
+            default differs per model (Opus high, Haiku medium) and clearing it mid-session
+            lands on `medium`, so Kratos never sends "clear" — it shows the real level instead
+            (owner's choice).
+            - core: `AgentModel.efforts?: string[]` (absent = no effort control);
+              `startSession({ effort })`; `AgentSession.setEffort(level)` (resolves when the
+              agent confirms) and `AgentSession.effort()` (the level in use, if the agent says).
+            - Claude adapter: map the above; refuse a level the model doesn't list (the CLI
+              accepts made-up ones silently).
+            - store: `sessions.effort` (migration 0004; null = never chosen); resume passes it.
+            - protocol: `prompt` gains `effort?`; client `set_effort {effort}`;
+              `SessionSummary.effort` = the real level. The hub asks the agent after it starts
+              and after a model switch (the default moves with the model) and broadcasts it.
+            - Tests: fake claude learns `supportedEffortLevels`, `--effort`, `apply_flag_settings`,
+              `get_settings`; adapter start/switch/read; hub start, switch, model-switch re-read.
+      - [ ] **3m4. Effort: UI** (~120, owner, D51) — inside the model chip, like Claude's own
+            picker (owner, revised): the chip reads "Opus 5.5 · High"; its menu gains an
+            "Effort  High ›" row opening a submenu of the current model's levels (Low, Medium,
+            High, Extra high, Max) with a check on the one in use; no Effort row when the model
+            has none. In a session it shows the real level and switches it live. On Home no
+            agent runs yet, so before you pick it shows no level; a pick is remembered with the
+            model choice. Accept, real `claude`: start at Low, switch to High mid-session, the
+            CLI reports high; switch to a model without xhigh while on Extra high → the chip
+            shows what the CLI actually uses.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

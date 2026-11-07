@@ -58,5 +58,19 @@ export type CliMessage = z.infer<typeof CliMessage>;
 
 /** The part of the `initialize` answer Kratos uses: the models this account can pick (D43). */
 export const InitializeResponse = z.object({
-  models: z.array(z.object({ value: z.string(), displayName: z.string(), description: z.string().optional() })),
+  models: z.array(
+    z.object({
+      value: z.string(),
+      displayName: z.string(),
+      description: z.string().optional(),
+      /** Effort levels this model takes, lowest first; absent = none (D51). */
+      supportedEffortLevels: z.array(z.string()).optional(),
+    }),
+  ),
+});
+
+/** The part of the `get_settings` answer Kratos uses: what the CLI is really applying (D51).
+ * (`effective` only merges settings files; `applied` is what the running model gets.) */
+export const GetSettingsResponse = z.object({
+  applied: z.object({ effort: z.string().nullable().optional() }).optional(),
 });

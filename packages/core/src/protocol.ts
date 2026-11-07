@@ -13,19 +13,23 @@ import { AgentEvent, AgentModel, PermissionDecision, PermissionRequest } from ".
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
    * session for it instead and moves this tab there; other sessions keep running (D41). */
-  /** `harness`/`model` apply when this prompt starts a session (its first prompt); D43. */
+  /** `harness`/`model`/`effort` apply when this prompt starts a session (its first prompt); D43, D51. */
   z.object({
     type: z.literal("prompt"),
     text: z.string().min(1),
     newSession: z.boolean().optional(),
     harness: z.string().optional(),
     model: z.string().optional(),
+    effort: z.string().optional(),
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
   /** Switch the viewed session's model, also while its agent is running (D43); null = the
    * agent's default (3c4). */
   z.object({ type: z.literal("set_model"), model: z.string().nullable() }),
+  /** Switch the viewed session's effort level, also while its agent is running (D51). There is
+   * no "back to default": the agent's reset isn't reliable, so Kratos only sets real levels. */
+  z.object({ type: z.literal("set_effort"), effort: z.string().min(1) }),
   z.object({ type: z.literal("interrupt") }),
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
@@ -54,6 +58,9 @@ export const SessionSummary = z.object({
   /** Harness (adapter id) and model it runs with; model null = the agent's default. */
   harness: z.string(),
   model: z.string().nullable(),
+  /** The effort level in use, as the agent last reported it (else the one chosen); null = not
+   * known yet (agent never ran, nothing chosen) or the model has none (D51). */
+  effort: z.string().nullable(),
   /** The owner marked it done (3d2): listed under "Done", hidden from Recent. */
   done: z.boolean(),
 });

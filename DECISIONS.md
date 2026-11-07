@@ -156,6 +156,36 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D51. Effort level: set by Kratos, read back from the agent (steps 3m3–3m4, owner)
+- Owner: choose how hard the agent thinks from the chat box; it shows the level really in use
+  ("Real level"), not a "Default" guess. In 3m4 it lives in the model chip: "Opus 5.5 · High",
+  with an Effort submenu (owner, from Claude's own picker), not a chip of its own.
+- Found on the real CLI (2.1.308; no prompts sent, so no tokens):
+  - `initialize` → each model's `supportedEffortLevels` (low/medium/high/xhigh/max; Opus 4.6
+    and Sonnet 4.6 lack xhigh; Haiku 4.5 has none). → `AgentModel.efforts` (absent = none).
+  - `--effort <level>` sets it at start; an unknown value is ignored with a warning.
+  - `apply_flag_settings {settings: {effortLevel}}` changes it live. Undocumented: it is what
+    the CLI's own remote control uses — the risk is that a CLI update changes it; the adapter
+    tests (fake claude) and a real check at each step catch that.
+  - `get_settings` → `applied.effort` is the level the running model really gets
+    (`effective.effortLevel` only merges settings files and was wrong here: xhigh in
+    ~/.claude/settings.json, yet Opus ran high and Haiku medium). Works without `initialize`.
+  - The CLI clamps on its own: xhigh then a model without it → high; a model with no effort →
+    null; back to a model with xhigh → xhigh again. So a start `--effort` needs no checking.
+  - Gotchas: `effortLevel: null` ("clear") lands on medium, not the default the session started
+    with; a made-up live level ("turbo") gets "success" and changes nothing.
+- So: Kratos never sends "clear" (no null in `set_effort`); the adapter refuses a live level the
+  current model doesn't list (else the UI would show a switch that never happened); after a
+  start, a model switch or an effort switch, the runtime asks `effort()` and lists that.
+- Data: `sessions.effort` (migration 0004; the choice, null = never chosen); `prompt.effort`
+  (Home's pick, applied when it starts a session, like `model`); ClientMessage
+  `set_effort {effort}`; `SessionSummary.effort` = the agent's last report, else the choice,
+  else null (agent never ran). A level chosen while no agent runs is stored unchecked and
+  passed at the next start, where the CLI clamps/ignores it.
+- A failed read is only logged (the list keeps the choice); a refused switch is an error in
+  the conversation, like a failed model switch, and the old level stays.
+- Reverse: additive — drop `set_effort`/`effort`; the column can stay.
+
 ### D50. Project chip + open in editor (step 3d3, owner)
 - Owner: the header's raw path should look modern and open the project in various editors.
   Now a pill (folder icon, project name, chevron; full path in its menu) whose menu opens the

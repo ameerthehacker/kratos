@@ -24,6 +24,10 @@ export class SessionRuntime {
   private agentStarted: boolean;
   /** The model this session runs with; null = the agent's default (D43). */
   private model: string | null;
+  /** The effort level chosen for this session; null = never chosen (D51). */
+  private effortChoice: string | null;
+  /** The level the agent last said it really uses; undefined = not asked since the last change. */
+  private effortInUse: string | null | undefined;
   private session: AgentSession | undefined;
   /** A prompt was sent and its turn hasn't ended yet. */
   private turnOpen = false;
@@ -45,6 +49,7 @@ export class SessionRuntime {
     if (!stored) throw new Error(`Unknown session ${id}`);
     this.agentStarted = stored.agentStartedAt !== null;
     this.model = stored.model;
+    this.effortChoice = stored.effort;
     this.log = deps.store.load(id);
     // Asks left open by a previous run can't be answered: the agent process that asked is gone.
     for (const askId of unresolvedAsks(this.log)) {
@@ -63,6 +68,12 @@ export class SessionRuntime {
 
   get status(): SessionSummary["status"] {
     return this.pending.size > 0 ? "needs_approval" : this.turnOpen ? "working" : "idle";
+  }
+
+  /** The effort level for the session list: what the agent really uses if it has said, else the
+   * one chosen; null = not known (or the model has none). D51. */
+  get effort(): string | null {
+    return this.effortInUse !== undefined ? this.effortInUse : this.effortChoice;
   }
 
   prompt(text: string): void {
@@ -84,8 +95,48 @@ export class SessionRuntime {
     this.model = model;
     this.logger.info({ model, live: this.session !== undefined }, "model set");
     this.deps.store.setModel(this.id, model);
-    this.session?.setModel(model).catch(this.reportFailure("Switching model"));
+    // The agent's effort default moves with the model, and a level the new model lacks gets
+    // clamped: ask again once the switch is confirmed (D51).
+    this.effortInUse = undefined;
+    const session = this.session;
+    session?.setModel(model).then(() => this.readEffort(session), this.reportFailure("Switching model"));
     this.deps.onChange();
+  }
+
+  /** Use another effort level (D51): switched live if the agent is running — kept only if the
+   * agent accepts it — else stored and passed at its next start. */
+  setEffort(effort: string): void {
+    const session = this.session;
+    this.logger.info({ effort, live: session !== undefined }, "effort set");
+    if (!session) {
+      this.keepEffort(effort);
+      return;
+    }
+    session.setEffort(effort).then(() => {
+      this.keepEffort(effort);
+      this.readEffort(session);
+    }, this.reportFailure("Switching effort"));
+  }
+
+  private keepEffort(effort: string): void {
+    this.effortChoice = effort;
+    this.effortInUse = undefined;
+    this.deps.store.setEffort(this.id, effort);
+    this.deps.onChange();
+  }
+
+  /** Ask the agent which effort level it really uses, and show it. Not worth an error in the
+   * conversation if it can't say: the list just keeps showing the chosen level. */
+  private readEffort(session: AgentSession): void {
+    session.effort().then(
+      (effort) => {
+        if (this.session !== session) return; // the agent ended meanwhile
+        this.effortInUse = effort;
+        this.logger.debug({ effort }, "effort in use");
+        this.deps.onChange();
+      },
+      (err) => this.logger.warn({ err }, "could not read the effort level in use"),
+    );
   }
 
   /** Answer one of this session's asks. Returns false if the ask isn't (or no longer) ours. */
@@ -106,12 +157,18 @@ export class SessionRuntime {
       cwd: this.deps.cwd,
       conversation: { id: this.id, resume: this.agentStarted },
       model: this.model ?? undefined,
+      effort: this.effortChoice ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
-    this.logger.info({ model: this.model ?? "(agent default)", resume: this.agentStarted }, "agent started");
+    this.logger.info(
+      { model: this.model ?? "(agent default)", effort: this.effortChoice ?? "(agent default)", resume: this.agentStarted },
+      "agent started",
+    );
     this.deps.store.markAgentStarted(this.id);
     this.agentStarted = true;
     void this.pump(session);
+    this.session = session;
+    this.readEffort(session);
     return session;
   }
 

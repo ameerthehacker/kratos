@@ -29,6 +29,13 @@
       "when": 1793965203672,
       "tag": "0003_session_done",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794019256418,
+      "tag": "0004_session_effort",
+      "breakpoints": true
     }
   ]
 }

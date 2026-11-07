@@ -69,7 +69,7 @@ describe("kratos server", () => {
       expect(await tab.waitFor(is("pong"))).toMatchObject({ cwd, agent: "Claude Code", serverVersion: "0.0.0" });
       const harnesses = await tab.waitFor(is("harnesses")); // the fake CLI's models, via initialize
       expect(harnesses.list[0]).toMatchObject({ id: "claude-code", name: "Claude Code" });
-      expect(harnesses.list[0]!.models.map((m) => m.id)).toEqual(["default", "haiku", "claude-opus-4-8"]);
+      expect(harnesses.list[0]!.models.map((m) => m.id)).toEqual(["default", "haiku", "claude-opus-4-6", "claude-haiku-4-5"]);
 
       tab.send({ type: "prompt", text: "ask" }); // the fake asks to Write, then reports our answer
       const ask = await tab.waitFor(is("permission_request"));

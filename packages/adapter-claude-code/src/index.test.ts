@@ -167,10 +167,12 @@ describe("Claude Code adapter: models (D43)", () => {
     const adapter = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE });
     const first = adapter.listModels();
     expect(adapter.listModels()).toBe(first); // cached: no second CLI start
+    const all = ["low", "medium", "high", "xhigh", "max"];
     expect(await first).toEqual([
-      { id: "default", label: "Default (recommended)", description: "Best for everyday tasks", group: "latest", isDefault: true },
-      { id: "haiku", label: "Haiku 5.5", description: "Fastest", group: "latest" },
-      { id: "claude-opus-4-8", label: "Opus 4.8", description: "Pinned older version", group: "other" },
+      { id: "default", label: "Default (recommended)", description: "Best for everyday tasks", group: "latest", isDefault: true, efforts: all },
+      { id: "haiku", label: "Haiku 5.5", description: "Fastest", group: "latest", efforts: all },
+      { id: "claude-opus-4-6", label: "Opus 4.6", description: "No xhigh", group: "other", efforts: ["low", "medium", "high", "max"] },
+      { id: "claude-haiku-4-5", label: "Haiku 4.5", description: "No effort control", group: "other" }, // no efforts
     ]);
   });
 
@@ -193,15 +195,76 @@ describe("Claude Code adapter: models (D43)", () => {
     try {
       session.send("model");
       expect(await nthReport(1)).toBe("haiku");
-      await session.setModel("claude-opus-4-8"); // resolves once the CLI confirms
+      await session.setModel("claude-opus-4-6"); // resolves once the CLI confirms
       session.send("model");
-      expect(await nthReport(2)).toBe("claude-opus-4-8");
+      expect(await nthReport(2)).toBe("claude-opus-4-6");
       await session.setModel(null); // Kratos's "agent default" → Claude's own name for it (3c4)
       session.send("model");
       expect(await nthReport(3)).toBe("default");
     } finally {
       await session.stop();
       await pump;
+    }
+  });
+});
+
+describe("Claude Code adapter: effort (D51)", () => {
+  /** A session kept running like the hub does: the CLI answers control requests on its output. */
+  function running(options: { model?: string; effort?: string } = {}) {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+      ...options,
+    });
+    const pump = (async () => {
+      for await (const _ of session.events);
+    })();
+    return { session, done: async () => (await session.stop(), await pump) };
+  }
+
+  it("starts at the chosen level (--effort), switches it live, and reads back the level in use", async () => {
+    const { session, done } = running({ effort: "low" });
+    try {
+      expect(await session.effort()).toBe("low");
+      await session.setEffort("max");
+      expect(await session.effort()).toBe("max");
+    } finally {
+      await done();
+    }
+  });
+
+  it("reports the agent's own default when nothing was chosen", async () => {
+    const { session, done } = running({ model: "haiku" });
+    try {
+      expect(await session.effort()).toBe("medium");
+    } finally {
+      await done();
+    }
+  });
+
+  it("refuses a level the current model doesn't list (the CLI would 'succeed' and ignore it)", async () => {
+    const { session, done } = running();
+    try {
+      await expect(session.setEffort("turbo")).rejects.toThrow(/no effort level "turbo"/);
+      await session.setModel("claude-opus-4-6");
+      await expect(session.setEffort("xhigh")).rejects.toThrow(/claude-opus-4-6 has no effort level "xhigh"/);
+      await session.setModel("claude-haiku-4-5");
+      await expect(session.setEffort("low")).rejects.toThrow(/has: none/);
+      expect(await session.effort()).toBeNull(); // a model without effort control
+    } finally {
+      await done();
+    }
+  });
+
+  it("shows what the CLI really uses after a model switch: its level is clamped, then restored", async () => {
+    const { session, done } = running({ effort: "xhigh" });
+    try {
+      await session.setModel("claude-opus-4-6"); // has no xhigh
+      expect(await session.effort()).toBe("high");
+      await session.setModel(null);
+      expect(await session.effort()).toBe("xhigh");
+    } finally {
+      await done();
     }
   });
 });

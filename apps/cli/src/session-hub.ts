@@ -74,6 +74,7 @@ export class SessionHub {
         }
         // The model chosen on Home applies to the session this prompt starts (D43).
         if (!target.hasPrompts && message.model) target.setModel(message.model);
+        if (!target.hasPrompts && message.effort) target.setEffort(message.effort);
         // New work on a done session means it isn't done (owner, 3d2).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
         target.prompt(message.text);
@@ -81,6 +82,9 @@ export class SessionHub {
       }
       case "set_model":
         viewing.setModel(message.model);
+        return;
+      case "set_effort":
+        viewing.setEffort(message.effort);
         return;
       case "open_session":
         if (this.store.get(message.id)?.projectDir === this.cwd) this.view(send, message.id);
@@ -149,6 +153,7 @@ export class SessionHub {
         updatedAt: s.updatedAt.getTime(),
         harness: s.agent,
         model: s.model,
+        effort: this.runtimes.get(s.id)?.effort ?? s.effort,
         done: s.doneAt !== null,
       })),
     };

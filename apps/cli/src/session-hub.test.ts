@@ -35,6 +35,17 @@ class FakeSession implements AgentSession {
   async setModel(model: string | null) {
     this.modelSwitches.push(model);
   }
+  readonly effortSwitches: string[] = [];
+  /** What the agent says it really uses; tests change it to mimic e.g. clamping on a model switch. */
+  applied: string | null | undefined; // undefined = the start level, else the agent's default "high"
+  async setEffort(effort: string) {
+    if (effort === "turbo") throw new Error('no effort level "turbo"');
+    this.effortSwitches.push(effort);
+    this.applied = effort;
+  }
+  async effort() {
+    return this.applied !== undefined ? this.applied : (this.options.effort ?? "high");
+  }
   async stop() {
     this.stopped = true;
     this.stream.close();
@@ -476,5 +487,76 @@ describe("SessionHub: harness & model (D43)", () => {
     expect(lines).toContainEqual(
       expect.objectContaining({ level: 40, component: "hub", err: expect.objectContaining({ message: "claude not logged in" }) }),
     );
+  });
+});
+
+describe("SessionHub: effort (D51)", () => {
+  const listed = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.effort;
+
+  it("starts with the level picked on Home, then lists the level the agent really uses", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    expect(listed(a)).toBeNull(); // nothing chosen, agent never ran
+    a.receive({ type: "prompt", text: "first", newSession: true, effort: "low" });
+    expect(agents[0]!.options.effort).toBe("low");
+    await tick();
+    expect(listed(a)).toBe("low");
+  });
+
+  it("lists the agent's own default when nothing was chosen", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    expect(agents[0]!.options.effort).toBeUndefined();
+    await tick();
+    expect(listed(a)).toBe("high");
+  });
+
+  it("switches a running session's level live, and passes it when the agent resumes", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "set_effort", effort: "max" });
+    await tick();
+    expect(agents[0]!.effortSwitches).toEqual(["max"]);
+    expect(listed(a)).toBe("max");
+
+    restart();
+    const late = tab();
+    expect(listed(late)).toBe("max"); // from the store, before any agent runs
+    late.receive({ type: "prompt", text: "after restart" });
+    expect(agents.at(-1)!.options).toMatchObject({ effort: "max", conversation: { resume: true } });
+  });
+
+  it("keeps the old level when the agent refuses one, and says why", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first", effort: "low" });
+    a.receive({ type: "set_effort", effort: "turbo" });
+    await tick();
+    expect(agents[0]!.effortSwitches).toEqual([]);
+    expect(listed(a)).toBe("low");
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining('Switching effort failed: Error: no effort level "turbo"') });
+  });
+
+  it("asks again after a model switch: the level in use may change with the model", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first", effort: "xhigh" });
+    await tick();
+    expect(listed(a)).toBe("xhigh");
+    agents[0]!.applied = "high"; // the new model has no xhigh: the agent clamps it
+    a.receive({ type: "set_model", model: "claude-opus-4-8" });
+    await tick();
+    expect(listed(a)).toBe("high");
+  });
+
+  it("stores a level chosen while no agent runs, for its next start", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "set_effort", effort: "medium" });
+    expect(listed(a)).toBe("medium");
+    a.receive({ type: "prompt", text: "first" });
+    expect(agents[0]!.options.effort).toBe("medium");
   });
 });

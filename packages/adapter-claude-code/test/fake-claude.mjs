@@ -16,12 +16,24 @@ const cancelled = new Set();
 let responsesAfterCancel = 0;
 let onInterrupt = () => {};
 // The model: from --model, switched by set_model (D43). A tiny version of the real `initialize` list.
-let model = process.argv.includes("--model") ? process.argv[process.argv.indexOf("--model") + 1] : "default";
+const flag = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
+let model = flag("--model") ?? "default";
+const LEVELS = ["low", "medium", "high", "xhigh", "max"];
 const MODELS = [
-  { value: "default", displayName: "Default (recommended)", description: "Best for everyday tasks" },
-  { value: "haiku", displayName: "Haiku 5.5", description: "Fastest" },
-  { value: "claude-opus-4-8", displayName: "Opus 4.8", description: "Pinned older version" },
+  { value: "default", displayName: "Default (recommended)", description: "Best for everyday tasks", supportedEffortLevels: LEVELS },
+  { value: "haiku", displayName: "Haiku 5.5", description: "Fastest", supportedEffortLevels: LEVELS },
+  { value: "claude-opus-4-6", displayName: "Opus 4.6", description: "No xhigh", supportedEffortLevels: ["low", "medium", "high", "max"] },
+  { value: "claude-haiku-4-5", displayName: "Haiku 4.5", description: "No effort control" },
 ];
+// Effort (D51), like the real CLI: --effort at start (unknown values ignored), apply_flag_settings
+// live (says success even to unknown values, which change nothing); get_settings reports the level
+// applied — the choice if the model has it, else the model's own default; null if it has none.
+let effortChoice = LEVELS.includes(flag("--effort")) ? flag("--effort") : undefined;
+const appliedEffort = () => {
+  const levels = MODELS.find((m) => m.value === model)?.supportedEffortLevels;
+  if (!levels) return null;
+  return levels.includes(effortChoice) ? effortChoice : model === "haiku" ? "medium" : "high";
+};
 const success = (request_id, response) => out({ type: "control_response", response: { subtype: "success", request_id, response } });
 
 const input = { file_path: "a.txt", content: "hi" };
@@ -93,6 +105,14 @@ for await (const line of createInterface({ input: process.stdin })) {
   else if (msg.type === "control_request" && msg.request.subtype === "set_model") {
     model = msg.request.model;
     success(msg.request_id, {});
+  }
+  else if (msg.type === "control_request" && msg.request.subtype === "apply_flag_settings") {
+    const level = msg.request.settings?.effortLevel;
+    if (LEVELS.includes(level)) effortChoice = level;
+    success(msg.request_id, {});
+  }
+  else if (msg.type === "control_request" && msg.request.subtype === "get_settings") {
+    success(msg.request_id, { effective: {}, sources: [], applied: { model, effort: appliedEffort() } });
   }
   else if (msg.type === "control_response") {
     const id = msg.response.request_id;

@@ -6,13 +6,12 @@ import {
   type AgentModel,
   type AgentSession,
   type Conversation,
-  type RequestPermission,
 } from "@kratos/core";
 import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { CliMessage, InitializeResponse } from "./protocol.js";
+import { CliMessage, GetSettingsResponse, InitializeResponse } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -21,16 +20,16 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
     throw new Error("Claude Code CLI (`claude`) not found on PATH. Install it or pass `claudePath`.");
   }
   let models: Promise<AgentModel[]> | undefined; // asked once per run; retried after a failure
+  const listModels = () =>
+    (models ??= fetchModels(claudePath).catch((err) => {
+      models = undefined;
+      throw err;
+    }));
   return {
     id: "claude-code",
     displayName: "Claude Code",
-    listModels: () =>
-      (models ??= fetchModels(claudePath).catch((err) => {
-        models = undefined;
-        throw err;
-      })),
-    startSession: ({ cwd, requestPermission, conversation, model }) =>
-      startSession(claudePath, cwd, requestPermission, conversation, model),
+    listModels,
+    startSession: (options) => startSession(claudePath, options, listModels),
   };
 }
 
@@ -55,6 +54,7 @@ async function fetchModels(claudePath: string): Promise<AgentModel[]> {
       group: m.value.startsWith("claude-") ? "other" : "latest",
       // Kratos says "no model chosen" with null; Claude's name for that is this entry (3c4).
       ...(m.value === CLAUDE_DEFAULT_MODEL ? { isDefault: true } : {}),
+      ...(m.supportedEffortLevels?.length ? { efforts: m.supportedEffortLevels } : {}),
     }));
   } finally {
     await proc.stop();
@@ -80,17 +80,23 @@ type ControlRequest = Extract<CliMessage, { type: "control_request" }>;
 
 function startSession(
   claudePath: string,
-  cwd: string,
-  requestPermission: RequestPermission,
-  conversation?: Conversation,
-  model?: string,
+  options: Parameters<AgentAdapter["startSession"]>[0],
+  listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
+  const { cwd, requestPermission, conversation, model, effort } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
-  // signals and cleanup (D26); this adapter only speaks Claude's protocol.
-  const args = [...CLI_ARGS, ...conversationArgs(conversation), ...(model ? ["--model", model] : [])];
+  // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
+  // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
+  const args = [
+    ...CLI_ARGS,
+    ...conversationArgs(conversation),
+    ...(model ? ["--model", model] : []),
+    ...(effort ? ["--effort", effort] : []),
+  ];
   const proc = new JsonLinesProcess(claudePath, args, { cwd });
+  let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
 
-  const control = new ControlChannel(proc); // requests we send (set_model, interrupt)
+  const control = new ControlChannel(proc); // requests we send (set_model, effort, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
 
@@ -163,7 +169,22 @@ function startSession(
       control.request({ subtype: "interrupt" }).catch(() => {});
     },
     // null = back to the agent's default, which Claude calls "default" (D43, 3c4).
-    setModel: async (model) => void (await control.request({ subtype: "set_model", model: model ?? CLAUDE_DEFAULT_MODEL })),
+    async setModel(model) {
+      await control.request({ subtype: "set_model", model: model ?? CLAUDE_DEFAULT_MODEL });
+      currentModel = model ?? CLAUDE_DEFAULT_MODEL;
+    },
+    async setEffort(level) {
+      // The CLI says "success" to any level, even one it then ignores: only send real ones (D51).
+      const levels = (await listModels().catch(() => [])).find((m) => m.id === currentModel)?.efforts ?? [];
+      if (!levels.includes(level)) {
+        throw new Error(`${currentModel} has no effort level "${level}" (it has: ${levels.join(", ") || "none"})`);
+      }
+      await control.request({ subtype: "apply_flag_settings", settings: { effortLevel: level } });
+    },
+    async effort() {
+      const answer = GetSettingsResponse.parse(await control.request({ subtype: "get_settings" }, { timeoutMs: 30_000 }));
+      return answer.applied?.effort ?? null;
+    },
     async stop() {
       for (const abort of pending.values()) abort.abort();
       await proc.stop();

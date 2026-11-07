@@ -183,6 +183,16 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   `needs_approval`.
 - Withdrawn by the agent, or left open by a restart → `cancelled` ("Not answered"); shutdown →
   cancelled, and the agent hears "skipped".
+- UI (3r2), per the design's question widget: a card above the composer (like the ask dock):
+  "Claude Code has 2 questions", Skip; tabs per question with a green check once answered;
+  radio/checkbox rows (≥44px) with the "Recommended" tag and number keys; an "Other" field
+  (typing picks it; single choice: instead of an option); Back / Next / Send answers, enabled by
+  core's `checkQuestionReply` — the same rule the server enforces. Keys 1–9 pick, ↵ next/send,
+  Esc skip; the card takes focus when it shows unless you're typing elsewhere. In the chat the
+  agent's AskUserQuestion call becomes a question step: "Asking 2 questions · Waiting for you" →
+  "Asked 2 questions" with chips per answer ("Docs · Hub, Readme, “Changelog”"), "You skipped ·
+  Claude Code decides", or "Not answered". A skip comes back to the CLI as an error result: the
+  timeline doesn't add "Failed" to question steps. Not built: tab title / notification.
 - Reverse: additive — drop the callback (questions are then refused) and the messages.
 
 ### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)

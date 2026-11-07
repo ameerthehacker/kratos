@@ -267,7 +267,9 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             - web: the timeline only skips the new messages for now (UI is 3r2).
             - Tests: fake claude learns a question turn (single, multi + Other, skip); adapter +
               hub tests incl. invalid answers, two tabs, interrupt, restart.
-      - [ ] **3r2. UI** (~250) — the design's question card in the ask dock (tabs per question,
+      - [x] **3r2. UI** (~250) — done, checked with real `claude` (two questions answered by keys,
+            a multi-pick plus own text, then a single question skipped with Esc). Not built from the
+            design: the browser-tab title "(1) Question" and a notification. Planned as: the design's question card in the ask dock (tabs per question,
             radio/checkbox rows with Recommended, "Other" field, keys 1–4 / ↵ / Esc, Back / Next /
             Send answers, Skip), the step "Asking 2 questions" → "Asked …" with answer chips,
             "Needs your answer" in sidebar and header.

@@ -11,7 +11,8 @@ import { DoneButton } from "@/components/done-button";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
-import { buildTimeline, openAsks } from "@/lib/timeline";
+import { buildTimeline, openAsks, openQuestions } from "@/lib/timeline";
+import { QuestionDock } from "@/components/conversation/question-card";
 
 const NO_LOG: LogMessage[] = [];
 
@@ -26,7 +27,7 @@ export function SessionPage() {
   const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
   const rememberMode = useHomeChoice((s) => s.rememberMode);
   const shown = viewing === sessionId ? log : NO_LOG;
-  const items = useMemo(() => buildTimeline(shown, cwd), [shown, cwd]);
+  const items = useMemo(() => buildTimeline(shown, cwd, agentName), [shown, cwd, agentName]);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
   useEffect(() => {
@@ -50,6 +51,7 @@ export function SessionPage() {
       <Conversation items={items} agent={agentName} status={session?.status} />
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
+        <QuestionDock questions={openQuestions(items)} agent={agentName} onAnswer={(id, reply) => send({ type: "question_answer", id, reply })} />
         <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
         <PromptCard
           chips={

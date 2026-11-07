@@ -1,12 +1,12 @@
-import type { AgentEvent, ServerMessage, ToolAction } from "@kratos/core";
+import type { AgentEvent, QuestionAnswer, QuestionRequest, ServerMessage, ToolAction } from "@kratos/core";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
-export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" };
+export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" | "note" | "plain"; label?: string };
 
 /** One thing the agent did, in plain words (the owner's chat design, D45). */
 export type Step = {
   id: string;
-  kind: ToolAction["type"] | "think";
+  kind: ToolAction["type"] | "think" | "question";
   title: string;
   chips: Chip[];
   /** Shown with "Show raw": a shell command (highlighted) or the tool's raw call, and its output. */
@@ -15,6 +15,8 @@ export type Step = {
   edit?: { path: string; changes: NonNullable<ToolAction["edits"]> };
   /** While Kratos waits for the owner to allow or deny this call: what to answer (3c2b, 3c3). */
   ask?: OpenAsk;
+  /** The agent's questions (D54): what it asked, and how it ended (absent = still open). */
+  question?: { id: string; request: QuestionRequest; outcome?: "answered" | "skipped" | "cancelled" };
   /** What the call would do, in present tense ("Edit math.js"): the ask card's question. */
   intent: string;
   /** What it is doing while it runs ("Editing math.js"): the working indicator (3d6). */
@@ -42,12 +44,14 @@ const DENIED = "You denied this";
 /**
  * Turn a session's log into what the chat shows: prompts, replies, and runs of consecutive tool
  * calls grouped into steps (each with its result and its permission ask folded in).
- * `cwd` shortens paths to the project. Pure, so a replay renders exactly like the live view.
+ * `cwd` shortens paths to the project; `agent` names it ("You skipped · Claude Code decides").
+ * Pure, so a replay renders exactly like the live view.
  */
-export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineItem[] {
+export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The agent"): TimelineItem[] {
   const items: TimelineItem[] = [];
   const steps = new Map<string, Step>(); // by tool call id
   const asks = new Map<string, Step>(); // by permission request id
+  const questions = new Map<string, Step>(); // by question request id
   let group: Step[] | null = null;
   let thoughts = 0; // thinking has no id of its own
   const addStep = (step: Step) => {
@@ -86,8 +90,30 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
         }
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
       }
-    } else if (message.type === "question_request" || message.type === "question_resolved") {
-      // The agent's questions (D54): shown by the question card in 3r2; nothing here yet.
+    } else if (message.type === "question_request") {
+      // The questions ride on the agent's tool call (by id); without one, they show on their own.
+      const { request } = message;
+      let step = request.toolCallId ? steps.get(request.toolCallId) : undefined;
+      if (!step) {
+        step = { id: `question-${message.id}`, kind: "question", title: "", intent: "", doing: "", chips: [], raw: {} };
+        addStep(step);
+      }
+      const count = request.questions.length;
+      step.kind = "question";
+      step.title = count === 1 ? "Asking a question" : `Asking ${count} questions`;
+      step.intent = step.title;
+      step.doing = step.title;
+      step.question = { id: message.id, request };
+      questions.set(message.id, step);
+    } else if (message.type === "question_resolved") {
+      const step = questions.get(message.id);
+      if (step?.question) {
+        const count = step.question.request.questions.length;
+        step.question.outcome = message.outcome;
+        step.title = count === 1 ? "Asked a question" : `Asked ${count} questions`;
+        step.finished = true;
+        step.chips = questionChips(step.question.request, message, agent);
+      }
     } else {
       const event = message.event;
       if (event.kind === "text") {
@@ -175,6 +201,8 @@ function describe(call: ToolCall, cwd: string): Step {
 function addResult(step: Step, output: string, isError: boolean): void {
   step.finished = true;
   step.raw.output = trim(output);
+  // Questions say how they ended themselves; a skip comes back as an error, not a failure (D54).
+  if (step.kind === "question") return;
   const denied = step.chips.some((c) => c.text === DENIED);
   if (isError && !denied) step.chips.push({ text: "Failed", tone: "bad" }); // a denial comes back as an error
   else if (step.kind === "run") {
@@ -211,5 +239,24 @@ export function currentActivity(items: readonly TimelineItem[]): string | null {
   const last = items.at(-1);
   if (last?.type !== "steps") return null;
   const step = last.steps.at(-1);
-  return step && !step.finished && !step.ask ? step.doing : null;
+  return step && !step.finished && !step.ask && !step.question ? step.doing : null;
+}
+
+/** What became of questions, as chips (the design): one per question, "Placement · Above the
+ * export" (own text in quotes); or "You skipped · Claude Code decides"; or "Not answered". */
+function questionChips(request: QuestionRequest, resolved: { outcome: string; answers?: QuestionAnswer[] }, agent: string): Chip[] {
+  if (resolved.outcome === "skipped") return [{ text: `You skipped · ${agent} decides`, tone: "note" }];
+  if (resolved.outcome !== "answered" || !resolved.answers) return [{ text: "Not answered", tone: "note" }];
+  return request.questions.map((question, i) => {
+    const answer = resolved.answers![i] ?? { selected: [] };
+    const parts = [...answer.selected, ...(answer.other?.trim() ? [`“${answer.other.trim()}”`] : [])];
+    return { label: question.header, text: parts.join(", "), tone: "plain" as const };
+  });
+}
+
+/** The agent's questions still waiting for the owner, oldest first (for the question card). */
+export function openQuestions(items: readonly TimelineItem[]): Array<{ id: string; request: QuestionRequest }> {
+  return items.flatMap((item) =>
+    item.type === "steps" ? item.steps.flatMap((s) => (s.question && !s.question.outcome ? [{ id: s.question.id, request: s.question.request }] : [])) : [],
+  );
 }

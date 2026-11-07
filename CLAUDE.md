@@ -84,7 +84,7 @@ outside an adapter may depend on a specific agent.
 ## Commands
 
 ```bash
-nvm use               # Node 24 (.nvmrc); pnpm install refuses other versions
+nvm use               # Node 26 (.nvmrc); pnpm install refuses other versions
 pnpm install          # install workspace deps
 pnpm dev              # server (tsx watch) + UI (Vite, http://localhost:5173) + package watchers;
                       # agent works in this repo (dogfooding), history in .kratos/kratos.db

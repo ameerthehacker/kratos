@@ -156,6 +156,20 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D59. Node 26 (LTS), enforced the same way (owner, after W1's first Vercel deploys)
+- Owner: move to Node 26. Vercel built on its Node 26 default whatever `engines` said (`>=24 <25`,
+  then `24.x` — likely because the project reads `apps/site/package.json`, which has no engines),
+  and pnpm's `engineStrict` refused it. Node 26 is the current LTS, so moving beats fighting it.
+- Same lock as D37, one major up: `.nvmrc` = `26`, root `engines.node` = `26.x`, `engineStrict`
+  still on; `@types/node` ^26 everywhere. `better-sqlite3` rebuilt for Node 26's ABI.
+- Node 26 no longer ships corepack: on a new machine run `npm i -g corepack && corepack enable pnpm`
+  (it then honors `packageManager`, pnpm 11.1.2). Done here under nvm's v26; nvm's global default
+  is untouched.
+- Checked on 26: clean install, build, typecheck, all tests (the store's tests load
+  better-sqlite3's native binding).
+- Affects the 3u single-binary plan (it names Node 24's SEA): build the binary with Node 26.
+- Reverse: the D37 values back (`24`, `24.x`, `@types/node` ^24), reinstall on Node 24.
+
 ### D58. Website: Astro in `apps/site`, static, Tailwind with the app's tokens (step W1, owner)
 - Owner: a website built with Astro, then cut to an ultra-simple one-pager (name, one line, the
   install command, a live session demo). Kratos ships via Homebrew from the owner's tap repo
@@ -714,7 +728,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   sidebar/Recent (one session per project today, D36), no light theme, deny reasons, thinking or
   attachments yet.
 
-### D37. Node 24, enforced (step 3p1, owner)
+### D37. Node 24, enforced (step 3p1, owner) — **superseded by D59 (Node 26)**
 - `.nvmrc` = `24`; root `engines.node` = `24.x` (was `>=24 <25`, same range; changed for W1 because
   Vercel ignored the two-part form and built on its Node 26 default); `engineStrict: true` in `pnpm-workspace.yaml`
   so `pnpm install` refuses other versions (verified: Node 22 → `ERR_PNPM_UNSUPPORTED_ENGINE`).

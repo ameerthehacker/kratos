@@ -144,7 +144,10 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("pong"),
     at: z.number(),
+    /** Kratos's version: a release ("0.3.1") or the commit it runs from ("ab9151c"); 3u1. */
     serverVersion: z.string(),
+    /** Where that version is described: its GitHub release, or its commit. */
+    versionUrl: z.string().optional(),
     cwd: z.string(),
     agent: z.string(),
     /** Where the project can be opened, as detected on this machine (3d3). */

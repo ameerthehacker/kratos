@@ -369,6 +369,49 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             ⌘↵ sends now; the queue card above the composer (Send now, Edit → back to the box,
             Remove); prompts move into the chat when read, with "Read after …" / "Sent now ·
             stopped …" / "Sent when the last turn ended"; "Working · N queued" in the sidebar.
+    - [ ] **3u. Versions and releases** (owner, D57) — the app shows its real version (per the
+          design), linking to its GitHub release; a release ships one binary per platform and
+          updates a Homebrew tap. Owner's choices: code at `ameerthehacker/kratos`, tap at
+          `ameerthehacker/homebrew-kratos` (`brew install ameerthehacker/kratos/kratos`);
+          publishing a GitHub release starts it; macOS and Linux (arm64 + x64); a single binary
+          that serves the web UI itself. Today: no git remote, every version 0.0.0, no CI.
+          Owner's part (outward-facing): create both repos, push, add the tap token secret.
+      - [x] **3u1. Version in the app** (~100) — done: `kratos --version` and the startup line
+            print `be489ec` on this checkout; the header pill shows it and links to the commit (the
+            repo isn't on GitHub yet, so links 404 until it's pushed). Planned as: one source: `apps/cli/package.json` `version`,
+            set from the release tag at release time; local (unreleased) runs show the short
+            commit hash instead, as the design's default does. The server reports it in `pong`,
+            `kratos --version` prints it. UI per the design (Home + Session header): a small mono
+            pill right after the "kratos" wordmark — secondary background, muted 11px Geist Mono,
+            bare value ("0.3.1" / "ab9151c"), tooltip "Kratos version …". New (owner): it's a
+            link — a release opens `github.com/ameerthehacker/kratos/releases/tag/v<version>`, a
+            commit hash opens that commit — with a hover state like the other header controls.
+      - [ ] **3u2. Drop `sharp`** (~60) — it's only used to trim macOS editor icons and drags in
+            libvips, which a single binary can't easily carry. macOS's own `sips` converts and
+            crops; the transparent edge is found with `pngjs` (pure JS). Icons look as before.
+      - [ ] **3u3. Single binary** (~200) — Node 24's Single Executable Applications: `esbuild`
+            bundles the server to one file; the SEA config embeds it plus assets (web UI, Drizzle
+            migrations, `better-sqlite3`'s native `.node`), unpacked on first run to
+            `~/.kratos/runtime/<version>/` (`better-sqlite3`'s `nativeBinding` option, the static
+            root and the migrations folder point there). `pnpm build:binary` → `kratos` for this
+            machine; macOS needs re-signing after injection. Accept: the binary alone, copied
+            elsewhere, serves the UI, keeps sessions, runs `claude`, shows editor icons.
+      - [ ] **3u4. Release workflow + tap** (~150, GitHub Actions) — on `release: published`:
+            a matrix (macos arm64/x64, ubuntu x64/arm64) builds the binary with the tag's
+            version, smoke-tests `kratos --version`, uploads `kratos-<v>-<os>-<arch>.tar.gz`
+            + checksums to the release; then writes `Formula/kratos.rb` (on_macos/on_linux ×
+            arm/intel, url + sha256 each, `test do` runs `--version`) and pushes it to the tap
+            with a `HOMEBREW_TAP_TOKEN` secret. Accept: a test release installs with brew on
+            this Mac.
+      - [ ] **3u5. Self-update, one click** (owner) — Kratos checks for a newer release (GitHub's
+            latest release, now and then), the UI shows "update available" (the version pill), and
+            one click updates and restarts it. To settle when we get there (needs 3u4's releases):
+            a Homebrew install should update through brew (`brew upgrade ameerthehacker/kratos/kratos`,
+            not by overwriting the Cellar) while a plain binary downloads the new release asset,
+            checks its sha256 and swaps itself; restart = start the new binary with the same
+            arguments, then exit (sessions are in the DB; running agents would be stopped — wait
+            for idle, or ask); how often to check, and whether the design gets an "update
+            available" state.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

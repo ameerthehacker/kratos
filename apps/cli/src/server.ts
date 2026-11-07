@@ -8,6 +8,7 @@ import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
 import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editors.js";
 import { silentLogger, type Logger } from "./logger.js";
 import type { SessionHub } from "./session-hub.js";
+import type { KratosVersion } from "./version.js";
 
 export const DEFAULT_HOST = "127.0.0.1";
 
@@ -31,7 +32,10 @@ export async function startServer(options: {
   openEditor?: (editorId: string) => Promise<void>;
   /** Where converted editor icons are cached (default: no icons served). */
   iconCacheDir?: string;
+  /** Kratos's own version and its link (3u1); default "dev", no link. */
+  version?: KratosVersion;
 }) {
+  const version = options.version ?? { version: "dev" };
   const { hub } = options;
   const log = options.log ?? silentLogger;
   const webLog = log.child({ component: "web" });
@@ -82,7 +86,15 @@ export async function startServer(options: {
       if (!parsed.success) {
         send(socket, { type: "error", message: "invalid message" });
       } else if (parsed.data.type === "ping") {
-        send(socket, { type: "pong", at: Date.now(), serverVersion: "0.0.0", cwd: options.cwd, agent: options.agent, editors: publicEditors(editors) });
+        send(socket, {
+          type: "pong",
+          at: Date.now(),
+          serverVersion: version.version,
+          ...(version.url ? { versionUrl: version.url } : {}),
+          cwd: options.cwd,
+          agent: options.agent,
+          editors: publicEditors(editors),
+        });
       } else if (parsed.data.type === "open_in") {
         const editor = parsed.data.editor;
         openEditor(editor).then(

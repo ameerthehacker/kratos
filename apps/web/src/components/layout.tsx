@@ -2,6 +2,7 @@ import { Link, Outlet } from "react-router";
 import { KratosLogo } from "@/components/kratos-logo";
 import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { SessionsSidebar, SidebarToggle } from "@/components/sessions-sidebar";
+import { VersionPill } from "@/components/version-pill";
 import { useAttention } from "@/hooks/use-attention";
 import { useKratosConnection } from "@/hooks/use-kratos-connection";
 import { useKratos } from "@/lib/kratos-store";
@@ -31,6 +32,8 @@ export function Layout() {
           >
             <KratosLogo />
           </Link>
+          {/* Close to the wordmark (the design: −8px), before the spacer. */}
+          {info && <span className="-ml-2"><VersionPill info={info} /></span>}
           <span className="flex-1" />
           {/* The connection dot lives in the project chip (3d3), with a tooltip. */}
           {/* Before the first answer from the server there's no project yet: just the dot. */}

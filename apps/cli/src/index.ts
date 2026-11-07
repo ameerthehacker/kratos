@@ -11,14 +11,18 @@ import { createLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { DEFAULT_HOST, startServer } from "./server.js";
 import { SessionStore } from "./store/store.js";
+import { kratosVersion } from "./version.js";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 
 type Options = { port: string; host: string; db: string; logDir: string; logLevel: string };
 
+const version = kratosVersion(); // 3u1: a release's version, or the commit this runs from
+
 const program = new Command()
   .name("kratos")
   .description("Mindful, controllable coding-agent harness")
+  .version(version.version)
   .argument("[project-dir]", "folder the agent works in (default: current directory)")
   .option("-p, --port <number>", "port for the local web UI", String(DEFAULT_PORT))
   .option("-H, --host <host>", "interface to listen on (0.0.0.0 = all; see warning)", DEFAULT_HOST)
@@ -46,9 +50,9 @@ const program = new Command()
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
-    const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir });
+    const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version });
     const shownHost = LOOPBACK.has(opts.host) ? "localhost" : opts.host;
-    log.info(`kratos running at http://${shownHost}:${server.port}`);
+    log.info(`kratos ${version.version} running at http://${shownHost}:${server.port}`);
     log.info(`${adapter.displayName} will act in: ${cwd}`);
     log.info(`Session history: ${dbPath}`);
     log.info(`Logs: ${resolve(opts.logDir)}/current.log`);

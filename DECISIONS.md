@@ -197,6 +197,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   plain CSS without Tailwind (would duplicate the token system the app already has).
 - Reverse: delete `apps/site` and the two root scripts; nothing else depends on it.
 
+### D57. Versions and releases (step 3u, owner)
+- Owner: show the version as the design does, right in production, clicking opens its GitHub
+  release; releases ship through a Homebrew tap updated by publishing a GitHub release; macOS and
+  Linux; a single binary that serves the web UI; later, one-click self-update (3u5).
+- Repos (owner): `ameerthehacker/kratos`, tap `ameerthehacker/homebrew-kratos`. Neither exists
+  yet — creating and pushing them is the owner's (outward-facing).
+- Version source (3u1): one place, `apps/cli/package.json` `version`, which the release workflow
+  sets from the tag. `0.0.0` means unreleased: Kratos then shows the short commit hash of the
+  checkout it runs from (`git rev-parse --short HEAD` in its own folder, not the project's) —
+  the design's default shows a hash too — else "dev". The server builds the link (release page,
+  or the commit) and sends both in `pong` (`serverVersion`, `versionUrl`); `kratos --version`
+  (commander) and the startup line print it.
+- UI (the design's header pill, Home + Session): bare value, muted 11px mono on secondary, right
+  after the wordmark. New (owner): it's a link, opening in a new tab, with a hover state.
+- Rejected: hardcoding "0.0.0" (what the server did); reading the version from git tags at run
+  time (a Homebrew install has no git checkout).
+
+
 ### D56. Steering prompts: the agent holds them, Kratos follows each by id (step 3t, owner)
 - Owner: send prompts while the agent works and see clearly what happens to each; design
   "Proposal · steering prompts (queue, send now, read)". Backend first.

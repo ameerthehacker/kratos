@@ -248,6 +248,20 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d6. Working indicator** (~120, owner, D52) — while the agent works, a line under
+            the conversation says what it is doing now, from its latest unfinished step
+            ("Reading store.ts…", "Running the tests…"); between steps it cycles playful words
+            (Thinking, Forging, Tempering…). Text shimmers (a light sweep), the logo's hammer
+            strikes with sparks (owner, was a ✢✦ glyph), elapsed time on the right. Hidden while an ask waits (the ask dock shows)
+            and when idle. Respects reduced motion. Elapsed counts from when this tab saw the
+            turn start (the log has no timestamps). Accept: real `claude` turn with a tool call
+            shows the step, then a word; it disappears when the turn ends.
+            Done: checked with real `claude` (a word first, then "Sleep 10 seconds then echo
+            done…" while the command ran, gone at idle); a 5-step run showed each step in turn,
+            hid during the write's ask, and the timer kept counting the turn.
+      - [x] **3d7. Quieter done button** (~40, owner, D49) — the header's "Mark as done" pill
+            becomes a small ghost check icon (tooltip "Mark as done") beside the status; once
+            done, the status becomes a green "✓ Done" chip — a red "↺ Reopen" on hover — that reopens on click.
       - [x] **3d5. One-click open** (~30, owner, D50) — the project pill is split: clicking the logo
             and name opens the project in the chip's editor (last used, else the first found;
             Finder if there's none); the chevron opens the menu to pick another. The connection

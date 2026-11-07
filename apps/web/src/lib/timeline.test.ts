@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent, ServerMessage } from "@kratos/core";
-import { buildTimeline, openAsks } from "./timeline";
+import { buildTimeline, currentActivity, openAsks } from "./timeline";
 
 const agent = (event: AgentEvent): Extract<ServerMessage, { type: "agent_event" }> => ({ type: "agent_event", event });
 
@@ -60,5 +60,25 @@ describe("buildTimeline (D45)", () => {
       ["c1", "ask-for-c1"],
       ["c2", "ask-for-c2"],
     ]);
+  });
+});
+
+describe("currentActivity (3d6)", () => {
+  const prompt = { type: "user_prompt", text: "go" } as const;
+  const read = agent({ kind: "tool_call", id: "r", tool: "Read", input: {}, action: { type: "read", target: "/repo/src/store.ts" } });
+  const activity = (...log: Parameters<typeof buildTimeline>[0]) => currentActivity(buildTimeline(log, "/repo"));
+
+  it("says what the newest unfinished step is doing", () => {
+    expect(activity(prompt, read)).toBe("Reading store.ts");
+    const test = agent({ kind: "tool_call", id: "t", tool: "Bash", input: {}, action: { type: "run", command: "pnpm test" } });
+    expect(activity(prompt, test)).toBe("Running the tests");
+  });
+
+  it("is null between steps, after thinking, after the reply, and while an ask waits for you", () => {
+    expect(activity(prompt)).toBeNull(); // nothing yet: the indicator shows a word
+    expect(activity(prompt, read, agent({ kind: "tool_result", id: "r", output: "", isError: false }))).toBeNull();
+    expect(activity(prompt, agent({ kind: "thinking", text: "hmm" }))).toBeNull();
+    expect(activity(prompt, read, agent({ kind: "text", text: "Here it is" }))).toBeNull();
+    expect(activity(prompt, read, { type: "permission_request", id: "a", request: { tool: "Read", input: {}, toolCallId: "r" } })).toBeNull();
   });
 });

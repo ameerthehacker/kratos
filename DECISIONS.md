@@ -156,6 +156,32 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D52. Working indicator: the real step, or a word, shimmering (step 3d6, owner)
+- Owner: no "thinking…" loader like other agent IDEs; add one with a nice animation, not just
+  "Thinking". Owner's picks from options: say the real step + playful words between steps;
+  shimmer + glyph animation.
+- What it says: the newest step of the turn that hasn't finished and isn't waiting for an
+  answer, in -ing form — a new `Step.doing` next to `title`/`intent` ("Reading store.ts",
+  "Running the tests", or the agent's own description of a command). Between steps (thinking,
+  writing the reply) it cycles forge-flavoured words (Thinking, Forging, Tempering…) every ~3s.
+  Pure `currentActivity(items)` in timeline.ts, unit-tested.
+- When: mounted while the session isn't idle, so its timer counts the whole turn; hidden (not
+  unmounted) while an ask waits — the ask dock speaks then. Elapsed counts from when this tab
+  saw the turn start: the log has no timestamps, so a reload mid-turn restarts it.
+- Animation: CSS only — `@utility text-shimmer` paints a muted→foreground→muted gradient
+  through the text, moved by `animate-shimmer` (theme keyframes). Beside it, the Kratos logo's
+  hammer (owner: "more relatable to Kratos"; picked over a logo tile or a hammer on an anvil):
+  the logo's two shapes, no tile, seen side-on — raised near upright, it swings ~90° about the
+  grip so the head's end comes down, and three sparks fly from the hit (`animate-hammer`,
+  `animate-spark`, one 1.2s loop). A first draft tipped only ~50° and its sparks appeared in
+  empty air; checked frame by frame, enlarged. Reduced motion: no sweep, no swing, no sparks,
+  words don't cycle.
+- Libraries: `usehooks-ts` (`useInterval`, `useMediaQuery`) instead of hand-written interval and
+  media-query hooks (owner: library-first). The "8s / 1m 05s" format stays three lines:
+  date-fns' formatDuration writes "1 minute 5 seconds".
+- Screen readers: `role=status` with the step as its label, so word changes aren't announced.
+- Reverse: drop `WorkingIndicator` and `Step.doing`; nothing else depends on them.
+
 ### D51. Effort level: set by Kratos, read back from the agent (steps 3m3–3m4, owner)
 - Owner: choose how hard the agent thinks from the chat box; it shows the level really in use
   ("Real level"), not a "Default" guess. In 3m4 it lives in the model chip: "Opus 5.5 · High",
@@ -241,6 +267,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Sidebar hides fully (3d4, owner, per the design): closed, the island is gone — no icon rail —
   and a "Show sessions" button sits at the left of the main header. Whether it's open is kept
   in the same `kratos.sidebar` store (closed by default), so it survives reloads.
+- Quieter header (3d7, owner): the labelled "Mark as done" pill became a ghost check icon with a
+  tooltip beside the status; once done, the status is replaced by a green "✓ Done" chip that
+  reads "↺ Reopen" on hover/focus — in red (`destructive`, owner): it undoes the state — and
+  reopens on click (owner asked to call it Reopen; it keeps
+  "Done" at rest because it's the header's only sign of the state). Both labels share one grid
+  cell, so the chip doesn't change width. Rows keep their hover icon.
 - Reverse: drop the column/message; the UI only filters on `done`.
 
 ### D48. Relative times: date-fns (step 3d1)

@@ -17,6 +17,8 @@ export type Step = {
   ask?: OpenAsk;
   /** What the call would do, in present tense ("Edit math.js"): the ask card's question. */
   intent: string;
+  /** What it is doing while it runs ("Editing math.js"): the working indicator (3d6). */
+  doing: string;
   /** The agent's tool name (to match its permission ask), and whether its result came back. */
   tool?: string;
   finished?: boolean;
@@ -90,7 +92,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = ""): TimelineIte
         breakGroup();
         items.push({ type: "reply", text: event.text });
       } else if (event.kind === "thinking") {
-        addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", intent: "Think", chips: [], raw: { call: event.text } });
+        addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", intent: "Think", doing: "Thinking", chips: [], raw: { call: event.text }, finished: true });
       } else if (event.kind === "tool_call") {
         const step = describe(event, cwd);
         steps.set(event.id, step);
@@ -113,10 +115,12 @@ function describe(call: ToolCall, cwd: string): Step {
   const chips: Chip[] = [];
   let title: string;
   let intent: string;
+  let doing: string;
   switch (action.type) {
     case "read":
       title = `Read ${base(path)}`;
       intent = `Read ${base(path)}`;
+      doing = `Reading ${base(path)}`;
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       break;
     case "edit":
@@ -124,9 +128,11 @@ function describe(call: ToolCall, cwd: string): Step {
       if (action.edits?.length === 1 && action.edits[0]!.before === "") {
         title = `Wrote ${base(path)}`;
         intent = `Write ${base(path)}`;
+        doing = `Writing ${base(path)}`;
       } else {
         title = `Edited ${base(path)}`;
         intent = `Edit ${base(path)}`;
+        doing = `Editing ${base(path)}`;
       }
       if (dir(path)) chips.push({ text: dir(path), tone: "path" });
       if (action.added !== undefined || action.removed !== undefined) {
@@ -136,26 +142,32 @@ function describe(call: ToolCall, cwd: string): Step {
     case "run":
       title = action.description ?? (isTest(action.command) ? "Ran the tests" : "Ran a command");
       intent = action.description ?? (isTest(action.command) ? "Run the tests" : "Run a command");
+      // The agent's own description is a phrase like "Install deps": shown as-is.
+      doing = action.description ?? (isTest(action.command) ? "Running the tests" : "Running a command");
       break;
     case "search":
       title = `Searched for “${action.target ?? ""}”`;
       intent = `Search for “${action.target ?? ""}”`;
+      doing = `Searching for “${action.target ?? ""}”`;
       break;
     case "web":
       title = `Looked up ${action.target ?? "the web"}`;
       intent = `Look up ${action.target ?? "the web"}`;
+      doing = `Looking up ${action.target ?? "the web"}`;
       break;
     case "task":
       title = `Handed off: ${action.description ?? "a sub-task"}`;
       intent = `Hand off: ${action.description ?? "a sub-task"}`;
+      doing = `Working on ${action.description ?? "a sub-task"}`;
       break;
     default:
       title = `Used ${call.tool}`;
       intent = `Use ${call.tool}`;
+      doing = `Using ${call.tool}`;
   }
   const raw = action.type === "run" && action.command ? { command: action.command } : { call: `${call.tool} ${compact(call.input)}` };
   const edit = action.type === "edit" && action.edits ? { path: path ?? "", changes: action.edits } : undefined;
-  return { id: call.id, kind: action.type, title, intent, chips, raw, edit, tool: call.tool };
+  return { id: call.id, kind: action.type, title, intent, doing, chips, raw, edit, tool: call.tool };
 }
 
 function addResult(step: Step, output: string, isError: boolean): void {
@@ -186,4 +198,16 @@ function trim(output: string): string {
 /** Steps still waiting for the owner, oldest first: what the ask dock shows (3c3). */
 export function openAsks(items: readonly TimelineItem[]): Step[] {
   return items.flatMap((item) => (item.type === "steps" ? item.steps.filter((step) => step.ask) : []));
+}
+
+/**
+ * What the agent is doing right now, for the working indicator (3d6): the newest step of the
+ * current turn that hasn't finished and isn't waiting for you; null between steps (thinking or
+ * writing its reply), or once it has replied after its last step.
+ */
+export function currentActivity(items: readonly TimelineItem[]): string | null {
+  const last = items.at(-1);
+  if (last?.type !== "steps") return null;
+  const step = last.steps.at(-1);
+  return step && !step.finished && !step.ask ? step.doing : null;
 }

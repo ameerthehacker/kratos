@@ -4,15 +4,17 @@ import "streamdown/styles.css";
 import { StickToBottom } from "use-stick-to-bottom";
 import { PromptBubble } from "@/components/conversation/prompt-bubble";
 import { StepGroup } from "@/components/conversation/step-group";
+import { WorkingIndicator } from "@/components/conversation/working-indicator";
 import { codePlugin } from "@/lib/appearance";
-import type { TimelineItem } from "@/lib/timeline";
+import type { SessionSummary } from "@kratos/core";
+import { currentActivity, type TimelineItem } from "@/lib/timeline";
 
 /**
  * A session's conversation, drawn like the owner's chat design (D45): your prompts as bubbles,
  * the agent's replies as markdown, its tool calls as plain-words steps. Scrolls itself and stays
  * pinned to the newest message unless you scroll up.
  */
-export function Conversation(props: { items: TimelineItem[]; agent: string }) {
+export function Conversation(props: { items: TimelineItem[]; agent: string; status?: SessionSummary["status"] }) {
   const { items } = props;
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
 
@@ -40,6 +42,11 @@ export function Conversation(props: { items: TimelineItem[]; agent: string }) {
               );
           }
         })}
+        {/* Last in the scroll, so it follows the newest message (3d6). Mounted for the whole
+            turn (its timer counts from the start); hidden while an ask waits for you. */}
+        {props.status && props.status !== "idle" && (
+          <WorkingIndicator activity={currentActivity(items)} paused={props.status === "needs_approval"} />
+        )}
       </StickToBottom.Content>
     </StickToBottom>
   );

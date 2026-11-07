@@ -43,7 +43,7 @@ export function SessionPage() {
   return (
     <main className="flex min-h-0 flex-1 flex-col">
       {session && <SessionHeader session={session} />}
-      <Conversation items={items} agent={agentName} />
+      <Conversation items={items} agent={agentName} status={session?.status} />
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
@@ -80,15 +80,9 @@ function SessionHeader({ session }: { session: SessionSummary }) {
       <h1 className="min-w-0 flex-1 truncate text-base font-medium" title={sessionTitle(session)}>
         {sessionTitle(session)}
       </h1>
-      {session.done ? (
-        <span className="inline-flex items-center gap-1.5 text-xs text-add">
-          <span className="size-2 rounded-full bg-add" aria-hidden="true" />
-          Done
-        </span>
-      ) : (
-        <SessionStatus status={session.status} />
-      )}
-      <DoneButton session={session} variant="full" />
+      {/* Open: live status + a quiet check icon; done: the green "Done" chip, which reopens (3d7). */}
+      {!session.done && <SessionStatus status={session.status} />}
+      <DoneButton session={session} variant="header" />
     </div>
   );
 }

@@ -247,6 +247,27 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   - pkg warns it can't pack `open`'s bundled `xdg-open` script; `open` falls back to the system's
     `xdg-open` on Linux, so nothing is lost.
   - Reverse: delete the script and the `"pkg"` config; `pnpm build` + `pnpm start` still work.
+- Release workflow (3u4): `.github/workflows/release.yml` on `release: published`.
+  - `check` (typecheck + tests) → `binary`, a matrix of native runners (`macos-latest` arm64,
+    `macos-15-intel`, `ubuntu-latest` x64, `ubuntu-24.04-arm`): the version comes from the tag
+    (`v1.2.3` → `npm pkg set version` in apps/cli, so the pill links to the release), then
+    `pnpm build:binary`, a smoke test that `kratos --version` prints exactly that version, and
+    `kratos-<v>-<platform>-<arch>.tar.gz` attached with `gh release upload`. Native runners rather
+    than pkg's cross-building: each binary is smoke-tested where it runs, and macOS ones are
+    signed on macOS.
+  - `tap`: downloads the four archives, attaches `SHA256SUMS`, writes the formula with
+    `apps/cli/scripts/homebrew-formula.mjs` (tested; `on_macos`/`on_linux` × `on_arm`/`on_intel`,
+    `bin.install`, caveats saying `claude` is needed, `test do` checks `--version`), and pushes it
+    to `ameerthehacker/homebrew-kratos` `Formula/kratos.rb` with the `HOMEBREW_TAP_TOKEN` secret
+    (fine-grained, Contents read/write on the tap only). Pre-releases skip the tap, so a release
+    can be tried before brew users get it. A missing secret fails the job with a clear message.
+  - Checked locally: a `0.0.1-test` binary archived and run through the formula script,
+    installed with `brew install` from a throwaway local tap (URL pointed at the local file):
+    on PATH, signature valid, `brew test` passes, the server starts and serves the UI; then
+    uninstalled and untapped. Not checked: the workflow on GitHub (no actionlint here; YAML
+    parses), and Homebrew on Linux — whether brew's post-install processing of a Linux binary
+    leaves pkg's injected blob intact is for the first real release to show.
+  - Reverse: delete the workflow and the formula script; releases go back to manual.
 - Opens the browser (owner, 3u3): `kratos` opens the UI in the default browser once it listens
   (`open`, already used for editors); `--no-open` skips it. `pnpm dev` passes `--no-open` (the UI
   is on Vite's port there, and tsx restarts would reopen it). Failing to open only warns.

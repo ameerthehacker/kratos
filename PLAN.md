@@ -397,13 +397,13 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Also (owner): the UI opens in the browser at start; `--no-open` skips it. Checked:
             the binary alone, copied elsewhere, serves the UI, keeps sessions across restarts,
             runs `claude`, shows editor icons, `--version`.
-      - [ ] **3u4. Release workflow + tap** (~150, GitHub Actions) — on `release: published`:
-            a matrix (macos arm64/x64, ubuntu x64/arm64) builds the binary with the tag's
-            version, smoke-tests `kratos --version`, uploads `kratos-<v>-<os>-<arch>.tar.gz`
-            + checksums to the release; then writes `Formula/kratos.rb` (on_macos/on_linux ×
-            arm/intel, url + sha256 each, `test do` runs `--version`) and pushes it to the tap
-            with a `HOMEBREW_TAP_TOKEN` secret. Accept: a test release installs with brew on
-            this Mac.
+      - [x] **3u4. Release workflow + tap** (~200) — `.github/workflows/release.yml` on
+            `release: published`: tests, then native runners (macOS arm64/x64, Linux x64/arm64)
+            build the binary with the tag's version, smoke-test `--version`, attach
+            `kratos-<v>-<os>-<arch>.tar.gz`; then `SHA256SUMS`, the formula
+            (`apps/cli/scripts/homebrew-formula.mjs`) pushed to the tap with
+            `HOMEBREW_TAP_TOKEN`. Pre-releases skip the tap. Checked: brew install from a local
+            tap on this Mac. Owner: create the tap repo + secret, then a first real release.
       - [ ] **3u5. Self-update, one click** (owner) — Kratos checks for a newer release (GitHub's
             latest release, now and then), the UI shows "update available" (the version pill), and
             one click updates and restarts it. To settle when we get there (needs 3u4's releases):

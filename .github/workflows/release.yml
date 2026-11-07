@@ -1,0 +1,104 @@
+# Release (step 3u4, D57): publishing a GitHub release tagged v<version> builds the single binary
+# for macOS and Linux (arm64 + x64) on their own runners, attaches the archives and SHA256SUMS to
+# the release, and updates the Homebrew tap (`brew install ameerthehacker/kratos/kratos`).
+# Pre-releases get the binaries but leave the tap alone.
+# Needs the secret HOMEBREW_TAP_TOKEN: a fine-grained token with Contents read/write on
+# ameerthehacker/homebrew-kratos only.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write # upload release assets
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+
+env:
+  TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # the version in package.json's packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  binary:
+    needs: check
+    strategy:
+      matrix:
+        # Each builds and smoke-tests for its own OS and CPU.
+        runner: [macos-latest, macos-15-intel, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version from the tag
+        run: |
+          VERSION="${TAG#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::Tag must be v<semver>, got $TAG"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          (cd apps/cli && npm pkg set version="$VERSION")
+      - run: pnpm build:binary
+      - name: Smoke test
+        run: |
+          OUT="$(apps/cli/dist-bin/kratos --version)"
+          [ "$OUT" = "$VERSION" ] || { echo "::error::kratos --version printed '$OUT', expected '$VERSION'"; exit 1; }
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET="kratos-$VERSION-$(node -p 'process.platform + "-" + process.arch').tar.gz"
+          tar -C apps/cli/dist-bin -czf "$ASSET" kratos
+          gh release upload "$TAG" "$ASSET" --clobber
+
+  tap:
+    needs: binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          mkdir assets && cd assets
+          gh release download "$TAG" --pattern 'kratos-*.tar.gz'
+          sha256sum kratos-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber
+      - name: Formula
+        run: node apps/cli/scripts/homebrew-formula.mjs "$VERSION" assets/SHA256SUMS > kratos.rb
+      - name: Push to the tap
+        if: ${{ !github.event.release.prerelease }}
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "::error::Add the HOMEBREW_TAP_TOKEN secret (see the top of this file)"; exit 1; }
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/ameerthehacker/homebrew-kratos.git" tap
+          mkdir -p tap/Formula && cp kratos.rb tap/Formula/kratos.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/kratos.rb
+          git diff --cached --quiet && { echo "Formula already up to date"; exit 0; }
+          git commit -m "kratos $VERSION"
+          git push

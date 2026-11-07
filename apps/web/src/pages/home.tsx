@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
 import { PermissionPicker } from "@/components/permission-picker";
+import { askToNotify } from "@/hooks/use-attention";
 import { PromptCard } from "@/components/prompt-card";
 import { RecentList } from "@/components/recent-list";
 import { useHomeChoice } from "@/lib/home-choice";
@@ -37,6 +38,7 @@ export function HomePage() {
 
   const start = (text: string) => {
     pending.current = { text, viewing, seen: log.length };
+    askToNotify(); // once, from this click: so Kratos can tell you when the agent needs you
     send({
       type: "prompt",
       text,

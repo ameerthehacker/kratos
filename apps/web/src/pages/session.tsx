@@ -5,6 +5,7 @@ import type { SessionSummary } from "@kratos/core";
 import { AgentPicker } from "@/components/agent-picker";
 import { PermissionPicker } from "@/components/permission-picker";
 import { useHomeChoice } from "@/lib/home-choice";
+import { askToNotify } from "@/hooks/use-attention";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { DoneButton } from "@/components/done-button";
@@ -85,7 +86,10 @@ export function SessionPage() {
               />
             </>
           }
-          onSend={(text) => send({ type: "prompt", text })}
+          onSend={(text) => {
+            askToNotify(); // once, from this click (3r3)
+            send({ type: "prompt", text });
+          }}
           onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
           disabled={!connected || viewing !== sessionId}
           size="compact"

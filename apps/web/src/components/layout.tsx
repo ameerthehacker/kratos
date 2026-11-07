@@ -2,6 +2,7 @@ import { Link, Outlet } from "react-router";
 import { KratosLogo } from "@/components/kratos-logo";
 import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { SessionsSidebar, SidebarToggle } from "@/components/sessions-sidebar";
+import { useAttention } from "@/hooks/use-attention";
 import { useKratosConnection } from "@/hooks/use-kratos-connection";
 import { useKratos } from "@/lib/kratos-store";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
@@ -10,6 +11,7 @@ import { useSidebarPrefs } from "@/lib/sidebar-prefs";
  * the canvas. Also owns the connection to kratos. */
 export function Layout() {
   useKratosConnection();
+  useAttention(); // tab title, favicon dot and notifications when an agent waits on you (3r3)
   const connected = useKratos((s) => s.connected);
   const info = useKratos((s) => s.info);
   const sidebarOpen = useSidebarPrefs((s) => s.open);

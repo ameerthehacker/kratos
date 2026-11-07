@@ -267,9 +267,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             - web: the timeline only skips the new messages for now (UI is 3r2).
             - Tests: fake claude learns a question turn (single, multi + Other, skip); adapter +
               hub tests incl. invalid answers, two tabs, interrupt, restart.
+      - [x] **3r3. Tab title + notification** (~90, owner, D54) — while sessions wait on you, the
+            tab reads "(1) Question · Kratos" (Approval(s) / Waiting for you when mixed) and the
+            favicon (now the Kratos logo) gets an amber dot; a session that starts waiting while
+            the tab is hidden shows a system notification ("Claude Code has a question" + the
+            question; "… needs your OK"), clicking opens it. Permission is asked once, when you
+            send a prompt. Checked with real `claude` (notification API recorded, tab hidden).
       - [x] **3r2. UI** (~250) — done, checked with real `claude` (two questions answered by keys,
-            a multi-pick plus own text, then a single question skipped with Esc). Not built from the
-            design: the browser-tab title "(1) Question" and a notification. Planned as: the design's question card in the ask dock (tabs per question,
+            a multi-pick plus own text, then a single question skipped with Esc). Planned as: the design's question card in the ask dock (tabs per question,
             radio/checkbox rows with Recommended, "Other" field, keys 1–4 / ↵ / Esc, Back / Next /
             Send answers, Skip), the step "Asking 2 questions" → "Asked …" with answer chips,
             "Needs your answer" in sidebar and header.

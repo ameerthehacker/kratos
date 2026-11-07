@@ -192,7 +192,19 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   agent's AskUserQuestion call becomes a question step: "Asking 2 questions · Waiting for you" →
   "Asked 2 questions" with chips per answer ("Docs · Hub, Readme, “Changelog”"), "You skipped ·
   Claude Code decides", or "Not answered". A skip comes back to the CLI as an error result: the
-  timeline doesn't add "Failed" to question steps. Not built: tab title / notification.
+  timeline doesn't add "Failed" to question steps.
+- Getting your attention (3r3, the design): a hook in the layout. Tab title counts sessions
+  waiting on you — approvals too, they block the agent the same way ("(1) Question · Kratos",
+  "(2) Approvals · Kratos", mixed "Waiting for you"); the favicon is now the Kratos logo
+  (inlined from `kratos-logo.svg`, a data URL) with an amber dot in the theme's `--wait` while
+  anything waits. A favicon is drawn outside the page, so CSS variables don't resolve in it: the
+  logo's `var(--primary, …)` colours are replaced with the theme's current values (owner) — the
+  file's fallbacks only if the theme has none. A system notification (browser Notification API) when a session *starts*
+  waiting while the tab is hidden — not for ones already waiting at page load — titled "Claude
+  Code has a question" (body: the question, for the viewed session; else its title) or "… needs
+  your OK"; tagged by session so a newer one replaces it; click focuses and opens the session.
+  Permission is asked once, from a click (sending a prompt), as browsers require; never again
+  after you answer. Alternative: a settings toggle — later, with Settings.
 - Reverse: additive — drop the callback (questions are then refused) and the messages.
 
 ### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)

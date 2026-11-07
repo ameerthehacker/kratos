@@ -1,9 +1,10 @@
 import { execa } from "execa";
 
 /** The spawn settings for every JsonLinesProcess, in one place. */
-const spawnChild = (command: string, args: string[], cwd: string, forceKillAfterMs: number) =>
+const spawnChild = (command: string, args: string[], cwd: string, forceKillAfterMs: number, env?: Record<string, string>) =>
   execa(command, args, {
     cwd,
+    env, // added to Kratos's own environment (execa's extendEnv)
     stdin: "pipe",
     stdout: "pipe",
     stderr: "inherit",
@@ -34,8 +35,8 @@ export class JsonLinesProcess {
   private running = true;
   private stopRequested = false;
 
-  constructor(command: string, args: string[], options: { cwd: string; forceKillAfterMs?: number }) {
-    this.child = spawnChild(command, args, options.cwd, options.forceKillAfterMs ?? 3000);
+  constructor(command: string, args: string[], options: { cwd: string; forceKillAfterMs?: number; env?: Record<string, string> }) {
+    this.child = spawnChild(command, args, options.cwd, options.forceKillAfterMs ?? 3000, options.env);
     // A write racing a crash raises EPIPE on stdin; swallow it, `exited` explains what happened.
     this.child.stdin.on("error", () => {});
     this.exited = this.child.then((result) => {

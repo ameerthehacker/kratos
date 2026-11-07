@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentSession, AskQuestions, Conversation, PermissionRequest, QuestionRequest, RequestPermission } from "@kratos/core";
-import { createClaudeCodeAdapter } from "./index.js";
+import { cliEnv, createClaudeCodeAdapter } from "./index.js";
 
 /** A fake `claude` that speaks the real control protocol, scripted by prompt (see the file). */
 const FAKE_CLAUDE = fileURLToPath(new URL("../test/fake-claude.mjs", import.meta.url));
@@ -146,6 +146,16 @@ describe("Claude Code adapter: conversations", () => {
     return result?.kind === "tool_result" ? JSON.parse(result.output) : [];
   }
   const ID = "6f1c2b9e-0d4a-4c1e-9a77-3b1f1f2a9c10";
+
+  it("starts claude with artifacts on and a wait for MCP connectors (D62)", async () => {
+    const events = await runTurn("env", async () => ({ decision: "allow" }));
+    const result = events.find((e) => e.kind === "tool_result");
+    expect(result?.kind === "tool_result" && JSON.parse(result.output)).toEqual({ CLAUDE_CODE_ARTIFACT: "1", CLAUDE_CODE_MCP_STARTUP_WAIT_MS: "10000" });
+  });
+
+  it("leaves those to your own environment when it sets them", () => {
+    expect(cliEnv({ CLAUDE_CODE_ARTIFACT: "0", CLAUDE_CODE_MCP_STARTUP_WAIT_MS: "0" })).toEqual({ CLAUDE_CODE_ARTIFACT: "0", CLAUDE_CODE_MCP_STARTUP_WAIT_MS: "0" });
+  });
 
   it("names a new conversation with --session-id, continues one with --resume, else neither", async () => {
     const fresh = await argsFor();

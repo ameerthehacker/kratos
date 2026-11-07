@@ -156,6 +156,35 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D62. Headless `claude` gets artifacts and waits for MCP (step 3u7, owner)
+- Owner: Claude Code in the terminal can read and update claude.ai artifacts (the design canvas);
+  inside Kratos it can't, and MCP "doesn't work properly". Found by running `claude` with Kratos's
+  exact flags and reading the CLI's own code (claude 2.1.308; nothing here is documented):
+  - Artifacts: `sdk_default_off` — the `Artifact` tools are withheld when
+    `CLAUDE_CODE_ENTRYPOINT` is `sdk-cli`/`sdk-ts`/`sdk-py` (`-p` is `sdk-cli`) unless
+    `CLAUDE_CODE_ARTIFACT` is on. Interactive sessions have them. With `=1`, headless loads
+    `Artifact`, `ArtifactComments`, `ArtifactData` (23 → 26 tools) and read the design canvas.
+    They need a claude.ai login, which Kratos's `claude` uses (`apiKeySource: none`).
+  - MCP: claude.ai connectors run "fully async (nonblocking)" in `-p`; `init` reports them
+    `pending` and the first turn starts without them (~1 s later they're up). Kratos starts a new
+    `claude` per session process — every Kratos restart and resume — so the model is told the
+    connector "disconnected" / "still connecting", then "available again". That was the
+    flakiness: this very conversation had three processes (14:48, 15:00, 15:27). A 150 s run
+    showed no drops once connected. `CLAUDE_CODE_MCP_STARTUP_WAIT_MS=<ms>` (the CLI's "host
+    wait") holds the first input until connectors are up: `init` then says `connected`, 34 tools.
+    (`MCP_CONNECTION_NONBLOCKING=false` also works; the host wait is the knob meant for hosts.)
+- Decision: the adapter starts `claude` with `CLAUDE_CODE_ARTIFACT=1` and
+  `CLAUDE_CODE_MCP_STARTUP_WAIT_MS=10000` (a cap; it waits only as long as connecting takes),
+  unless Kratos's own environment sets them. `JsonLinesProcess` takes an `env`, added to
+  Kratos's own (execa's default).
+- Also seen, not changed: `-p` skips the folder-trust prompt (interactive waits for it before
+  loading MCP and hooks); headless has no `WebFetch` (cause not found — this session offers a
+  `web-fetch` helper agent "where you have no WebFetch tool", so likely deliberate).
+- Risk: undocumented internals can change in any Claude Code release. If they do, Kratos sessions
+  lose artifacts or race MCP again, as before; nothing breaks. Re-check with
+  `--debug-file` + the `init` message.
+- Reverse: drop `cliEnv()` from `packages/adapter-claude-code/src/index.ts`.
+
 ### D61. Self-update: checking for a release (step 3u5a, owner)
 - Owner: Kratos downloads and verifies a new release by itself, you click to restart into it;
   checks at start and every hour; a restart waits until no agent works; Homebrew installs are

@@ -190,6 +190,11 @@ const turns = {
     report(JSON.stringify(lastBlocks.map((b) => ({ type: b.type, title: b.title, source: b.source && { type: b.source.type, media_type: b.source.media_type, length: b.source.data.length, data: b.source.type === "text" ? b.source.data : undefined } }))));
     finish();
   },
+  // Report the environment variables the adapter set for us (D62).
+  async env() {
+    report(JSON.stringify({ CLAUDE_CODE_ARTIFACT: process.env.CLAUDE_CODE_ARTIFACT, CLAUDE_CODE_MCP_STARTUP_WAIT_MS: process.env.CLAUDE_CODE_MCP_STARTUP_WAIT_MS }));
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));

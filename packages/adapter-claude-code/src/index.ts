@@ -135,6 +135,20 @@ const CLI_ARGS = [
   "--permission-prompt-tool=stdio", // permission asks come to us as control_request lines
 ];
 
+/**
+ * What headless `claude` turns off or leaves to chance unless asked (D62); your own environment
+ * wins if it sets these. Both are undocumented CLI internals, read from claude 2.1.308:
+ * - Artifacts (claude.ai designs, pages): off by default for SDK/`-p` sessions, on in the terminal.
+ * - claude.ai connectors (MCP) connect in the background; without a wait, the first turn of every
+ *   new process (each Kratos start, each resume) runs while they're still "pending".
+ */
+export function cliEnv(own: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  return {
+    CLAUDE_CODE_ARTIFACT: own.CLAUDE_CODE_ARTIFACT ?? "1",
+    CLAUDE_CODE_MCP_STARTUP_WAIT_MS: own.CLAUDE_CODE_MCP_STARTUP_WAIT_MS ?? "10000", // a cap: usually ~1 s
+  };
+}
+
 /** Name the conversation (new) or continue it (resume) — Claude keeps its own transcript (D36). */
 function conversationArgs(conversation?: Conversation): string[] {
   if (!conversation) return [];
@@ -161,7 +175,7 @@ function startSession(
     // Makes Bypass reachable by set_permission_mode later; it doesn't turn it on (D53).
     "--allow-dangerously-skip-permissions",
   ];
-  const proc = new JsonLinesProcess(claudePath, args, { cwd });
+  const proc = new JsonLinesProcess(claudePath, args, { cwd, env: cliEnv() });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
   let currentMode = permissionMode ?? CLAUDE_DEFAULT_MODE; // to report only real changes
   const ourPrompts = new Set<string>(); // ids we sent: lifecycle lines for others are the CLI's own

@@ -483,6 +483,20 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             another: kratos --port 4400" and exits 1; a free port starts as before. Planned as: a
             taken port crashed with Node's raw `EADDRINUSE` stack trace; instead one line naming
             the port, the likely cause and the fix, exit 1 with the database closed.
+      - [x] **3u7. Claude Code in Kratos as able as in the terminal** (~20 + tests, owner, D62) —
+            owner: the terminal's `claude` reads claude.ai artifacts (the design) and Kratos's
+            can't; MCP is flaky in Kratos. Found (claude 2.1.308): artifacts are off by default
+            for SDK/`-p` sessions (`CLAUDE_CODE_ARTIFACT=1` turns them on); claude.ai connectors
+            connect in the background, so every new `claude` process (each Kratos start, each
+            resume) runs its first turn with them "pending" — the in-and-out the owner saw
+            (`CLAUDE_CODE_MCP_STARTUP_WAIT_MS` waits). The adapter sets both; your own
+            environment wins. Accept: tests; through Kratos, a new session's first reply lists
+            the Artifact tools and the Docs connector's. Checked: it does; through Kratos it also
+            read the design (12 artboards) and called the Docs `guide` tool. Not tried: edits.
+      - [ ] **3u8. Stale tabs reload** (~15) — a tab that reconnects to a Kratos of another
+            version (after `brew upgrade` + restart, later after 3u5c) still runs the old page and
+            rejects new messages ("unknown message from server", seen with 0.1.0 → 0.2.0). The
+            page remembers the first `pong`'s `serverVersion`; a different one later → reload.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

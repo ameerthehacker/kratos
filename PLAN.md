@@ -678,6 +678,39 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         permission, a hidden tab notifies on a question and on a finish, two tabs notify once,
         switches off → nothing.
         Done (D64). Not run: the end-to-end browser check (owner chose to release first).
+- [x] **3k. Keyboard shortcuts** (owner, design: "Proposal · keyboard shortcuts" board, D66) —
+      one list of shortcuts (`apps/web/src/lib/shortcuts.ts`, TanStack Hotkeys'
+      `defineAppHotkeys`) drives both the keys and every hint: `<Shortcut id>` renders the
+      binding as keycaps (⌘B on a Mac, Ctrl+B elsewhere), tooltips replace `title`. Hardcoded for
+      now; user bindings later plug into the provider's `customHotkeys`, saved in `settings.json`.
+      Owner: implement 3k1–3k3 in one go, with the review page's keys (after 3v3 landed).
+  - [x] **3k0. Design** — the board: the keycap, tooltips with keys, hints in place (New session
+        on hover, the ask's Deny/Allow, a faint / in the empty prompt), quick settings' Keyboard
+        shortcuts row, the shortcuts sheet, and the review page (Back with Esc, P / N beside the
+        neighbouring files, V inside Viewed, S on the layout switch). Platform tweak: Mac / Windows.
+  - [x] **3k1. Foundation + ⌘B sidebar + ⌘, quick settings** (~150) — the library (exact
+        version), the list, the provider, `<Shortcut>`, `<Hint>`; ⌘B toggles the sidebar
+        (registered once in `Layout`), ⌘, opens quick settings (Popover made controlled);
+        tooltips on both. Accept: ⌘B works from inside the prompt; ⌘, opens the popover;
+        screenshots of the tooltips; typecheck, build, tests.
+  - [x] **3k2. Shortcuts sheet ⌘/** (~120) — a dialog listing the list by group, including the
+        prompt's and questions' own keys (display-only rows; their handlers stay where they
+        are); quick settings' last row opens it. Accept: screenshot; every group shown.
+  - [x] **3k3. Session and review actions** (~150) — ⇧⌘O new session; / focuses the prompt (not
+        while typing); Esc stops a working turn (not while a question waits, or for an Esc that
+        closed a menu); ⌘↵ / ⌘⌫ allow / deny the waiting ask (⌘↵ keeps meaning "send now" when the
+        prompt has text; ⌘⌫ deletes the line while typing). Review: N / P, V, S, Esc back. Hints
+        per the board. Accept: each in a real run, including the exceptions.
+        Checked (3k1–3k3, built app, fake `claude`, headless Chromium as a Mac): 23 scripted
+        checks pass — ⌘B from inside the prompt, its tooltip; ⌘, open/close; ⌘/ and the
+        quick-settings row open the sheet with all 5 groups, Esc closes it; / focuses without
+        typing, then types; ⌘⌫ with text deletes the line and the ask stays; ⌘↵ in the empty
+        prompt allows; Esc closing the permission menu leaves the turn running, Esc in the prompt
+        stops it; ⇧⌘O → Home; review N, P, V, S, N resting under the sheet, Esc closing the sheet
+        stays, Esc → the session. Found and fixed on the way: an open tooltip swallowed Esc (over
+        Stop it took two). Not checked: whether a real browser lets the page have ⌘, (owner);
+        Windows labels (by the library's formatter only).
+        Size: ~330 lines of code across 13 files (the three sub-steps together, + review keys).
 - [ ] **3v. Reviewing changes (the diff)** (owner, design: Diff board "Proposal · reviewing
       changes", D65) — the core review flow: one file at a time, centred, in a full page that
       replaces the session view ("Back to the session"). Owner: diff = what this session changed,
@@ -746,7 +779,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         `get_changes` reply is logged, not an unhandled rejection; one in-project check in the
         hub. Left: a Viewed click undone within one round trip can flicker once. 187 tests, typecheck, build. Size: ~330 lines of code + ~90 of tests.
   - [ ] **3v3b. Moving through** (~100) — Previous / "Next · name" (marks viewed) / Finish
-        review under the diff, keys n p v s (into 3k's shortcut list if it's built by then),
+        review under the diff (N / P / V / S are in 3k's list already: the buttons show them),
         picking files at narrow width.
   - [ ] **3v4. Way in from the turn** (~120) — the turn's summary step "Changed 4 files
         +25 −5 · Review changes" (that turn's start → end snapshot), the header count updating
@@ -802,4 +835,6 @@ on what's being built. Two gated slices (owner):
 - Data-flow walkthrough view per step
 - Rewind / branch from any checkpoint
 - More adapters (Codex CLI, Gemini CLI, Aider…)
+- Rebinding shortcuts (3k, D66): in the shortcuts sheet, `useHotkeyRecorder` + conflict check,
+  saved as `Settings.keybindings`, passed to the provider's `customHotkeys`
 - Track estimate vs actual per step to calibrate future estimates (step 2 missed by ~30%)

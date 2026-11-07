@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode
 import { ArrowUp, ListPlus, Square } from "lucide-react";
 import type { AttachmentPolicy, AttachmentUpload } from "@kratos/core";
 import { AttachButton, DraftList, DropOverlay, FileNotes } from "@/components/attachments";
+import { Hint, Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useDraftFiles } from "@/hooks/use-draft-files";
+import { PROMPT_KEYS } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,7 +16,8 @@ import { cn } from "@/lib/utils";
  * chip (owner, 3q2 design option A). Files (3s2, design 1 + B): "+" first in the row, drop them on
  * the card, or paste; shown above the text, checked before sending (`useDraftFiles`). While the
  * agent works (3t3, the steering design): Enter queues — the send button becomes "Queue" — and
- * ⌘↵ / Ctrl↵ sends now, stopping the current step.
+ * ⌘↵ / Ctrl↵ sends now, stopping the current step. With nothing to send, ⌘↵ is left to the page
+ * (it allows a waiting ask, 3k3). Empty and unfocused, a faint / says how to get here.
  */
 export function PromptCard(props: {
   /** The chips on the left of the bottom row: AgentPicker and PermissionPicker. */
@@ -50,7 +53,10 @@ export function PromptCard(props: {
     setText("");
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) submit(event, event.metaKey || event.ctrlKey);
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    const now = event.metaKey || event.ctrlKey;
+    if (now && !canSend) return; // not ours: the page's ⌘↵ (allow) sees it unhandled
+    submit(event, now);
   };
 
   return (
@@ -59,7 +65,7 @@ export function PromptCard(props: {
         {...files.rootProps({ onSubmit: submit })}
         role={undefined} // react-dropzone marks its root "presentation"; this is a real form
         className={cn(
-          "relative flex flex-col gap-3.5 rounded-3xl bg-card py-3 pr-3 pl-4.5 ring-1 ring-border outline-4 outline-transparent transition-[box-shadow,outline-color] focus-within:ring-primary/55 focus-within:outline-primary/8",
+          "group/prompt relative flex flex-col gap-3.5 rounded-3xl bg-card py-3 pr-3 pl-4.5 ring-1 ring-border outline-4 outline-transparent transition-[box-shadow,outline-color] focus-within:ring-primary/55 focus-within:outline-primary/8",
           files.failed && "ring-destructive/60 focus-within:ring-destructive/60",
         )}
       >
@@ -69,6 +75,9 @@ export function PromptCard(props: {
         <label htmlFor="prompt" className="sr-only">
           Describe what you want to build
         </label>
+        {!text && files.drafts.length === 0 && (
+          <Shortcut id="prompt.focus" variant="faint" className="absolute top-4 right-3.5 group-focus-within/prompt:hidden" />
+        )}
         <Textarea
           id="prompt"
           value={text}
@@ -105,31 +114,34 @@ function SendButton(props: { stop?: () => void; queue: boolean; canSend: boolean
   const { stop, canSend, disabled } = props;
   if (stop) {
     return (
-      <Button
-        type="button"
-        size="icon"
-        onClick={stop}
-        disabled={disabled}
-        aria-label="Stop"
-        title="Stop the agent's turn"
-        className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
-      >
-        <Square className="size-3.5" fill="currentColor" />
-      </Button>
+      <Hint label="Stop the agent's turn" id="agent.stop" side="top">
+        <Button
+          type="button"
+          size="icon"
+          onClick={stop}
+          disabled={disabled}
+          aria-label="Stop"
+          className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
+        >
+          <Square className="size-3.5" fill="currentColor" />
+        </Button>
+      </Hint>
     );
   }
   if (props.queue) {
     return (
-      <Button
-        type="submit"
-        size="icon"
-        disabled={!canSend}
-        aria-label="Queue"
-        title="Queue (↵) · send now (⌘↵)"
-        className="size-9 rounded-full"
+      <Hint
+        side="top"
+        label={
+          <>
+            Queue <Shortcut hotkey={PROMPT_KEYS.send} variant="tooltip" /> · send now <Shortcut hotkey={PROMPT_KEYS.sendNow} variant="tooltip" />
+          </>
+        }
       >
-        <ListPlus className="size-4.5" />
-      </Button>
+        <Button type="submit" size="icon" disabled={!canSend} aria-label="Queue" className="size-9 rounded-full">
+          <ListPlus className="size-4.5" />
+        </Button>
+      </Hint>
     );
   }
   return (

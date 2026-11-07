@@ -156,6 +156,38 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D66. Keyboard shortcuts: one list, TanStack Hotkeys (step 3k, owner)
+- Owner: shortcuts first class everywhere, shown neatly in the UI (the design's "Proposal ·
+  keyboard shortcuts" board), user-configurable later, hardcoded now; library first.
+- Library: `@tanstack/react-hotkeys`, pinned to exactly 0.22.0. It is beta, pre-1.0, and moves
+  fast (several releases a week), so it gets no caret. It has what this needs: `defineAppHotkeys`
+  (one declared list, listed by `useAppHotkeyList` for the sheet even before a page mounts),
+  `customHotkeys` on the provider (where rebinding plugs in), `formatForDisplay` (⇧⌘O on a Mac,
+  Ctrl Shift O elsewhere), scopes, a recorder and conflict checks for the rebinding UI.
+  Alternatives: react-hotkeys-hook (stable and popular, but no Mod display text, no declared list
+  and no conflicts; we'd hand-roll those); tinykeys (tiny, but no scopes, recorder or display text).
+- Shape: `lib/shortcuts.ts` is the list (id → hotkey, name, group, scope). Components register an
+  action by id (`useHotkey(useAppHotkeys()[id], …)`), and every hint is `<Shortcut id>` (keycaps
+  from the shadcn `Kbd`) or `<Hint>` (a tooltip: label + keys, replacing `title`). Keys a focused
+  widget owns (the prompt's ↵ ⇧↵ ⌘↵, a question's 1–9 ↵ Esc) keep their own handlers; the sheet
+  lists them from the same file (`LOCAL_ROWS`, `PROMPT_KEYS`).
+- Bindings: ⌘B sessions, ⇧⌘O new session, ⌘, quick settings, ⌘/ the sheet, / the prompt; in a
+  session Esc stop, ⌘↵ allow, ⌘⌫ deny; reviewing N / P files, V viewed, S split or unified, Esc back.
+  Session and review keys are scoped to their page (`HotkeysProvider scope`), so Esc can mean
+  both; the sheet is exclusive while open (only General keys work behind it).
+- Esc and popups: base-ui closes a menu or dialog on Esc from a `document` listener and prevents
+  the default. Our Esc listens on the `window` (after it) and skips handled events, so an Esc that
+  closes a menu doesn't stop the agent. A tooltip is only a hint: `<Hint>` turns down base-ui's
+  Esc close and lets the key travel on, then closes itself, so Esc over a hovered Stop still stops.
+- Overlaps resolved by focus: ⌘↵ in the prompt with text = send now (the prompt handles it first);
+  empty, it's left to the page (allow). ⌘⌫ while typing deletes the line; elsewhere it denies.
+- ⌘, : browsers might keep it for their own settings. Synthetic keys can't show that, so it's for
+  the owner to try; if the browser takes it, change the one line in `shortcuts.ts`.
+- Later: rebinding in the sheet (`useHotkeyRecorder` + `setCustomHotkey`), saved as
+  `Settings.keybindings` in `settings.json` and passed to the provider's `customHotkeys`.
+- Reverse: the library is only in `shortcuts.ts`, `shortcut.tsx`, `shortcuts-sheet.tsx`, the
+  provider in `main.tsx` and the `useHotkey` calls; drop them and restore the `title`s.
+
 ### D65. Reviewing changes: per-turn git snapshots, drawn by us on jsdiff + Shiki (step 3v, owner)
 - Owner: the diff shows what this session changed, from snapshots; our own rows on jsdiff +
   Shiki; the review page first, the way in from the turn after; Claude's reasons and line

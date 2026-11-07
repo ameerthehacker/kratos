@@ -3,6 +3,7 @@ import { ChevronRight, PanelLeft, Plus } from "lucide-react";
 import type { SessionSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
+import { Hint, Shortcut } from "@/components/shortcut";
 import { useKratos } from "@/lib/kratos-store";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
 import { cn } from "@/lib/utils";
@@ -11,16 +12,19 @@ import { cn } from "@/lib/utils";
 export function SidebarToggle({ className }: { className?: string }) {
   const open = useSidebarPrefs((s) => s.open);
   const setOpen = useSidebarPrefs((s) => s.setOpen);
+  const label = open ? "Hide sessions" : "Show sessions";
   return (
-    <button
-      type="button"
-      onClick={() => setOpen(!open)}
-      aria-label={open ? "Hide sessions" : "Show sessions"}
-      aria-expanded={open}
-      className={cn("flex size-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground", className)}
-    >
-      <PanelLeft className="size-4.5" />
-    </button>
+    <Hint label={label} id="sidebar.toggle">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-label={label}
+        aria-expanded={open}
+        className={cn("flex size-11 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground", className)}
+      >
+        <PanelLeft className="size-4.5" />
+      </button>
+    </Hint>
   );
 }
 
@@ -37,9 +41,11 @@ export function SessionsSidebar() {
         <span className="flex-1 text-sm font-medium">Sessions</span>
         <SidebarToggle />
       </div>
-      <Link to="/" className="mt-1 mb-4 flex h-10 items-center gap-2.5 rounded-lg bg-secondary px-2.5 text-sm hover:bg-accent">
+      <Link to="/" className="group mt-1 mb-4 flex h-10 items-center gap-2.5 rounded-lg bg-secondary pr-2 pl-2.5 text-sm hover:bg-accent">
         <Plus className="size-4.5" />
-        New session
+        <span className="flex-1">New session</span>
+        {/* Its keys on hover only (the design): the everyday look stays plain. */}
+        <Shortcut id="session.new" variant="secondary" className="invisible group-hover:visible group-focus-visible:visible" />
       </Link>
       {/* Two sections (owner, 3d2): what's being worked on, and what's done. Done is pinned to
           the bottom — it needs the least attention (owner, 3d8); each scrolls on its own, Done

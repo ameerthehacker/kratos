@@ -1,7 +1,9 @@
-import { Link, Outlet } from "react-router";
+import { Link, Outlet, useNavigate } from "react-router";
+import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { KratosLogo } from "@/components/kratos-logo";
 import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { QuickSettings } from "@/components/quick-settings";
+import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { SessionsSidebar, SidebarToggle } from "@/components/sessions-sidebar";
 import { VersionPill } from "@/components/version-pill";
 import { useAttention } from "@/hooks/use-attention";
@@ -15,7 +17,12 @@ export function Shell() {
   useKratosConnection();
   useAttention(); // tab title, favicon dot and notifications when an agent waits on you (3r3)
   useTheme(); // the theme Kratos has saved (3w1)
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <ShortcutsSheet />
+    </>
+  );
 }
 
 /** Home and sessions, in the owner's island layout: sidebar and main area float as rounded
@@ -24,6 +31,13 @@ export function Layout() {
   const connected = useKratos((s) => s.connected);
   const info = useKratos((s) => s.info);
   const sidebarOpen = useSidebarPrefs((s) => s.open);
+  const navigate = useNavigate();
+  const appHotkeys = useAppHotkeys();
+  // Here, not in SidebarToggle: that one renders in two places (3k1).
+  useHotkey(appHotkeys["sidebar.toggle"], () => useSidebarPrefs.getState().setOpen(!useSidebarPrefs.getState().open));
+  useHotkey(appHotkeys["session.new"], () => navigate("/"));
+  // Home and a session both have the box (#prompt); "/" while typing stays a "/" (the library).
+  useHotkey(appHotkeys["prompt.focus"], () => document.getElementById("prompt")?.focus());
 
   return (
     // Viewport-high: each page scrolls its own content (the conversation pins to the bottom).

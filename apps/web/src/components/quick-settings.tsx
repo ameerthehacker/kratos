@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Keyboard, SlidersHorizontal } from "lucide-react";
+import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import type { NotificationSettings, ThemeId } from "@kratos/core";
+import { Hint, Shortcut } from "@/components/shortcut";
+import { useShortcutsSheet } from "@/components/shortcuts-sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { useKratos } from "@/lib/kratos-store";
@@ -10,13 +13,17 @@ import { cn } from "@/lib/utils";
 /**
  * The header's quick settings (3w, the design's Home/Session boards): a sliders button that opens
  * the theme picker (3w1) and the notification switches (3w3). Settings are Kratos's (D63): a
- * change goes to the server, which tells every tab.
+ * change goes to the server, which tells every tab. Opens from its shortcut too (3k1), and its
+ * last row opens the shortcuts sheet (3k2).
  */
 export function QuickSettings() {
   const settings = useKratos((s) => s.settings);
   const send = useKratos((s) => s.send);
   const connected = useKratos((s) => s.connected);
   const current = THEME_LIST.find((t) => t.id === settings?.theme) ?? THEME_LIST[0]!;
+  const [open, setOpen] = useState(false);
+  const appHotkeys = useAppHotkeys();
+  useHotkey(appHotkeys["settings.open"], () => setOpen((was) => !was));
 
   const pick = (theme: ThemeId) => {
     applyTheme(theme); // at once here; the server's `settings` confirms it, and moves other tabs
@@ -25,14 +32,15 @@ export function QuickSettings() {
   };
 
   return (
-    <Popover>
-      <PopoverTrigger
-        aria-label="Quick settings"
-        title="Theme and notifications"
-        className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-accent data-popup-open:text-foreground"
-      >
-        <SlidersHorizontal className="size-4.5" />
-      </PopoverTrigger>
+    <Popover open={open} onOpenChange={setOpen}>
+      <Hint label="Quick settings" id="settings.open">
+        <PopoverTrigger
+          aria-label="Quick settings"
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-accent data-popup-open:text-foreground"
+        >
+          <SlidersHorizontal className="size-4.5" />
+        </PopoverTrigger>
+      </Hint>
       <PopoverContent align="end" sideOffset={8} className="w-75 gap-0 rounded-2xl bg-card p-1 ring-border shadow-xl">
         <div className="flex items-baseline gap-2 px-2 pt-2 pb-1.5 text-xs font-medium text-muted-foreground">
           <span className="flex-1">Theme</span>
@@ -71,6 +79,19 @@ export function QuickSettings() {
           })}
         </div>
         {settings && <Notifications prefs={settings.notifications} />}
+        <div className="-mx-1 my-1 h-px bg-border" />
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            useShortcutsSheet.getState().setOpen(true);
+          }}
+          className="flex min-h-11 w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <Keyboard className="size-4 text-muted-foreground" />
+          <span className="flex-1">Keyboard shortcuts</span>
+          <Shortcut id="shortcuts.open" />
+        </button>
       </PopoverContent>
     </Popover>
   );

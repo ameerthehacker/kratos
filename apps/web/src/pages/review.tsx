@@ -1,19 +1,23 @@
 import { useState } from "react";
 import { ArrowLeft, Check } from "lucide-react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
+import { HotkeysProvider, useAppHotkeys, useHotkey, type AppHotkeyId } from "@tanstack/react-hotkeys";
 import { useMediaQuery } from "usehooks-ts";
 import type { ChangedFile } from "@kratos/core";
 import { sessionTitle } from "@/components/session-status";
+import { Hint, Shortcut } from "@/components/shortcut";
 import { ChangeBlocks, Counts, SKIPPED } from "@/components/review/counts";
 import { DiffView } from "@/components/review/diff-view";
 import { useChanges } from "@/hooks/use-changes";
 import { useKratos } from "@/lib/kratos-store";
 import { useReviewPrefs } from "@/lib/review-prefs";
+import { SCOPES } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /**
  * `/s/:sessionId/review` — what a session changed, one file at a time (3v2, the design's Diff
  * board). Its own page on the canvas: the file list island and the diff island, no app header.
+ * Keys (3k): N / P next and previous file, V viewed, S split or unified, Esc back.
  */
 export function ReviewPage() {
   const { sessionId } = useParams();
@@ -33,65 +37,96 @@ export function ReviewPage() {
   const wide = useMediaQuery("(min-width: 1024px)");
   const layout = wide ? preferred : "unified";
 
-  return (
-    <div className="flex h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
-      {/* Only the file list scrolls (owner): the way back, the title and the progress stay put. */}
-      <aside aria-label="Changed files" className="hidden w-80 flex-none flex-col gap-1.5 overflow-hidden rounded-3xl bg-background py-3.5 md:flex">
-        <BackLink to={back} className="ml-2.5" />
-        <div className="flex flex-none flex-col gap-2.5 px-5 pt-3.5 pb-4.5">
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Review changes</h1>
-          {files.length > 0 && (
-            <span className="flex items-center gap-2.5 text-sm text-muted-foreground">
-              {files.length} {files.length === 1 ? "file" : "files"}
-              <Counts additions={sum(files, "additions")} deletions={sum(files, "deletions")} />
-            </span>
-          )}
-          {files.length > 0 && <Progress viewed={files.map(isViewed)} />}
-        </div>
-        <nav aria-label="Files" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">
-          {files.map((file, i) => (
-            <FileRow key={file.path} file={file} n={i + 1} current={file === current} viewed={isViewed(file)} onPick={() => setPicked(file.path)} />
-          ))}
-        </nav>
-      </aside>
+  const navigate = useNavigate();
+  const appHotkeys = useAppHotkeys();
+  const at = current ? files.indexOf(current) : -1;
+  const previous = files[at - 1];
+  const next = files[at + 1];
+  const toggleViewed = () => sessionId && current && setViewed(sessionId, current.path, current.version, !isViewed(current));
+  useHotkey(appHotkeys["review.next"], () => next && setPicked(next.path), { enabled: !!next });
+  useHotkey(appHotkeys["review.previous"], () => previous && setPicked(previous.path), { enabled: !!previous });
+  useHotkey(appHotkeys["review.viewed"], toggleViewed, { enabled: !!current });
+  useHotkey(appHotkeys["review.layout"], () => setLayout(preferred === "split" ? "unified" : "split"), { enabled: wide });
+  // On the window, like the session's Esc: an Esc that closed a popup isn't "back".
+  useHotkey(appHotkeys["review.back"], () => navigate(back), { target: window, ignoreDefaultPrevented: true });
 
-      <main aria-label="Diff" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl bg-background">
-        <header className="flex min-h-16 items-center gap-3 px-6 py-3">
-          {/* Without the file list (narrow), the way back is here. Picking files there: 3v3. */}
-          <BackLink to={back} className="-ml-3 md:hidden" />
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{session && sessionTitle(session)}</span>
-          {wide && <LayoutSwitch value={preferred} onChange={setLayout} />}
-        </header>
-        {/* Nothing here scrolls but the diff itself (owner): the file's title stays, and the diff
-            box fills the rest of the island with its own scroll bars. */}
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 px-4 pt-5 pb-6 md:px-10">
-            {!changes ? (
-              <p className="text-muted-foreground">Reading the changes…</p>
-            ) : changes.unavailable ? (
-              <p className="text-muted-foreground">{changes.unavailable}.</p>
-            ) : !current ? (
-              <p className="text-muted-foreground">No changes yet. Files {agent} changes in this session show here.</p>
-            ) : (
-              <>
-                {changes.note && <p className="flex-none rounded-2xl bg-secondary px-5 py-3 text-sm text-secondary-foreground">{changes.note}.</p>}
-                <FileHeader file={current} viewed={isViewed(current)} onViewed={(viewed) => sessionId && setViewed(sessionId, current.path, current.version, viewed)} />
-                <DiffView key={current.path} file={current} layout={layout} />
-              </>
+  return (
+    // The review's own keys fire only on this page.
+    <HotkeysProvider scope={SCOPES.review}>
+      <div className="flex h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
+        {/* Only the file list scrolls (owner): the way back, the title and the progress stay put. */}
+        <aside aria-label="Changed files" className="hidden w-80 flex-none flex-col gap-1.5 overflow-hidden rounded-3xl bg-background py-3.5 md:flex">
+          <BackLink to={back} className="ml-2.5" />
+          <div className="flex flex-none flex-col gap-2.5 px-5 pt-3.5 pb-4.5">
+            <h1 className="font-heading text-2xl font-semibold tracking-tight">Review changes</h1>
+            {files.length > 0 && (
+              <span className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                {files.length} {files.length === 1 ? "file" : "files"}
+                <Counts additions={sum(files, "additions")} deletions={sum(files, "deletions")} />
+              </span>
             )}
+            {files.length > 0 && <Progress viewed={files.map(isViewed)} />}
           </div>
-        </div>
-      </main>
-    </div>
+          <nav aria-label="Files" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5">
+            {files.map((file, i) => (
+              <FileRow
+                key={file.path}
+                file={file}
+                n={i + 1}
+                current={file === current}
+                viewed={isViewed(file)}
+                onPick={() => setPicked(file.path)}
+                // A faint P / N on the files either side of this one: where the keys go (the design).
+                hint={file === previous ? "review.previous" : file === next ? "review.next" : undefined}
+              />
+            ))}
+          </nav>
+        </aside>
+
+        <main aria-label="Diff" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl bg-background">
+          <header className="flex min-h-16 items-center gap-3 px-6 py-3">
+            {/* Without the file list (narrow), the way back is here. Picking files there: 3v3. */}
+            <BackLink to={back} className="-ml-3 md:hidden" />
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{session && sessionTitle(session)}</span>
+            {wide && (
+              <Hint label="Split or unified" id="review.layout">
+                <LayoutSwitch value={preferred} onChange={setLayout} />
+              </Hint>
+            )}
+          </header>
+          {/* Nothing here scrolls but the diff itself (owner): the file's title stays, and the diff
+              box fills the rest of the island with its own scroll bars. */}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 px-4 pt-5 pb-6 md:px-10">
+              {!changes ? (
+                <p className="text-muted-foreground">Reading the changes…</p>
+              ) : changes.unavailable ? (
+                <p className="text-muted-foreground">{changes.unavailable}.</p>
+              ) : !current ? (
+                <p className="text-muted-foreground">No changes yet. Files {agent} changes in this session show here.</p>
+              ) : (
+                <>
+                  {changes.note && <p className="flex-none rounded-2xl bg-secondary px-5 py-3 text-sm text-secondary-foreground">{changes.note}.</p>}
+                  <FileHeader file={current} viewed={isViewed(current)} onViewed={toggleViewed} />
+                  <DiffView key={current.path} file={current} layout={layout} />
+                </>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+    </HotkeysProvider>
   );
 }
 
 function BackLink({ to, className }: { to: string; className?: string }) {
   return (
     // Hugs its text (owner: a full-width bar on hover looked heavy).
-    <Link to={to} className={cn("flex h-9 flex-none items-center gap-2 self-start rounded-lg px-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", className)}>
+    <Link to={to} className={cn("group flex h-9 flex-none items-center gap-2 self-start rounded-lg pr-1.5 pl-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", className)}>
       <ArrowLeft className="size-4" aria-hidden="true" />
       Back to the session
+      {/* Its key on hover (the design). */}
+      <Shortcut id="review.back" variant="secondary" className="invisible group-hover:visible group-focus-visible:visible" />
     </Link>
   );
 }
@@ -112,9 +147,10 @@ function Progress({ viewed }: { viewed: boolean[] }) {
 }
 
 /** Split | Unified (3v3), as a radio group like the design's segmented control. */
-function LayoutSwitch({ value, onChange }: { value: "split" | "unified"; onChange: (layout: "split" | "unified") => void }) {
+function LayoutSwitch({ value, onChange, ...rest }: { value: "split" | "unified"; onChange: (layout: "split" | "unified") => void } & Omit<React.ComponentProps<"div">, "onChange">) {
   return (
-    <div role="radiogroup" aria-label="Diff layout" className="flex gap-0.5 rounded-full bg-secondary p-0.75">
+    // `rest`: the tooltip's trigger props (Hint renders this as its trigger).
+    <div {...rest} role="radiogroup" aria-label="Diff layout" className="flex gap-0.5 rounded-full bg-secondary p-0.75">
       {(["split", "unified"] as const).map((layout) => (
         <button
           key={layout}
@@ -135,7 +171,7 @@ function LayoutSwitch({ value, onChange }: { value: "split" | "unified"; onChang
 }
 
 /** A file in the list: its number (a tick once viewed), name and folder, +/− and the five blocks. */
-function FileRow({ file, n, current, viewed, onPick }: { file: ChangedFile; n: number; current: boolean; viewed: boolean; onPick: () => void }) {
+function FileRow({ file, n, current, viewed, onPick, hint }: { file: ChangedFile; n: number; current: boolean; viewed: boolean; onPick: () => void; hint?: AppHotkeyId }) {
   const { name, dir } = splitPath(file.path);
   return (
     <button
@@ -155,6 +191,7 @@ function FileRow({ file, n, current, viewed, onPick }: { file: ChangedFile; n: n
         <span className={cn("truncate text-sm", current && "font-medium", viewed && !current && "text-muted-foreground")}>{name}</span>
         <span className="truncate font-mono text-xs text-faint">{dir}</span>
       </span>
+      {hint && <Shortcut id={hint} variant="faint" />}
       <span className="flex flex-col items-end gap-1.25">
         {file.skipped ? <span className="text-xs text-faint">{file.skipped === "binary" ? "binary" : "not shown"}</span> : <Counts additions={file.additions} deletions={file.deletions} className="text-xs" />}
         <ChangeBlocks file={file} />
@@ -164,7 +201,7 @@ function FileRow({ file, n, current, viewed, onPick }: { file: ChangedFile; n: n
 }
 
 /** Above the diff: folder, name (big), what kind of change, +/−, and the Viewed checkbox. */
-function FileHeader({ file, viewed, onViewed }: { file: ChangedFile; viewed: boolean; onViewed: (viewed: boolean) => void }) {
+function FileHeader({ file, viewed, onViewed }: { file: ChangedFile; viewed: boolean; onViewed: () => void }) {
   const { name, dir } = splitPath(file.path);
   return (
     <div className="flex flex-none items-end gap-4">
@@ -183,9 +220,9 @@ function FileHeader({ file, viewed, onViewed }: { file: ChangedFile; viewed: boo
         type="button"
         role="checkbox"
         aria-checked={viewed}
-        onClick={() => onViewed(!viewed)}
+        onClick={onViewed}
         className={cn(
-          "inline-flex h-9 flex-none items-center gap-2 rounded-full pr-3.5 pl-2.5 text-sm",
+          "inline-flex h-9 flex-none items-center gap-2 rounded-full pr-1.5 pl-2.5 text-sm",
           viewed ? "bg-primary/15 text-primary" : "bg-secondary text-secondary-foreground hover:text-foreground",
         )}
       >
@@ -193,6 +230,8 @@ function FileHeader({ file, viewed, onViewed }: { file: ChangedFile; viewed: boo
           {viewed && <Check className="size-2.5" strokeWidth={4} aria-hidden="true" />}
         </span>
         Viewed
+        {/* The key you press most while reviewing, inside the pill (the design). */}
+        <Shortcut id="review.viewed" variant={viewed ? "faint" : "secondary"} />
       </button>
     </div>
   );

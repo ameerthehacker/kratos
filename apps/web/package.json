@@ -16,6 +16,7 @@
     "@kratos/core": "workspace:*",
     "@streamdown/code": "^2.0.0",
     "@tailwindcss/vite": "^4.3.4",
+    "@tanstack/react-hotkeys": "0.22.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "copy-to-clipboard": "^4.0.2",

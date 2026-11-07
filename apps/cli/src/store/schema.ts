@@ -59,3 +59,19 @@ export const messages = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.seq] })],
 );
+
+/** The project's files at a session's turn boundaries (3v1, D65): `tree` is a git tree id. A turn
+ * the agent starts by itself (queued prompts) has no `turn_start`: the previous `turn_end` is it. */
+export const snapshots = sqliteTable(
+  "snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    kind: text("kind", { enum: ["turn_start", "turn_end"] }).notNull(),
+    tree: text("tree").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("snapshots_by_session").on(t.sessionId, t.id)],
+);

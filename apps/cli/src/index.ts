@@ -5,6 +5,7 @@ import { Command } from "commander";
 import open from "open";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { DEFAULT_PORT } from "@kratos/core";
+import { gitSnapshots } from "./changes/git-snapshots.js";
 import { diskFiles } from "./attachment-files.js";
 import { DEFAULT_DB, DEFAULT_LOG_DIR, KRATOS_HOME } from "./data-home.js";
 import { detectEditors } from "./editors.js";
@@ -51,7 +52,8 @@ const program = new Command()
     const store = SessionStore.open(dbPath);
     // Attachment bytes live next to the database (D55): .kratos/attachments/ for `pnpm dev`.
     const files = diskFiles(join(dirname(dbPath), "attachments"));
-    const hub = new SessionHub(adapter, cwd, store, log, files); // loads (or starts) this project's latest session
+    // Loads (or starts) this project's latest session; snapshots the files at each turn (3v1).
+    const hub = new SessionHub(adapter, cwd, store, log, files, gitSnapshots(cwd));
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");

@@ -2,16 +2,17 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ServerMessage } from "@kratos/core";
 import { MIGRATIONS } from "../paths.js";
-import { attachments, messages, sessions } from "./schema.js";
+import { attachments, messages, sessions, snapshots } from "./schema.js";
 
 
 export type StoredSession = typeof sessions.$inferSelect;
 export type StoredAttachment = typeof attachments.$inferSelect;
+export type StoredSnapshot = typeof snapshots.$inferSelect;
 
 /** Most recently active first; a tie (same millisecond) goes to the later-created session. */
 const NEWEST_FIRST = [desc(sessions.updatedAt), desc(sql`rowid`)];
@@ -127,6 +128,34 @@ export class SessionStore {
 
   getAttachment(id: string): StoredAttachment | undefined {
     return this.db.select().from(attachments).where(eq(attachments.id, id)).get();
+  }
+
+  /** Record a snapshot taken at a turn boundary (3v1, D65). */
+  addSnapshot(sessionId: string, kind: StoredSnapshot["kind"], tree: string): void {
+    this.db.insert(snapshots).values({ sessionId, kind, tree, createdAt: new Date() }).run();
+  }
+
+  /** The session's first snapshot: what its changes are measured from. */
+  firstSnapshot(sessionId: string): StoredSnapshot | undefined {
+    return this.db.select().from(snapshots).where(eq(snapshots.sessionId, sessionId)).orderBy(asc(snapshots.id)).limit(1).get();
+  }
+
+  /** Did a turn of this session end before `at`? Then its changes predate any snapshot taken
+   * since (3v1): the start snapshot failed, or the session is older than snapshots. */
+  turnEndedBefore(sessionId: string, at: Date): boolean {
+    const row = this.db
+      .select({ seq: messages.seq })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.sessionId, sessionId),
+          lt(messages.createdAt, at),
+          sql`json_extract(${messages.message}, '$.event.kind') = 'turn_end'`,
+        ),
+      )
+      .limit(1)
+      .get();
+    return row !== undefined;
   }
 
   /** Record the agent's first start for this session (later starts must resume). Idempotent. */

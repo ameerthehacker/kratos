@@ -1,4 +1,5 @@
-import type { AgentEvent, AttachmentRef, QuestionAnswer, QuestionRequest, ServerMessage, ToolAction } from "@kratos/core";
+import type { AgentEvent, AttachmentRef, QuestionAnswer, QuestionRequest, ToolAction } from "@kratos/core";
+import type { LogMessage } from "@/lib/kratos-store";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
 export type Chip = { text: string; tone: "path" | "muted" | "ok" | "bad" | "wait" | "note" | "plain"; label?: string };
@@ -40,7 +41,6 @@ export type TimelineItem =
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
 
-type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" }>;
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
 
 const OUTPUT_LINES = 20;

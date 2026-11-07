@@ -55,6 +55,22 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 
+/** One file a session changed (3v1, D65), between its first snapshot and now. `path` is relative
+ * to the repository root; `oldPath` only for renames. `before`/`after` are the whole texts (empty
+ * for an added/deleted side), absent when `skipped`: binary, too big to send, or a submodule /
+ * nested repository (its files are another repo's). */
+export const ChangedFile = z.object({
+  path: z.string(),
+  oldPath: z.string().optional(),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  additions: z.number(),
+  deletions: z.number(),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  skipped: z.enum(["binary", "too_big", "submodule"]).optional(),
+});
+export type ChangedFile = z.infer<typeof ChangedFile>;
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
@@ -100,6 +116,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("question_answer"), id: z.string(), reply: QuestionReply }),
   /** Open the project folder in one of the editors listed in `pong` (3d3). */
   z.object({ type: z.literal("open_in"), editor: z.string() }),
+  /** What a session of this project changed (3v1, D65); answered with `changes`. */
+  z.object({ type: z.literal("get_changes"), sessionId: z.string() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
   /** Change some settings (3w); every tab then gets the new `settings`. */
@@ -182,8 +200,8 @@ export const UpdateStatus = z.object({
 });
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 
-/** Server → browser. Everything except pong/error/session/sessions/harnesses/update/settings is
- * in a session's log. */
+/** Server → browser. Everything except pong/error/session/sessions/harnesses/update/settings/
+ * changes is in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
   /** The owner's settings (3w): on connect, and whenever any tab changes them. */
   z.object({ type: z.literal("settings"), settings: Settings }),
@@ -248,6 +266,17 @@ export const ServerMessage = z.discriminatedUnion("type", [
     answers: z.array(QuestionAnswer).optional(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
+  /** Reply to `get_changes` (3v1, not logged): the session's changed files, or why there are none
+   * to show (`unavailable`: not a git repository, the snapshot is gone, git failed). A session
+   * whose agent hasn't started a turn yet has no changes. `note`: the files are shown, but some
+   * may be missing (its earliest turns ran before any snapshot was recorded). */
+  z.object({
+    type: z.literal("changes"),
+    sessionId: z.string(),
+    files: z.array(ChangedFile),
+    unavailable: z.string().optional(),
+    note: z.string().optional(),
+  }),
   /** To the tab that pressed Stop (not logged): the text of the queued prompts Stop dropped, to
    * put back in its composer (owner, D56). */
   z.object({ type: z.literal("prompts_returned"), text: z.string() }),

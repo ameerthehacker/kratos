@@ -4,7 +4,7 @@ import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** Messages that belong to a session's log (everything the server replays). */
-export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" }>;
+export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" }>;
 
 type KratosState = {
   connected: boolean;
@@ -63,6 +63,8 @@ export const useKratos = create<KratosState>((set) => ({
         return set({ update: message.status });
       case "settings":
         return set({ settings: message.settings });
+      case "changes": // a reply to this tab's get_changes, not part of the log; shown from 3v2
+        return;
       case "error":
         return clientLog("warn", `server error: ${message.message}`);
       default:

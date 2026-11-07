@@ -678,6 +678,52 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         permission, a hidden tab notifies on a question and on a finish, two tabs notify once,
         switches off → nothing.
         Done (D64). Not run: the end-to-end browser check (owner chose to release first).
+- [ ] **3v. Reviewing changes (the diff)** (owner, design: Diff board "Proposal · reviewing
+      changes", D65) — the core review flow: one file at a time, centred, in a full page that
+      replaces the session view ("Back to the session"). Owner: diff = what this session changed,
+      from per-turn git snapshots; drawn by us on jsdiff + Shiki; the review page first. Later,
+      not in 3v (owner): "Why Claude Code changed this", files in Claude's order, ask/comment on
+      lines, the request queue.
+  - [x] **3v1. Snapshots + the diff over the wire** (~150 + tests) — at each turn's start and end
+        the CLI records the working tree as a git tree object (a temporary index copied from the
+        real one, `add -A`, `write-tree`: no change to your index, stash, branches or commits)
+        and stores the ids per turn in SQLite. ClientMessage `get_changes {sessionId}` → server
+        `changes`: the session's first-turn start tree vs the working tree now, per file: path,
+        status (added / modified / deleted / renamed), +/− counts, old and new text (binary or
+        too big → no text, says so). Not a git repo → `changes` says so. Git via `simple-git`.
+        Scope: `apps/cli/src/changes/**`, store schema + migration, session-runtime hooks, core
+        protocol. Accept: tests on a temp repo (edit, new file, delete, rename, binary,
+        gitignored skipped, your index untouched, not a repo); real `claude` turn → `changes`
+        lists the edit in the log.
+        Checked: 6 git tests (incl. index/status/refs/stash byte-for-byte unchanged, subfolder,
+        no-commit repo, no repo, pruned) + 3 hub tests (the agent hears the prompt only after the
+        snapshot, in order; first snapshot → now; why-unavailable); 174 tests, build, typecheck.
+        Real `claude` (Haiku) on a temp repo with a staged edit of mine: `changes` = greet.js
+        modified +1 −1, farewell.js added; my staged notes.md not in it; index, refs, stash as
+        before. Size: ~285 lines of code (over the ~150 guess) + ~190 of tests.
+        Code review (owner asked) fixed: submodules/nested repos (`skipped: "submodule"`), Stop /
+        remove / Send now during the start snapshot (now after the prompt), a failed repo lookup
+        no longer remembered, the 16 MB cap in bytes, one `LogMessage` type in the web app.
+        Owner accepted: blurry turn boundaries (revisit in 3v4); a failed start snapshot → the
+        changes since the first good one + a `note`. 177 tests; real `claude` re-run passes.
+  - [ ] **3v2. Review page, unified** (~200) — route `/s/:id/review`, a header button on the
+        session ("4 files +25 −5", per the design's way in). Left island: "Review changes",
+        totals, the file list (name, dir, +/−, the 5-block bar). Main: the file's dir + name,
+        "New file", the diff in a well: two line-number columns, +/− sign, tinted rows, Shiki
+        syntax colour, word-level highlights inside changed lines (jsdiff `diffWordsWithSpace`),
+        unchanged runs folded into "Show N unchanged lines" bars that expand. Theme tokens only.
+        Accept: screenshots of a real session's changes (edit, new file, a fold opened);
+        typecheck, tests for the row building (pure function).
+  - [ ] **3v3. Split, Viewed, moving through** (~150) — Split / Unified toggle (split pairs
+        deletions with additions, hatched empty sides), Viewed per file with the progress meter
+        ("2 of 4 viewed"), Previous / "Next · name" (marks viewed) / Finish review, keys
+        n p v s, narrow width → unified. Viewed kept by Kratos per session, keyed by the file's
+        content so it un-views when the agent changes the file again. Accept: screenshots split
+        + unified; keys; viewed survives reload and resets after a new edit.
+  - [ ] **3v4. Way in from the turn** (~120) — the turn's summary step "Changed 4 files
+        +25 −5 · Review changes" (that turn's start → end snapshot), the header count updating
+        live while the agent edits, a dot on files changed since you last looked. Accept: real
+        `claude` multi-turn run.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

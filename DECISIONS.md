@@ -156,6 +156,52 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D65. Reviewing changes: per-turn git snapshots, drawn by us on jsdiff + Shiki (step 3v, owner)
+- Owner: the diff shows what this session changed, from snapshots; our own rows on jsdiff +
+  Shiki; the review page first, the way in from the turn after; Claude's reasons and line
+  ask/comment later.
+- Source: at each turn's start and end the CLI writes the working tree as a git tree object
+  (temporary index file copied from `.git/index` so unchanged files aren't rehashed, `add -A`,
+  `write-tree`) and stores the tree ids per turn. Covers new files and changes made by commands;
+  respects `.gitignore`; your index, stash, branches and commits are untouched. A session's
+  diff = its first-turn start tree vs the working tree now; a turn's = its start vs end.
+  Alternatives: `git diff HEAD` + untracked (simplest, but includes your own edits and other
+  sessions', and empties when you commit); rebuilding from Edit/Write calls (no git, but misses
+  anything a command changed).
+- Known limits: sessions running side by side in one folder (D41) show each other's changes
+  until worktrees; your own edits between turns show as the session's. The trees are
+  unreferenced objects, so `git gc` may prune them after its grace period (2 weeks by default)
+  and an old session's review then says the snapshot is gone. Not a git repo → no review.
+  Turn boundaries can blur (owner accepted, revisit in 3v4): when queued prompts start the next
+  turn at once, the agent may already edit while the end snapshot — which is also that turn's
+  start — is taken. The session-wide diff is unaffected; per-turn diffs may put a few edits in the
+  earlier turn. Exact boundaries would mean holding queued prompts back at turn end (against D56).
+  A failed start snapshot (owner): the review still shows the changes from the first snapshot that
+  worked, with a `note` that the earliest turns may be missing ("a turn ended before the first
+  snapshot"); no snapshot at all after a turn → `unavailable`. Sessions older than 3v1 get the same.
+- Git via `simple-git` (wraps the `git` binary; env per call for `GIT_INDEX_FILE`, raw
+  commands), the common Node choice. Alternative: `isomorphic-git` (no git binary needed, but
+  slow on big trees and no `.gitignore`-exact `add -A`).
+- Built (3v1): `apps/cli/src/changes/git-snapshots.ts` behind a `Snapshots` interface (take /
+  exists / diff), so the hub and runtime never call git and tests use a fake. Prompts reach the
+  agent only after the turn's start snapshot is recorded (the process itself starts at once;
+  sends wait, in order) — otherwise a fast edit could land in the "before". A turn the agent starts
+  by itself (queued prompts) gets no start snapshot: the previous turn's end is its start.
+  Caps: a side over 256 KB is `too_big`, binary per git's NUL-byte test, a submodule / nested repo
+  (gitlink) is `submodule`, all texts of one reply ≤ 16 MB. +/− are counted with jsdiff, so they match what the page draws. `core.quotePath=false`
+  keeps non-ASCII paths readable. simple-git refuses guarded env keys (`GIT_*`, `EDITOR`, `PAGER`…)
+  passed through `env()`: the temp index's env drops them and names `GIT_INDEX_FILE` in
+  `allowEnvironment`. Measured: ~75 ms a snapshot on this repo; reading 18 changed files ~0.5 s
+  (one `git` call per text; batch with `cat-file --batch` if it ever matters).
+  New files the agent writes go into `.git/objects` as blobs even if never committed (a big
+  untracked, un-ignored file is copied there once); `git gc` drops them with the trees.
+- Rendering: jsdiff (already used by the ask preview) for line and word changes, Shiki (already
+  used for code) for syntax colour, rows drawn with Tailwind and theme tokens. The server sends
+  both full texts, so folding/expanding unchanged lines needs no extra round trip.
+  Alternative: a diff-view library (`@git-diff-view/react`, `@pierre/diffs`): less code, but
+  restyling it to the islands and fitting the later inline ask/comment asides is a fight.
+- Reverse: drop `apps/cli/src/changes/`, the snapshot columns/table and `get_changes`/`changes`.
+
 ### D64. Notifications: in the browser, while you're away, once across tabs (step 3w3, owner)
 - Owner: browser notifications, only when you're not looking at Kratos; settings saved by
   Kratos; Play a sound on by default (the design has it off).

@@ -13,6 +13,7 @@ import {
   type SessionSummary,
 } from "@kratos/core";
 import type { AttachmentFiles } from "./attachment-files.js";
+import type { Snapshots } from "./changes/git-snapshots.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./store/store.js";
 
@@ -60,6 +61,8 @@ export class SessionRuntime {
   private session: AgentSession | undefined;
   /** A prompt was sent and its turn hasn't ended yet. */
   private turnOpen = false;
+  /** The turn's start snapshot while it's being taken (3v1, D65): prompts reach the agent after it. */
+  private snapshotting: Promise<void> | undefined;
   private readonly logger: Logger;
 
   constructor(
@@ -69,6 +72,8 @@ export class SessionRuntime {
       cwd: string;
       store: SessionStore;
       files: AttachmentFiles;
+      /** Records the files at turn boundaries, for reviewing changes (3v1); none = no review. */
+      snapshots?: Snapshots;
       log: Logger;
       onMessage: (message: ServerMessage) => void;
       onChange: () => void;
@@ -136,16 +141,21 @@ export class SessionRuntime {
       this.queue.set(id, { text, files, agentId: id });
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
-      this.session.send(text, files, { id });
-      if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
+      const session = this.session;
+      this.toAgent(() => {
+        session.send(text, files, { id });
+        if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
+      });
       this.deps.onChange();
       return;
     }
     this.publish({ type: "user_prompt", text, ...attachments });
     this.turnFromQueue = false;
     this.turnOpen = true;
+    this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
-    (this.session ??= this.start()).send(text, files);
+    const session = (this.session ??= this.start());
+    this.toAgent(() => session.send(text, files));
     this.deps.onChange();
   }
 
@@ -154,15 +164,17 @@ export class SessionRuntime {
   interrupt(returnText?: (text: string) => void): void {
     const cancelQueued = this.queue.size > 0;
     if (cancelQueued && returnText) this.stopping = { ids: new Set(this.queue.keys()), texts: [], returnText };
-    this.session?.interrupt({ cancelQueued }).catch(this.reportFailure("Interrupt"));
+    // After any prompt still waiting for its snapshot: else the agent hears Stop first, then runs it.
+    this.toAgent(() => this.session?.interrupt({ cancelQueued }).catch(this.reportFailure("Interrupt")));
   }
 
   /** Take a queued prompt back before the agent reads it (D56). False if it isn't queued here. */
   removeQueued(promptId: string): boolean {
     const queued = this.queue.get(promptId);
     if (!queued) return false;
-    // Settled by the agent's `cancelled` (or, if it was just read, by its `started`).
-    this.session?.cancelPrompt(queued.agentId).catch(this.reportFailure("Removing a queued prompt"));
+    // Settled by the agent's `cancelled` (or, if it was just read, by its `started`). After its
+    // send, which may still wait for the turn's snapshot: the agent can't withdraw what it hasn't got.
+    this.toAgent(() => this.session?.cancelPrompt(queued.agentId).catch(this.reportFailure("Removing a queued prompt")));
     return true;
   }
 
@@ -180,6 +192,7 @@ export class SessionRuntime {
     this.sendingNow = now;
     this.logger.info({ prompt: promptId, holding: others.length, stopped: now.stopped }, "send now");
     void (async () => {
+      await this.snapshotting; // the prompts it moves may still wait for the turn's snapshot
       const withdrawn = await Promise.all(others.map((id) => session.cancelPrompt(this.queue.get(id)!.agentId).catch(() => false)));
       // One the agent took meanwhile is simply read: its own `started` settles it.
       others.forEach((id, i) => !withdrawn[i] && now.holding.delete(id));
@@ -346,6 +359,7 @@ export class SessionRuntime {
           this.lastStep = undefined;
           this.runningStep = undefined;
           this.turnFromQueue = false;
+          void this.takeSnapshot("turn_end");
           this.deps.onChange();
         }
       }
@@ -437,6 +451,40 @@ export class SessionRuntime {
     this.queue.clear();
     this.returnStopped();
     this.deps.onChange();
+  }
+
+  /** A turn starts: record the files before the agent can change them (3v1, D65). Prompts sent
+   * meanwhile wait for it (`toAgent`); the agent process itself starts right away. A turn the
+   * agent starts by itself (queued prompts) needs none: the last turn's end snapshot is its start. */
+  private startSnapshot(): void {
+    if (!this.deps.snapshots) return;
+    const taking: Promise<void> = this.takeSnapshot("turn_start").finally(() => {
+      if (this.snapshotting === taking) this.snapshotting = undefined;
+    });
+    this.snapshotting = taking;
+  }
+
+  /** Send to the agent once the turn's start snapshot is recorded — at once if none is pending,
+   * in the order called. Everything about a prompt (Stop, remove, Send now) goes this way too, so
+   * the agent never hears of it before the prompt itself. */
+  private toAgent(send: () => unknown): void {
+    if (this.snapshotting) void this.snapshotting.then(send);
+    else send();
+  }
+
+  /** Record the files now in the store. Never fails the turn: a git problem is logged, and the
+   * review then has less to show. */
+  private async takeSnapshot(kind: "turn_start" | "turn_end"): Promise<void> {
+    if (!this.deps.snapshots) return;
+    const started = Date.now();
+    try {
+      const tree = await this.deps.snapshots.take();
+      if (tree === null) return; // not a git repository
+      this.deps.store.addSnapshot(this.id, kind, tree);
+      this.logger.debug({ kind, tree, ms: Date.now() - started }, "snapshot taken");
+    } catch (err) {
+      this.logger.warn({ err, kind }, "snapshot failed");
+    }
   }
 
   /** Keep a prompt's files (D55): bytes by id, the log gets only what they are. */

@@ -4,11 +4,13 @@ import {
   type AgentAdapter,
   type AgentAttachment,
   type AttachmentUpload,
+  type ChangedFile,
   type ClientMessage,
   type Harness,
   type ServerMessage,
 } from "@kratos/core";
 import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
+import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { SessionStore } from "./store/store.js";
@@ -49,6 +51,8 @@ export class SessionHub {
     log: Logger = silentLogger,
     /** Where attachment bytes go (D55); default: in memory. */
     private readonly files: AttachmentFiles = memoryFiles(),
+    /** Snapshots for reviewing changes (3v1, D65); none = review unavailable. */
+    private readonly snapshots?: Snapshots,
   ) {
     this.rootLog = log;
     this.log = log.child({ component: "hub" });
@@ -166,6 +170,13 @@ export class SessionHub {
         // Ask ids are unique across sessions: let the owner take it (first decision wins).
         for (const runtime of this.runtimes.values()) if (runtime.decide(message.id, message.decision)) return;
         return;
+      case "get_changes":
+        if (this.store.get(message.sessionId)?.projectDir !== this.cwd) {
+          send({ type: "error", message: `No session ${message.sessionId} in this project` });
+          return;
+        }
+        void this.changes(message.sessionId).then(send);
+        return;
       case "ping":
       case "client_log":
       case "open_in":
@@ -203,6 +214,37 @@ export class SessionHub {
     return data && { name: stored.name, kind: stored.kind, mediaType: stored.mediaType, data };
   }
 
+  /** What a session changed (3v1, D65): its first snapshot vs the files now. */
+  private async changes(sessionId: string): Promise<ServerMessage> {
+    const reply = (files: ChangedFile[], unavailable?: string, note?: string): ServerMessage => ({
+      type: "changes",
+      sessionId,
+      files,
+      ...(unavailable ? { unavailable } : {}),
+      ...(note ? { note } : {}),
+    });
+    const unrecorded = "Kratos couldn't record the files when this session started";
+    if (!this.snapshots) return reply([], "Reviewing changes isn't available here");
+    try {
+      const first = this.store.firstSnapshot(sessionId);
+      const now = await this.snapshots.take();
+      if (now === null) return reply([], "This project isn't in a git repository, so Kratos can't see what changed");
+      if (!first) {
+        // No turn yet — or every snapshot so far failed, or the session is older than snapshots.
+        return this.store.turnEndedBefore(sessionId, new Date()) ? reply([], `${unrecorded}, so its changes can't be shown`) : reply([]);
+      }
+      if (!(await this.snapshots.exists(first.tree))) return reply([], "This session's starting snapshot is gone: git cleans up old ones");
+      const files = await this.snapshots.diff(first.tree, now);
+      // Turns that ended before the first snapshot (its start failed): shown from there on, said so.
+      const partial = this.store.turnEndedBefore(sessionId, first.createdAt);
+      this.log.debug({ session: sessionId, files: files.length, partial }, "changes read");
+      return reply(files, undefined, partial ? `${unrecorded}, so changes from its earliest turns may be missing` : undefined);
+    } catch (err) {
+      this.log.warn({ err, session: sessionId }, "could not read changes");
+      return reply([], `Couldn't read the changes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,
    * which only the consent dialog sends (D53). Tells the tab why when not. */
   private modeAllowed(send: Send, id: string, confirmDangerous = false): boolean {
@@ -237,6 +279,7 @@ export class SessionHub {
         cwd: this.cwd,
         store: this.store,
         files: this.files,
+        snapshots: this.snapshots,
         log: this.rootLog,
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),

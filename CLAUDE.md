@@ -45,6 +45,7 @@ apps/cli                   `kratos [project-dir]` (commander)
   src/server.ts            Fastify: serves apps/web/dist, one WebSocket per browser tab (/ws)
   src/session-hub.ts       the one shared agent session: log, replay, asks, broadcast (D32)
   src/store/               SQLite via Drizzle + better-sqlite3; schema → drizzle/ migrations (D36)
+  src/changes/             git tree snapshots at turn boundaries → what a session changed (D65)
   src/logger.ts            pino: console (pretty, info) + ~/.kratos/logs rotating files (debug) (D44)
 apps/web                   Vite + React UI; react-use-websocket to ws://<host>/ws
   src/lib/timeline.ts      session log → chat items (prompts, replies, tool steps) (D45)

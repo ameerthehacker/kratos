@@ -14,6 +14,7 @@ import type {
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
+import type { Snapshots } from "./changes/git-snapshots.js";
 import { memoryLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
@@ -114,7 +115,7 @@ const MODELS: AgentModel[] = [
   { id: "claude-opus-4-8", label: "Opus 4.8", description: "older", group: "other" },
 ];
 
-function setup() {
+function setup(snapshots?: Snapshots) {
   const agents: FakeSession[] = [];
   const adapter: AgentAdapter = {
     id: "fake",
@@ -129,7 +130,7 @@ function setup() {
     },
   };
   const store = SessionStore.open(":memory:");
-  let hub = new SessionHub(adapter, "/projects/demo", store);
+  let hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots);
 
   /** A browser tab on the current hub. Like the real UI: its log clears when it switches session,
    * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then). */
@@ -174,7 +175,7 @@ function setup() {
     };
   };
   /** Simulate a kratos restart: a new hub over the same database; old agent processes are gone. */
-  const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store));
+  const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots));
   /** Another project's hub on the same database (its sessions aren't this project's). */
   const otherProject = () => new SessionHub(adapter, "/projects/other", store);
   return {
@@ -990,5 +991,135 @@ describe("SessionHub: Send now (D56, 3t2)", () => {
     await tick();
     const [id] = queuedIds(a);
     expect(agents[0]!.sentNow).toEqual([id]);
+  });
+});
+
+/** Snapshots the test controls (3v1): `take` waits until released, files "change" by hand. */
+class FakeSnapshots implements Snapshots {
+  repo = true;
+  taken = 0;
+  gone = new Set<string>();
+  private waiting: Array<() => void> = [];
+  /** Hold every `take` until `release()` (to see what waits for it). */
+  hold = false;
+  /** Fail the next `take`s (git broke). */
+  failing = 0;
+  async take() {
+    if (this.hold) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    if (this.failing > 0 && this.failing--) throw new Error("git timed out");
+    return this.repo ? `tree${++this.taken}` : null;
+  }
+  release() {
+    this.hold = false;
+    this.waiting.splice(0).forEach((resolve) => resolve());
+  }
+  async exists(id: string) {
+    return !this.gone.has(id);
+  }
+  async diff(from: string, to: string) {
+    return [{ path: `${from}..${to}.txt`, status: "modified" as const, additions: 1, deletions: 0, before: "", after: "x\n" }];
+  }
+}
+
+describe("SessionHub: reviewing changes (3v1, D65)", () => {
+  const changesOf = (seen: ServerMessage[]) => seen.findLast((m) => m.type === "changes");
+
+  it("snapshots before the agent gets the prompt, and again when the turn ends", async () => {
+    const snapshots = new FakeSnapshots();
+    snapshots.hold = true;
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "edit a.txt" });
+    expect(agents).toHaveLength(1); // the process starts at once…
+    a.receive({ type: "prompt", text: "and b.txt" }); // (queued: the turn is open)
+    await tick();
+    expect(agents[0]!.prompts).toEqual([]); // …but hears nothing until the files are recorded
+    snapshots.release();
+    await tick();
+    expect(agents[0]!.prompts).toEqual(["edit a.txt", "and b.txt"]); // in order
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(snapshots.taken).toBe(2);
+  });
+
+  it("Stop and remove wait for the prompts they're about: the agent never hears of them first", async () => {
+    const snapshots = new FakeSnapshots();
+    snapshots.hold = true;
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "edit a.txt" });
+    a.receive({ type: "prompt", text: "never mind" });
+    const queued = a.seen.find((m) => m.type === "prompt_queued");
+    a.receive({ type: "remove_queued", id: queued!.type === "prompt_queued" ? queued!.id : "" });
+    a.receive({ type: "interrupt" });
+    await tick();
+    expect([agents[0]!.cancelled, agents[0]!.interrupts]).toEqual([[], 0]); // nothing sent yet
+    snapshots.release();
+    await tick();
+    expect(agents[0]!.prompts).toEqual(["edit a.txt", "never mind"]);
+    expect(agents[0]!.cancelled).toHaveLength(1);
+    expect(agents[0]!.interrupts).toBe(1);
+  });
+
+  it("answers get_changes with the session's first snapshot vs now", async () => {
+    const snapshots = new FakeSnapshots();
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(changesOf(a.seen)).toEqual({ type: "changes", sessionId: a.viewing, files: [] }); // no turn yet
+
+    a.receive({ type: "prompt", text: "edit" });
+    await tick();
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    // tree1 was "now" for the first get_changes; tree2 = turn start, tree3 = turn end, tree4 = now
+    expect(changesOf(a.seen)).toMatchObject({ files: [{ path: "tree2..tree4.txt" }] });
+  });
+
+  it("a failed start snapshot: the changes since the first one, with a note that some may be missing", async () => {
+    const snapshots = new FakeSnapshots();
+    snapshots.failing = 2; // turn 1's start and end both fail
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "one" });
+    await tick();
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(changesOf(a.seen)).toMatchObject({ files: [], unavailable: expect.stringContaining("couldn't record the files") });
+
+    await new Promise((resolve) => setTimeout(resolve, 5)); // the next snapshot is later than turn 1's end
+    a.receive({ type: "prompt", text: "two" }); // its start snapshot works
+    await tick();
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    const changes = changesOf(a.seen);
+    expect(changes).toMatchObject({ files: [{ path: "tree2..tree3.txt" }], note: expect.stringContaining("earliest turns may be missing") });
+    expect(changes).not.toHaveProperty("unavailable");
+  });
+
+  it("says why when there's nothing to show: no git, a pruned snapshot, another project's id", async () => {
+    const snapshots = new FakeSnapshots();
+    const { tab, otherProject } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "edit" });
+    await tick();
+    snapshots.gone.add("tree1");
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(changesOf(a.seen)).toMatchObject({ files: [], unavailable: expect.stringContaining("snapshot is gone") });
+
+    snapshots.repo = false;
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(changesOf(a.seen)).toMatchObject({ files: [], unavailable: expect.stringContaining("isn't in a git repository") });
+
+    const seen: ServerMessage[] = [];
+    otherProject().connect((m) => seen.push(m)).receive({ type: "get_changes", sessionId: a.viewing });
+    expect(seen.at(-1)).toEqual({ type: "error", message: `No session ${a.viewing} in this project` });
   });
 });

@@ -527,6 +527,8 @@ on what's being built. Two gated slices (owner):
       feature tiles, a roadmap and a second install section — cut at the owner's request
       (`Features.astro` deleted). Also: `.claude/launch.json` (`site`) for the preview pane,
       auto-allow waits while the pointer or focus is on the ask, commands wrap at "/" on phones.
+- [x] **W1b. README** (owner) — minimal: the logo from the site (`apps/site/public/favicon.svg`),
+      the headline and one line, install, run.
 - [ ] **W2. Install page** — `/install`: requirements (macOS + Homebrew, Claude Code installed
       and signed in), install, first run (`kratos [project-dir]`, the flags), update, uninstall,
       where data lives (`~/.kratos`), troubleshooting. Open question (owner): still wanted now that

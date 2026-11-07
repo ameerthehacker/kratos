@@ -358,7 +358,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             prompts (`cancel_async_message`), `interrupt {send_now, message_uuid}`, then queue the
             others again (new agent ids, same Kratos ids — they stay in the card);
             `prompt_read {how: "now", stopped?}` with the step it cut short.
-      - [ ] **3t3. UI** — the design: Enter queues while the agent works (send button → Queue),
+      - [x] **3t3. UI** (~330) — done, checked with real `claude`: three prompts queued during a
+            slow command (queue card "3 queued", header "Needs approval · 3 queued"), Edit put one
+            back in the box, Send now on another stopped the step ("Stopped …", "⚡ Sent now ·
+            stopped …", reply CHERRY), the last read as "Sent when the last turn ended"; Stop with
+            one queued gave its text back to the box. Fixed on the way: the generic "Stopped" line
+            before a Send now, and long path chips spilling over their step. Fitted to the current
+            composer: the key hints are the Queue button's tooltip (↵ queue · ⌘↵ send now) rather
+            than key caps. Planned as: the design: Enter queues while the agent works (send button → Queue),
             ⌘↵ sends now; the queue card above the composer (Send now, Edit → back to the box,
             Remove); prompts move into the chat when read, with "Read after …" / "Sent now ·
             stopped …" / "Sent when the last turn ended"; "Working · N queued" in the sidebar.

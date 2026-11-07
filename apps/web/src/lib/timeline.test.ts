@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent, ServerMessage } from "@kratos/core";
-import { buildTimeline, currentActivity, openAsks, openQuestions } from "./timeline";
+import { buildTimeline, currentActivity, openAsks, openQuestions, openQueue } from "./timeline";
 
 const agent = (event: AgentEvent): Extract<ServerMessage, { type: "agent_event" }> => ({ type: "agent_event", event });
 
@@ -147,8 +147,36 @@ describe("buildTimeline: steering prompts (D56)", () => {
     expect(items).toEqual([
       { type: "prompt", text: "first" },
       { type: "reply", text: "working on it" },
-      { type: "prompt", text: "also this" },
+      { type: "prompt", text: "also this", read: { how: "step" } },
       { type: "reply", text: "done, with that too" },
     ]);
+  });
+
+  it("marks where each was read; a step Send now cut short reads as stopped; the queue lists the rest", () => {
+    const run = (id: string, command: string) => agent({ kind: "tool_call", id, tool: "Bash", input: {}, action: { type: "run", command, description: undefined } });
+    const log = [
+      { type: "user_prompt", text: "first" },
+      run("t1", "pnpm test"),
+      agent({ kind: "tool_result", id: "t1", output: "ok", isError: false }),
+      { type: "prompt_queued", id: "q1", text: "after tests" },
+      { type: "prompt_queued", id: "q2", text: "urgent" },
+      { type: "prompt_queued", id: "q3", text: "later" },
+      { type: "prompt_read", id: "q1", how: "step", after: "t1" },
+      run("t2", "pnpm test"),
+      agent({ kind: "tool_result", id: "t2", output: "The user doesn't want to proceed", isError: true }),
+      agent({ kind: "turn_end", reason: "interrupted" }),
+      { type: "prompt_read", id: "q2", how: "now", stopped: "t2" },
+    ] as const;
+    const items = buildTimeline([...log]);
+    const prompts = items.filter((i) => i.type === "prompt");
+    expect(prompts.map((p) => p.type === "prompt" && p.read)).toEqual([
+      undefined,
+      { how: "step", after: "Ran the tests" },
+      { how: "now", stopped: "running the tests" },
+    ]);
+    const stoppedStep = items.flatMap((i) => (i.type === "steps" ? i.steps : [])).find((s) => s.id === "t2");
+    expect(stoppedStep).toMatchObject({ title: "Stopped running the tests", stopped: true, chips: [] });
+    expect(openQueue([...log]).map((q) => q.text)).toEqual(["later"]);
+    expect(items.some((i) => i.type === "event" && i.text === "Stopped")).toBe(false); // the step says it
   });
 });

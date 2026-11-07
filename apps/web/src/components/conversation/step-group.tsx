@@ -77,9 +77,10 @@ function StepRow({ step, raw }: { step: Step; raw: boolean }) {
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {chips.map((chip, i) => (
-              <span key={i} className={cn("inline-flex h-5 items-center gap-1 rounded-full bg-secondary px-2 text-xs", CHIP[chip.tone])}>
-                {chip.label && <span className="text-muted-foreground">{chip.label} ·</span>}
-                {chip.text}
+              // max-w-full + truncate: a long path stays on its one line instead of spilling over.
+              <span key={i} title={chip.text} className={cn("inline-flex h-5 max-w-full items-center gap-1 rounded-full bg-secondary px-2 text-xs", CHIP[chip.tone])}>
+                {chip.label && <span className="shrink-0 text-muted-foreground">{chip.label} ·</span>}
+                <span className="truncate">{chip.text}</span>
               </span>
             ))}
           </div>

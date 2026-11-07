@@ -127,7 +127,7 @@ export class SessionRuntime {
   /** Send a prompt, with files already checked by the hub (D55): their bytes are kept by id, the
    * log gets only what they are. While a turn runs it's queued instead (steering, D56): the agent
    * holds it and reads it at its next step, or as the next turn. */
-  prompt(text: string, files: readonly AgentAttachment[] = []): void {
+  prompt(text: string, files: readonly AgentAttachment[] = [], options: { sendNow?: boolean } = {}): void {
     this.deps.store.setTitle(this.id, text);
     const refs = this.storeFiles(files);
     const attachments = refs.length > 0 ? { attachments: refs } : {};
@@ -137,6 +137,7 @@ export class SessionRuntime {
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
       this.session.send(text, files, { id });
+      if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
       this.deps.onChange();
       return;
     }

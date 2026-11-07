@@ -981,4 +981,14 @@ describe("SessionHub: Send now (D56, 3t2)", () => {
     expect(a.seen.some((m) => m.type === "prompt_removed")).toBe(false);
     expect(count(a)).toBe(1);
   });
+
+  it("⌘↵ sends a new prompt now instead of queueing it", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "urgent", sendNow: true });
+    await tick();
+    const [id] = queuedIds(a);
+    expect(agents[0]!.sentNow).toEqual([id]);
+  });
 });

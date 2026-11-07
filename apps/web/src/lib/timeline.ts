@@ -24,13 +24,18 @@ export type Step = {
   /** The agent's tool name (to match its permission ask), and whether its result came back. */
   tool?: string;
   finished?: boolean;
+  /** Cut short by Send now (D56): shown as "Stopped running the tests", not as a failure. */
+  stopped?: boolean;
 };
+
+/** How a prompt sent while the agent worked was read (D56), for the mark under its bubble. */
+export type ReadMark = { how: "step" | "next_turn" | "now"; after?: string; stopped?: string };
 
 /** A permission ask still waiting for the owner. `id` is what `permission_decision` answers. */
 export type OpenAsk = { id: string; reason?: string };
 
 export type TimelineItem =
-  | { type: "prompt"; text: string; attachments?: AttachmentRef[] }
+  | { type: "prompt"; text: string; attachments?: AttachmentRef[]; read?: ReadMark }
   | { type: "reply"; text: string }
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
@@ -97,8 +102,24 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       // Read by the agent: from here on it's part of the conversation, where it was read (D56).
       const prompt = queued.get(message.id);
       if (prompt) {
+        // The step Send now cut short stays in the chat as stopped, not failed (the design).
+        const stopped = message.stopped ? steps.get(message.stopped) : undefined;
+        if (stopped) {
+          stopped.stopped = true;
+          stopped.title = `Stopped ${lowerFirst(stopped.doing)}`;
+          stopped.chips = [];
+        }
+        // Send now ends the turn as interrupted; the stopped step says so already, so the generic
+        // "Stopped" line just before it goes (the design shows only the step).
+        const last = items.at(-1);
+        if (message.how === "now" && last?.type === "event" && last.text === "Stopped") items.pop();
+        const read: ReadMark = {
+          how: message.how,
+          ...(message.after && steps.get(message.after) ? { after: steps.get(message.after)!.title } : {}),
+          ...(stopped ? { stopped: lowerFirst(stopped.doing) } : {}),
+        };
         breakGroup();
-        items.push({ type: "prompt", text: prompt.text, ...(prompt.attachments ? { attachments: prompt.attachments } : {}) });
+        items.push({ type: "prompt", text: prompt.text, ...(prompt.attachments ? { attachments: prompt.attachments } : {}), read });
       }
     } else if (message.type === "prompt_removed") {
       queued.delete(message.id); // taken back or dropped: never part of the conversation
@@ -214,7 +235,8 @@ function addResult(step: Step, output: string, isError: boolean): void {
   step.finished = true;
   step.raw.output = trim(output);
   // Questions say how they ended themselves; a skip comes back as an error, not a failure (D54).
-  if (step.kind === "question") return;
+  // Same for a step Send now stopped (D56).
+  if (step.kind === "question" || step.stopped) return;
   const denied = step.chips.some((c) => c.text === DENIED);
   if (isError && !denied) step.chips.push({ text: "Failed", tone: "bad" }); // a denial comes back as an error
   else if (step.kind === "run") {
@@ -272,3 +294,15 @@ export function openQuestions(items: readonly TimelineItem[]): Array<{ id: strin
     item.type === "steps" ? item.steps.flatMap((s) => (s.question && !s.question.outcome ? [{ id: s.question.id, request: s.question.request }] : [])) : [],
   );
 }
+
+/** The prompts sent while the agent works that it hasn't read yet (D56), in order: the queue card. */
+export function openQueue(log: readonly LogMessage[]): Array<Extract<LogMessage, { type: "prompt_queued" }>> {
+  const open = new Map<string, Extract<LogMessage, { type: "prompt_queued" }>>();
+  for (const message of log) {
+    if (message.type === "prompt_queued") open.set(message.id, message);
+    else if (message.type === "prompt_read" || message.type === "prompt_removed") open.delete(message.id);
+  }
+  return [...open.values()];
+}
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);

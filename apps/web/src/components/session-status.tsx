@@ -9,7 +9,9 @@ const LABEL: Record<SessionSummary["status"], string> = {
 };
 
 /** A session's live status: colored dot + label (owner's design, D41). */
-export function SessionStatus({ status }: { status: SessionSummary["status"] }) {
+/** `queued`: prompts waiting for the agent (D56) — "Working · 2 queued", plain: they wait on the
+ * agent, not on you (the design). */
+export function SessionStatus({ status, queued = 0 }: { status: SessionSummary["status"]; queued?: number }) {
   return (
     <span
       className={cn(
@@ -27,6 +29,7 @@ export function SessionStatus({ status }: { status: SessionSummary["status"] }) 
         )}
       />
       {LABEL[status]}
+      {queued > 0 && ` · ${queued} queued`}
     </span>
   );
 }

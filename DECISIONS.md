@@ -193,6 +193,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   avoids a race where a re-sent prompt joins the chosen one. Agent ids map back to Kratos ids, and
   lifecycle lines for an old agent id are ignored. The chosen prompt is logged `prompt_read {how:
   "now", stopped}` with the step (tool call) that was running. One Send now at a time.
+- UI (3t3, the design, fitted to today's composer): while the agent works the placeholder is "Add
+  to the queue…" and, with text, the send button becomes Queue (↵); ⌘↵ / Ctrl↵ sends now — the
+  hints live in the button's tooltip, not key caps (the composer dropped those in 3q2). The queue
+  card above the composer is built from the log (`openQueue`), so every tab and a reload show
+  it; Edit = remove + text back into the box, which is also where Stop's returned text goes
+  (`insert` prop). Read prompts join the chat where they were read, with "Read after <step>",
+  "⚡ Sent now · stopped <step>" or "Sent when the last turn ended" (a read with no step before it
+  says "Read while working"); the step Send now cut short reads "Stopped <doing>", and the
+  generic "Stopped" line it causes is dropped. "N queued" in the working line and status.
 - Reverse: additive — without ids nothing is followed, and prompts mid-turn behave as before.
 
 ### D55. File attachments: inline with the prompt, stored by id, checked against the harness (step 3s, owner)

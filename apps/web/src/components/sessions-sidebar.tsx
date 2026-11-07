@@ -82,7 +82,7 @@ function SessionSection({ label, sessions }: { label: string; sessions: SessionS
             className={({ isActive }) => cn("flex flex-col gap-0.5 rounded-lg py-2 pr-10 pl-2.5 hover:bg-accent", isActive && "bg-secondary")}
           >
             <span className={cn("truncate text-sm", session.done && "text-muted-foreground")}>{sessionTitle(session)}</span>
-            {!session.done && <SessionStatus status={session.status} />}
+            {!session.done && <SessionStatus status={session.status} queued={session.queued} />}
           </NavLink>
           <DoneButton
             session={session}

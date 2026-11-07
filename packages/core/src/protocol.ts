@@ -41,6 +41,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
     harness: z.string().optional(),
     model: z.string().optional(),
     effort: z.string().optional(),
+    /** While the agent works: send it now (stop the step) instead of queueing it (⌘↵, D56). */
+    sendNow: z.boolean().optional(),
     /** Files with the prompt, sent inline (D55); checked by the server against the harness. */
     attachments: z.array(AttachmentUpload).max(50).optional(),
     /** The mode to start in (D53); a `dangerous` one also needs `confirmDangerous: true`. */

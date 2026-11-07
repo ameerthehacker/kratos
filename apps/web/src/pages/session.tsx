@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { SessionSummary } from "@kratos/core";
@@ -12,7 +12,8 @@ import { DoneButton } from "@/components/done-button";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
-import { buildTimeline, openAsks, openQuestions } from "@/lib/timeline";
+import { buildTimeline, openAsks, openQuestions, openQueue } from "@/lib/timeline";
+import { QueueCard } from "@/components/conversation/queue-card";
 import { QuestionDock } from "@/components/conversation/question-card";
 
 const NO_LOG: LogMessage[] = [];
@@ -30,6 +31,17 @@ export function SessionPage() {
   const shown = viewing === sessionId ? log : NO_LOG;
   const ready = viewing === sessionId && loaded; // this session's whole history has arrived
   const items = useMemo(() => buildTimeline(shown, cwd, agentName), [shown, cwd, agentName]);
+  const queue = useMemo(() => openQueue(shown), [shown]);
+  const working = session !== undefined && session.status !== "idle";
+  // Text going back into the composer (D56): a queued prompt being edited, or what Stop dropped.
+  const [insert, setInsert] = useState<{ text: string; key: number }>();
+  const putBack = (text: string) => setInsert((current) => ({ text, key: (current?.key ?? 0) + 1 }));
+  const returned = useKratos((s) => s.returned);
+  useEffect(() => {
+    if (returned === undefined) return;
+    putBack(returned);
+    useKratos.setState({ returned: undefined });
+  }, [returned]);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
   useEffect(() => {
@@ -52,10 +64,19 @@ export function SessionPage() {
       {session && <SessionHeader session={session} />}
       {/* Only once the whole history is here (the server says so), keyed by session: it then opens
           at its bottom instead of scrolling through the replay (owner, 3d9). */}
-      {ready ? <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} /> : <div className="min-h-0 flex-1" />}
+      {ready ? <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} queued={queue.length} /> : <div className="min-h-0 flex-1" />}
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <QuestionDock questions={openQuestions(items)} agent={agentName} onAnswer={(id, reply) => send({ type: "question_answer", id, reply })} />
+        <QueueCard
+          queue={queue}
+          onSendNow={(id) => send({ type: "send_now", id })}
+          onEdit={(prompt) => {
+            send({ type: "remove_queued", id: prompt.id }); // out of the queue, back into the box
+            putBack(prompt.text);
+          }}
+          onRemove={(id) => send({ type: "remove_queued", id })}
+        />
         <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
         <PromptCard
           chips={
@@ -89,15 +110,16 @@ export function SessionPage() {
               />
             </>
           }
-          onSend={(text, attachments) => {
+          onSend={(text, attachments, { now }) => {
             askToNotify(); // once, from this click (3r3)
-            send({ type: "prompt", text, ...(attachments.length > 0 ? { attachments } : {}) });
+            send({ type: "prompt", text, ...(attachments.length > 0 ? { attachments } : {}), ...(now ? { sendNow: true } : {}) });
           }}
+          insert={insert}
           attachments={harnesses.find((h) => h.id === session?.harness)?.attachments}
           onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
           disabled={!connected || viewing !== sessionId}
           size="compact"
-          placeholder="Reply…"
+          placeholder={working ? "Add to the queue…" : "Reply…"}
         />
       </div>
     </main>
@@ -112,7 +134,7 @@ function SessionHeader({ session }: { session: SessionSummary }) {
         {sessionTitle(session)}
       </h1>
       {/* Open: live status + a quiet check icon; done: the green "Done" chip, which reopens (3d7). */}
-      {!session.done && <SessionStatus status={session.status} />}
+      {!session.done && <SessionStatus status={session.status} queued={session.queued} />}
       <DoneButton session={session} variant="header" />
     </div>
   );

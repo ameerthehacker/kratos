@@ -10,7 +10,7 @@ const WORDS = ["Thinking", "Forging", "Tempering", "Pondering", "Hammering it ou
  * unfinished step, e.g. "Reading store.ts"), or a cycling word between steps; a shimmering text,
  * the logo's hammer striking, and the time since this tab saw the turn start.
  */
-export function WorkingIndicator({ activity, paused }: { activity: string | null; paused?: boolean }) {
+export function WorkingIndicator({ activity, paused, queued = 0 }: { activity: string | null; paused?: boolean; queued?: number }) {
   const startedAt = useState(() => Date.now())[0]; // mounted when the turn starts
   const [now, setNow] = useState(startedAt);
   // A new word every 3s, starting from a random one; none of that with reduced motion.
@@ -30,7 +30,10 @@ export function WorkingIndicator({ activity, paused }: { activity: string | null
       <span className="min-w-0 truncate text-shimmer animate-shimmer" aria-label={activity ?? "Working"}>
         {text}
       </span>
-      <span className="ml-auto text-xs text-muted-foreground tabular-nums">{elapsed(now - startedAt)}</span>
+      <span className="ml-auto flex gap-3 text-xs text-muted-foreground tabular-nums">
+        {queued > 0 && <span>{queued} queued</span>}
+        {elapsed(now - startedAt)}
+      </span>
     </div>
   );
 }

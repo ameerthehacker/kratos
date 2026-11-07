@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowUp, ListPlus, Square } from "lucide-react";
 import type { AttachmentPolicy, AttachmentUpload } from "@kratos/core";
 import { AttachButton, DraftList, DropOverlay, FileNotes } from "@/components/attachments";
 import { Button } from "@/components/ui/button";
@@ -12,33 +12,45 @@ import { cn } from "@/lib/utils";
  * a soft accent glow while focused, the agent and permission chips and a round send button.
  * Enter sends, Shift+Enter = newline. The key-cap hints were dropped to make room for the mode
  * chip (owner, 3q2 design option A). Files (3s2, design 1 + B): "+" first in the row, drop them on
- * the card, or paste; shown above the text, checked before sending (`useDraftFiles`).
+ * the card, or paste; shown above the text, checked before sending (`useDraftFiles`). While the
+ * agent works (3t3, the steering design): Enter queues — the send button becomes "Queue" — and
+ * ⌘↵ / Ctrl↵ sends now, stopping the current step.
  */
 export function PromptCard(props: {
   /** The chips on the left of the bottom row: AgentPicker and PermissionPicker. */
   chips: ReactNode;
-  onSend: (text: string, attachments: AttachmentUpload[]) => void;
+  onSend: (text: string, attachments: AttachmentUpload[], options: { now: boolean }) => void;
   /** What the harness accepts (D55); without it, no "+" and no dropping files. */
   attachments?: AttachmentPolicy;
   placeholder: string;
   /** "large" on Home (room for a first description), "compact" for replies. */
   size?: "large" | "compact";
   disabled?: boolean;
-  /** The agent is working: with an empty box, the send button becomes Stop (3c2b). */
+  /** The agent is working: with an empty box, the send button becomes Stop (3c2b); with text, it
+   * queues (D56). */
   onStop?: () => void;
+  /** Text to add to the box (a queued prompt being edited, or what Stop gave back); a new `key`
+   * adds it again. */
+  insert?: { text: string; key: number };
 }) {
   const [text, setText] = useState("");
   const files = useDraftFiles(props.attachments);
   const canSend = text.trim().length > 0 && !props.disabled && !files.failed;
+  const working = props.onStop !== undefined;
 
-  const submit = (event?: FormEvent) => {
+  // Text handed back (Edit on a queued prompt, or Stop): add it to what's already in the box.
+  useEffect(() => {
+    if (props.insert) setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${props.insert!.text}` : props.insert!.text));
+  }, [props.insert]);
+
+  const submit = (event?: FormEvent, now = false) => {
     event?.preventDefault();
     if (!canSend) return;
-    props.onSend(text.trim(), files.take());
+    props.onSend(text.trim(), files.take(), { now: now && working });
     setText("");
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) submit(event);
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) submit(event, event.metaKey || event.ctrlKey);
   };
 
   return (
@@ -74,7 +86,12 @@ export function PromptCard(props: {
           {/* min-w-0: in a very narrow window the chips' text truncates and send stays in the card
               (no phone layout: mobile will be its own app — owner). */}
           <div className="flex min-w-0 flex-1 items-center gap-2">{props.chips}</div>
-          <SendButton stop={props.onStop !== undefined && text.trim().length === 0 ? props.onStop : undefined} canSend={canSend} disabled={props.disabled} />
+          <SendButton
+            stop={working && text.trim().length === 0 ? props.onStop : undefined}
+            queue={working}
+            canSend={canSend}
+            disabled={props.disabled}
+          />
         </div>
       </form>
       <FileNotes error={files.failed?.error} note={files.note} />
@@ -82,8 +99,10 @@ export function PromptCard(props: {
   );
 }
 
-/** Send — or, while the agent works and the box is empty, Stop (3c2b). */
-function SendButton({ stop, canSend, disabled }: { stop?: () => void; canSend: boolean; disabled?: boolean }) {
+/** Send — or, while the agent works, Stop with an empty box (3c2b) and Queue with text (D56): the
+ * button changes so you see what Enter will do before you press it (the design). */
+function SendButton(props: { stop?: () => void; queue: boolean; canSend: boolean; disabled?: boolean }) {
+  const { stop, canSend, disabled } = props;
   if (stop) {
     return (
       <Button
@@ -96,6 +115,20 @@ function SendButton({ stop, canSend, disabled }: { stop?: () => void; canSend: b
         className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/90"
       >
         <Square className="size-3.5" fill="currentColor" />
+      </Button>
+    );
+  }
+  if (props.queue) {
+    return (
+      <Button
+        type="submit"
+        size="icon"
+        disabled={!canSend}
+        aria-label="Queue"
+        title="Queue (↵) · send now (⌘↵)"
+        className="size-9 rounded-full"
+      >
+        <ListPlus className="size-4.5" />
       </Button>
     );
   }

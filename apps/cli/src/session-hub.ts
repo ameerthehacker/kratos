@@ -95,7 +95,7 @@ export class SessionHub {
         if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
         // New work on a done session means it isn't done (owner, 3d2).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
-        target.prompt(message.text, files);
+        target.prompt(message.text, files, { sendNow: message.sendNow });
         return;
       }
       case "set_model":

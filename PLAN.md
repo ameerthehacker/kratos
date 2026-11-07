@@ -386,7 +386,8 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             bare value ("0.3.1" / "ab9151c"), tooltip "Kratos version …". New (owner): it's a
             link — a release opens `github.com/ameerthehacker/kratos/releases/tag/v<version>`, a
             commit hash opens that commit — with a hover state like the other header controls.
-      - [ ] **3u2. Drop `sharp`** (~60) — it's only used to trim macOS editor icons and drags in
+      - [x] **3u2. Drop `sharp`** (~60) — done: new icons for VS Code, Xcode and Finder match
+            sharp's side by side (same crop and size). Planned as: it's only used to trim macOS editor icons and drags in
             libvips, which a single binary can't easily carry. macOS's own `sips` converts and
             crops; the transparent edge is found with `pngjs` (pure JS). Icons look as before.
       - [ ] **3u3. Single binary** (~200) — Node 24's Single Executable Applications: `esbuild`

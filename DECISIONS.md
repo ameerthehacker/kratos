@@ -213,6 +213,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   after the wordmark. New (owner): it's a link, opening in a new tab, with a hover state.
 - Rejected: hardcoding "0.0.0" (what the server did); reading the version from git tags at run
   time (a Homebrew install has no git checkout).
+- No sharp (3u2): it was only for trimming macOS editor icons, and it carries libvips — native
+  libraries a single binary can't easily take along. Now: `sips` converts the .icns (as before),
+  `squareTrim` (pure JS, `pngjs`) crops the transparent border at sharp's threshold (alpha 10) and
+  centres it on a transparent square, and `sips` resizes to 64px. Checked side by side against
+  sharp's cached icons (VS Code, Xcode, Finder): same crop and size; pixels differ only by
+  resampling (~2-3% mean per channel). Icons already cached keep being served.
 
 
 ### D56. Steering prompts: the agent holds them, Kratos follows each by id (step 3t, owner)
@@ -485,7 +491,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   uses each installed app's own icon: `plutil` finds the icon file named in the app's
   Info.plist, `sips` converts the .icns (both built into macOS), and `sharp` trims the
   transparent padding macOS icons carry so the tile sits level with text (owner: "logos not
-  sitting well" before the trim). Cached in `~/.kratos/cache/editor-icons`, served at
+  sitting well" before the trim; sharp was replaced by `sips` + `pngjs` in 3u2, D57). Cached in `~/.kratos/cache/editor-icons`, served at
   `/editor-icons/<id>.png` for detected ids only (404 otherwise). Off macOS: a generic icon.
 - The chip shows the editor you used last (remembered per browser), else the first one found,
   else a folder. The connection dot moved into the chip, with a tooltip saying what it means

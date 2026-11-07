@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import open from "open";
-import sharp from "sharp";
+import { PNG } from "pngjs";
 import which from "which";
 import type { Editor } from "@kratos/core";
 
@@ -62,8 +62,10 @@ const run = promisify(execFile);
 
 /**
  * An editor's own app icon as a 64px PNG, made once and cached: macOS's built-in `plutil` (which
- * icon file the app names) and `sips` (.icns → PNG), then sharp trims the transparent padding
- * macOS icons carry, so the tile fills its box and sits level with text. null if no .icns.
+ * icon file the app names) and `sips` (.icns → PNG, and the final resize); in between the
+ * transparent padding macOS icons carry is trimmed (`squareTrim`, pure JS via pngjs), so the tile
+ * fills its box and sits level with text. null if no .icns. (Was sharp, which drags in libvips —
+ * too much for a single binary, 3u2.)
  */
 export async function editorIcon(editor: DetectedEditor, cacheDir: string): Promise<string | null> {
   if (!editor.appPath) return null;
@@ -78,12 +80,37 @@ export async function editorIcon(editor: DetectedEditor, cacheDir: string): Prom
   mkdirSync(cacheDir, { recursive: true });
   const raw = join(cacheDir, `${editor.id}-raw.png`);
   await run("sips", ["-s", "format", "png", "--resampleHeightWidth", "256", "256", icns, "--out", raw]);
-  await sharp(raw)
-    .trim() // drop the transparent border (incl. the shadow room below the tile)
-    .resize(64, 64, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toFile(png);
+  const square = join(cacheDir, `${editor.id}-square.png`);
+  writeFileSync(square, PNG.sync.write(squareTrim(PNG.sync.read(readFileSync(raw)))));
+  await run("sips", ["--resampleHeightWidth", "64", "64", square, "--out", png]);
   return existsSync(png) ? png : null;
+}
+
+/** Below this alpha a pixel counts as background (sharp's trim threshold was 10). */
+const VISIBLE_ALPHA = 10;
+
+/**
+ * Crop away a transparent border (incl. the shadow room below a macOS icon's tile) and centre what
+ * is left on a transparent square, so a later resize keeps its shape (sharp's trim + "contain").
+ * A fully transparent image comes back unchanged.
+ */
+export function squareTrim(image: PNG): PNG {
+  let [left, top, right, bottom] = [image.width, image.height, -1, -1];
+  for (let y = 0; y < image.height; y++) {
+    for (let x = 0; x < image.width; x++) {
+      if (image.data[(y * image.width + x) * 4 + 3]! < VISIBLE_ALPHA) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  if (right < 0) return image;
+  const [width, height] = [right - left + 1, bottom - top + 1];
+  const side = Math.max(width, height);
+  const out = new PNG({ width: side, height: side }); // starts fully transparent
+  PNG.bitblt(image, out, left, top, width, height, Math.floor((side - width) / 2), Math.floor((side - height) / 2));
+  return out;
 }
 
 /**

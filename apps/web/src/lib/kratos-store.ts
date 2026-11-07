@@ -3,6 +3,8 @@ import type { ClientMessage, Harness, ServerMessage, SessionSummary, Settings, U
 import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
+/** What a session changed, as the server last said (3v1). */
+export type Changes = Extract<ServerMessage, { type: "changes" }>;
 /** Messages that belong to a session's log (everything the server replays). */
 export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" }>;
 
@@ -24,6 +26,8 @@ type KratosState = {
   /** The owner's settings (3w), as Kratos keeps them; until the server says, none. */
   settings?: Settings;
   log: LogMessage[];
+  /** Each session's changes, by id, as last asked for with `get_changes` (3v2). */
+  changes: Record<string, Changes>;
   send: (message: ClientMessage) => void;
   /** Apply one message from the server (called by the connection). */
   receive: (message: ServerMessage) => void;
@@ -35,6 +39,7 @@ export const useKratos = create<KratosState>((set) => ({
   sessions: [],
   harnesses: [],
   log: [],
+  changes: {},
   ready: false,
   send: () => {},
   receive: (message) => {
@@ -63,8 +68,8 @@ export const useKratos = create<KratosState>((set) => ({
         return set({ update: message.status });
       case "settings":
         return set({ settings: message.settings });
-      case "changes": // a reply to this tab's get_changes, not part of the log; shown from 3v2
-        return;
+      case "changes": // a reply to this tab's get_changes, not part of the log
+        return set((state) => ({ changes: { ...state.changes, [message.sessionId]: message } }));
       case "error":
         return clientLog("warn", `server error: ${message.message}`);
       default:

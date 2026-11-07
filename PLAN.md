@@ -706,7 +706,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         no longer remembered, the 16 MB cap in bytes, one `LogMessage` type in the web app.
         Owner accepted: blurry turn boundaries (revisit in 3v4); a failed start snapshot → the
         changes since the first good one + a `note`. 177 tests; real `claude` re-run passes.
-  - [ ] **3v2. Review page, unified** (~200) — route `/s/:id/review`, a header button on the
+  - [x] **3v2. Review page, unified** (~200) — route `/s/:id/review`, a header button on the
         session ("4 files +25 −5", per the design's way in). Left island: "Review changes",
         totals, the file list (name, dir, +/−, the 5-block bar). Main: the file's dir + name,
         "New file", the diff in a well: two line-number columns, +/− sign, tinted rows, Shiki
@@ -714,6 +714,12 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         unchanged runs folded into "Show N unchanged lines" bars that expand. Theme tokens only.
         Accept: screenshots of a real session's changes (edit, new file, a fold opened);
         typecheck, tests for the row building (pure function).
+        Checked: real `claude` (Haiku) renamed a method in a 300-line file, added a file, deleted
+        one → screenshots at 1440 (session header "3 files +7 −5", deleted / new / long file with
+        4 folds, one opened, the rename marked word by word) and 390 wide; 7 row tests, 184 in
+        all, build, typecheck. Left for later: picking files at narrow width (3v3), "Open in
+        editor" for one file (the server opens only the project folder), the fold bar's
+        enclosing-scope label ("class SessionHub"). Size: ~320 lines of code + 87 of tests.
   - [ ] **3v3. Split, Viewed, moving through** (~150) — Split / Unified toggle (split pairs
         deletions with additions, hatched empty sides), Viewed per file with the progress meter
         ("2 of 4 viewed"), Previous / "Next · name" (marks viewed) / Finish review, keys

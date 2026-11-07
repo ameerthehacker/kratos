@@ -10,12 +10,17 @@ import { useKratos } from "@/lib/kratos-store";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
 import { useTheme } from "@/lib/themes";
 
-/** Every page, in the owner's island layout: sidebar and main area float as rounded islands on
- * the canvas. Also owns the connection to kratos. */
-export function Layout() {
+/** Under every route: owns the connection to kratos, and what follows it on any page. */
+export function Shell() {
   useKratosConnection();
   useAttention(); // tab title, favicon dot and notifications when an agent waits on you (3r3)
   useTheme(); // the theme Kratos has saved (3w1)
+  return <Outlet />;
+}
+
+/** Home and sessions, in the owner's island layout: sidebar and main area float as rounded
+ * islands on the canvas. (Reviewing changes has its own islands, 3v2.) */
+export function Layout() {
   const connected = useKratos((s) => s.connected);
   const info = useKratos((s) => s.info);
   const sidebarOpen = useSidebarPrefs((s) => s.open);

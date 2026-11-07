@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FileCode } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { SessionSummary } from "@kratos/core";
@@ -9,6 +10,8 @@ import { askToNotify } from "@/hooks/use-attention";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { DoneButton } from "@/components/done-button";
+import { Counts } from "@/components/review/counts";
+import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
@@ -133,9 +136,27 @@ function SessionHeader({ session }: { session: SessionSummary }) {
       <h1 className="min-w-0 flex-1 truncate text-base font-medium" title={sessionTitle(session)}>
         {sessionTitle(session)}
       </h1>
+      <ChangesButton sessionId={session.id} />
       {/* Open: live status + a quiet check icon; done: the green "Done" chip, which reopens (3d7). */}
       {!session.done && <SessionStatus status={session.status} queued={session.queued} />}
       <DoneButton session={session} variant="header" />
     </div>
+  );
+}
+
+/** The way into reviewing what this session changed (3v2, the design's "4 files +25 −5"); hidden
+ * until it has changed something. */
+function ChangesButton({ sessionId }: { sessionId: string }) {
+  const files = useChanges(sessionId)?.files ?? [];
+  if (files.length === 0) return null;
+  return (
+    <Link
+      to={`/s/${sessionId}/review`}
+      className="inline-flex h-8 flex-none items-center gap-2 rounded-full bg-secondary px-3 text-sm text-secondary-foreground hover:bg-input hover:text-foreground"
+    >
+      <FileCode className="size-3.5" aria-hidden="true" />
+      {files.length} {files.length === 1 ? "file" : "files"}
+      <Counts additions={files.reduce((n, f) => n + f.additions, 0)} deletions={files.reduce((n, f) => n + f.deletions, 0)} />
+    </Link>
   );
 }

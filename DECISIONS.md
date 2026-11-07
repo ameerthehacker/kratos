@@ -200,7 +200,18 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   both full texts, so folding/expanding unchanged lines needs no extra round trip.
   Alternative: a diff-view library (`@git-diff-view/react`, `@pierre/diffs`): less code, but
   restyling it to the islands and fitting the later inline ask/comment asides is a fight.
-- Reverse: drop `apps/cli/src/changes/`, the snapshot columns/table and `get_changes`/`changes`.
+- Page (3v2): `/s/:id/review` sits outside the app's sidebar + header layout (the design draws
+  its own two islands); a `Shell` route above both keeps the connection, attention and theme.
+  Changes are asked for on opening and whenever the session's status changes (3v4 makes it live).
+  Rows are a pure function (`lib/diff-rows.ts`, tested): jsdiff lines with `ignoreNewlineAtEof`
+  (the server counts the same way), changed words by `diffWordsWithSpace` when ≥ 25% of the line
+  stayed (a rename in a short line still gets marked), marks only whitespace apart joined, 3 lines
+  of context, runs under 4 hidden lines shown instead of folded. Syntax: `shiki`'s
+  `codeToTokens` on each whole side (multi-line strings and comments come out right), language
+  by extension or file name, loaded on demand; `shiki` is now a direct dependency at the version
+  react-shiki already uses. Shiki's token colours are inline styles: theme data, not design values.
+- Reverse: drop `apps/cli/src/changes/`, the snapshot columns/table and `get_changes`/`changes`;
+  the review page, its route and `Shell`.
 
 ### D64. Notifications: in the browser, while you're away, once across tabs (step 3w3, owner)
 - Owner: browser notifications, only when you're not looking at Kratos; settings saved by

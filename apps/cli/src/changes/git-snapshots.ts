@@ -150,11 +150,15 @@ function statusOf(entry: DiffResultNameStatusFile): ChangedFile["status"] {
   }
 }
 
+/** How lines are compared, here and on the review page (apps/web `diff-rows.ts`): a missing
+ * newline at the end isn't a change of its own. */
+const LINE_DIFF = { ignoreNewlineAtEof: true };
+
 /** Lines added and removed, counted the way the review page draws them (jsdiff). */
 function countLines(before: string, after: string): { additions: number; deletions: number } {
   let additions = 0;
   let deletions = 0;
-  for (const part of diffLines(before, after)) {
+  for (const part of diffLines(before, after, LINE_DIFF)) {
     if (part.added) additions += part.count;
     else if (part.removed) deletions += part.count;
   }

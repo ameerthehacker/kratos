@@ -490,6 +490,21 @@ describe("Claude Code adapter: steering (D56)", () => {
     }
   });
 
+  it("Send now stops the step and the held prompt runs right away", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("steps", [], { id: "A" });
+      session.send("model", [], { id: "B" });
+      await vi.waitFor(() => expect(log).toContain("B:queued"));
+      await session.sendNow("B");
+      await waitForEnds(2);
+      expect(log).toEqual(expect.arrayContaining(["end:interrupted", "A:cancelled", "B:started", "end:completed"]));
+      expect(log.indexOf("B:started")).toBeGreaterThan(log.indexOf("end:interrupted"));
+    } finally {
+      await done();
+    }
+  });
+
   it("ignores lifecycle lines for prompts it didn't tag", async () => {
     const { session, log, waitForEnds, done } = running();
     try {

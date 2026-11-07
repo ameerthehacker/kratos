@@ -25,10 +25,22 @@ type Outcome = "allowed" | "denied" | "cancelled";
  */
 export class SessionRuntime {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
-  /** Prompts sent while the agent works that it hasn't read yet (D56), in the order sent. */
-  private readonly queue = new Map<string, { text: string }>();
+  /** Prompts sent while the agent works that it hasn't read yet (D56), in the order sent: their
+   * files (to send again) and the id the agent knows them by (a new one after a re-queue). */
+  private readonly queue = new Map<string, { text: string; files: readonly AgentAttachment[]; agentId: string }>();
+  /** Agent id → Kratos prompt id, for prompts re-queued under a new agent id (Send now). */
+  private readonly agentIds = new Map<string, string>();
   /** The last step (tool call) that finished in the running turn: a prompt read now follows it. */
   private lastStep: string | undefined;
+  /** The step (tool call) running now, if any: what Send now stops. */
+  private runningStep: string | undefined;
+  /** The running turn was started by the agent itself with queued prompts (not by a prompt sent
+   * while idle): others it takes before any step finishes came with them, as the next turn. */
+  private turnFromQueue = false;
+  /** Send now in progress (owner: only that prompt goes, D56): the others are withdrawn from the
+   * agent (`holding`, still queued for us) and sent again once both the withdrawals are done and
+   * the chosen one has been read. */
+  private sendingNow: { id: string; stopped?: string; holding: Set<string>; withdrawn: boolean; read: boolean } | undefined;
   /** Stop pressed with a queue (owner, D56): the prompts still out, and the text of the ones it
    * dropped, handed back to the tab that pressed Stop once all are settled. */
   private stopping: { ids: Set<string>; texts: string[]; returnText: (text: string) => void } | undefined;
@@ -121,7 +133,7 @@ export class SessionRuntime {
     const attachments = refs.length > 0 ? { attachments: refs } : {};
     if (this.session && this.turnOpen) {
       const id = randomUUID();
-      this.queue.set(id, { text });
+      this.queue.set(id, { text, files, agentId: id });
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
       this.session.send(text, files, { id });
@@ -129,6 +141,7 @@ export class SessionRuntime {
       return;
     }
     this.publish({ type: "user_prompt", text, ...attachments });
+    this.turnFromQueue = false;
     this.turnOpen = true;
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     (this.session ??= this.start()).send(text, files);
@@ -145,9 +158,34 @@ export class SessionRuntime {
 
   /** Take a queued prompt back before the agent reads it (D56). False if it isn't queued here. */
   removeQueued(promptId: string): boolean {
-    if (!this.queue.has(promptId)) return false;
+    const queued = this.queue.get(promptId);
+    if (!queued) return false;
     // Settled by the agent's `cancelled` (or, if it was just read, by its `started`).
-    this.session?.cancelPrompt(promptId).catch(this.reportFailure("Removing a queued prompt"));
+    this.session?.cancelPrompt(queued.agentId).catch(this.reportFailure("Removing a queued prompt"));
+    return true;
+  }
+
+  /**
+   * Send now (owner, D56): stop the running step and have the agent read this queued prompt right
+   * away; the others stay queued. The agent's own Send now delivers everything it holds, so the
+   * others are withdrawn first and sent again once this one is read. False if it isn't queued here.
+   */
+  sendNow(promptId: string): boolean {
+    const chosen = this.queue.get(promptId);
+    const session = this.session;
+    if (!chosen || !session || this.sendingNow) return false;
+    const others = [...this.queue.keys()].filter((id) => id !== promptId);
+    const now = { id: promptId, stopped: this.runningStep, holding: new Set(others), withdrawn: false, read: false };
+    this.sendingNow = now;
+    this.logger.info({ prompt: promptId, holding: others.length, stopped: now.stopped }, "send now");
+    void (async () => {
+      const withdrawn = await Promise.all(others.map((id) => session.cancelPrompt(this.queue.get(id)!.agentId).catch(() => false)));
+      // One the agent took meanwhile is simply read: its own `started` settles it.
+      others.forEach((id, i) => !withdrawn[i] && now.holding.delete(id));
+      now.withdrawn = true;
+      await session.sendNow(chosen.agentId);
+      this.requeueHeld();
+    })().catch(this.reportFailure("Sending now"));
     return true;
   }
 
@@ -291,7 +329,11 @@ export class SessionRuntime {
           continue;
         }
         this.publish({ type: "agent_event", event });
-        if (event.kind === "tool_result") this.lastStep = event.id;
+        if (event.kind === "tool_call") this.runningStep = event.id;
+        if (event.kind === "tool_result") {
+          this.lastStep = event.id;
+          this.runningStep = undefined;
+        }
         // The agent changed mode — on our request or on its own (leaving plan mode): follow it.
         if (event.kind === "permission_mode") {
           this.logger.info({ mode: event.mode }, "permission mode changed");
@@ -301,6 +343,8 @@ export class SessionRuntime {
           this.logger.debug({ event }, "turn ended");
           this.turnOpen = false;
           this.lastStep = undefined;
+          this.runningStep = undefined;
+          this.turnFromQueue = false;
           this.deps.onChange();
         }
       }
@@ -323,13 +367,28 @@ export class SessionRuntime {
    * (after the step that just finished), or as a new turn once the last ended (the turn is then
    * open again). `cancelled`: left the queue unread — removed, or dropped by Stop.
    */
-  private promptState(id: string, state: "queued" | "started" | "completed" | "cancelled"): void {
+  private promptState(agentId: string, state: "queued" | "started" | "completed" | "cancelled"): void {
+    const id = this.agentIds.get(agentId) ?? agentId;
     const queued = this.queue.get(id);
-    if (!queued || (state !== "started" && state !== "cancelled")) return;
+    if (!queued || queued.agentId !== agentId || (state !== "started" && state !== "cancelled")) return;
+    // Withdrawn by Send now to go again after it: still queued as far as anyone can see.
+    if (state === "cancelled" && this.sendingNow?.holding.has(id)) return;
     this.queue.delete(id);
     if (state === "started") {
-      const how = this.turnOpen ? "step" : "next_turn";
-      this.publish({ type: "prompt_read", id, how, ...(how === "step" && this.lastStep ? { after: this.lastStep } : {}) });
+      const now = this.sendingNow?.id === id ? this.sendingNow : undefined;
+      // Read at a step boundary only if a step has finished in this turn; prompts the agent takes
+      // together to start a new turn are all `next_turn` (real CLI: B and D started at once).
+      const atStep = this.turnOpen && !(this.turnFromQueue && !this.lastStep);
+      const how = now ? "now" : atStep ? "step" : "next_turn";
+      if (!this.turnOpen) this.turnFromQueue = true;
+      this.publish({
+        type: "prompt_read",
+        id,
+        how,
+        ...(how === "step" && this.lastStep ? { after: this.lastStep } : {}),
+        ...(now?.stopped ? { stopped: now.stopped } : {}),
+      });
+      if (now) now.read = true;
       this.logger.info({ prompt: id, how }, "queued prompt read");
       this.turnOpen = true;
       this.stopping?.ids.delete(id);
@@ -340,7 +399,24 @@ export class SessionRuntime {
       this.logger.info({ prompt: id, stopped }, "queued prompt removed");
     }
     this.returnStopped();
+    this.requeueHeld();
     this.deps.onChange();
+  }
+
+  /** Send now's last step (D56): once the others are withdrawn and the chosen one is read, send
+   * the others again under new agent ids — same Kratos ids, same place in the queue. */
+  private requeueHeld(): void {
+    const now = this.sendingNow;
+    if (!now || !now.withdrawn || !now.read) return;
+    this.sendingNow = undefined;
+    for (const id of now.holding) {
+      const queued = this.queue.get(id);
+      if (!queued || !this.session) continue;
+      queued.agentId = randomUUID();
+      this.agentIds.set(queued.agentId, id);
+      this.session.send(queued.text, queued.files, { id: queued.agentId });
+    }
+    this.logger.info({ requeued: now.holding.size }, "send now: the rest queued again");
   }
 
   /** Once every prompt Stop withdrew is settled, hand their text back (owner, D56). */

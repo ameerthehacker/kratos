@@ -127,6 +127,9 @@ export class SessionHub {
       case "remove_queued":
         for (const runtime of this.runtimes.values()) if (runtime.removeQueued(message.id)) return;
         return; // already read or removed: nothing to do
+      case "send_now":
+        for (const runtime of this.runtimes.values()) if (runtime.sendNow(message.id)) return;
+        return; // already read or removed, or a Send now is already under way
       case "question_answer": {
         // Question ids are unique across sessions: the owner checks and takes the answer (D54).
         // Already settled (another tab answered first, or the agent withdrew it): nothing to do,

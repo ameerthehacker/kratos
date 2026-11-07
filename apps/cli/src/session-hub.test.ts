@@ -42,6 +42,10 @@ class FakeSession implements AgentSession {
     this.cancelled.push(id);
     return true;
   }
+  readonly sentNow: string[] = [];
+  async sendNow(id: string) {
+    this.sentNow.push(id);
+  }
   readonly interruptOptions: Array<{ cancelQueued?: boolean } | undefined> = [];
   async interrupt(options?: { cancelQueued?: boolean }) {
     this.interrupts++;
@@ -865,6 +869,20 @@ describe("SessionHub: steering prompts (D56)", () => {
     expect(status(a)).toBe("working");
   });
 
+  it("prompts the agent takes together to start a new turn are all next_turn", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "B" });
+    a.receive({ type: "prompt", text: "D" });
+    const [b, d] = queuedIds(a);
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "started" });
+    agents[0]!.emit({ kind: "prompt_state", id: d!, state: "started" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_read").map((m) => m.type === "prompt_read" && m.how)).toEqual(["next_turn", "next_turn"]);
+  });
+
   it("takes a queued prompt back on request", async () => {
     const { agents, tab } = setup();
     const a = tab();
@@ -920,5 +938,47 @@ describe("SessionHub: steering prompts (D56)", () => {
     const late = tab();
     expect(late.seen.filter((m) => m.type === "prompt_removed").at(-1)).toEqual({ type: "prompt_removed", id: second, reason: "stopped" });
     expect(count(late)).toBe(0);
+  });
+});
+
+describe("SessionHub: Send now (D56, 3t2)", () => {
+  const queuedIds = (t: { seen: ServerMessage[] }) => t.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+  const count = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.queued;
+
+  it("sends only the chosen prompt now; the others are withdrawn, then queued again unseen", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.emit({ kind: "tool_call", id: "t1", tool: "Bash", input: {} }); // a step is running
+    for (const text of ["B", "C", "D"]) a.receive({ type: "prompt", text });
+    const [b, c, d] = queuedIds(a);
+    await tick();
+
+    a.receive({ type: "send_now", id: c! });
+    await tick();
+    expect(agents[0]!.cancelled).toEqual([b, d]); // the others leave the agent's queue…
+    expect(agents[0]!.sentNow).toEqual([c]);
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "cancelled" });
+    agents[0]!.emit({ kind: "prompt_state", id: d!, state: "cancelled" });
+    agents[0]!.emit({ kind: "turn_end", reason: "interrupted" });
+    await tick();
+    expect(a.seen.some((m) => m.type === "prompt_removed")).toBe(false); // …but not ours
+    expect(count(a)).toBe(3);
+
+    agents[0]!.emit({ kind: "prompt_state", id: c!, state: "started" });
+    await tick();
+    expect(a.seen.find((m) => m.type === "prompt_read")).toEqual({ type: "prompt_read", id: c, how: "now", stopped: "t1" });
+    // Sent again under new agent ids, in order; still the same prompts in the queue.
+    const resent = agents[0]!.promptIds.slice(-2);
+    expect(agents[0]!.prompts.slice(-2)).toEqual(["B", "D"]);
+    expect(resent).not.toContain(b);
+    expect(count(a)).toBe(2);
+
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "cancelled" }); // a stale line for the old id
+    agents[0]!.emit({ kind: "prompt_state", id: resent[0]!, state: "started" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_read").at(-1)).toMatchObject({ type: "prompt_read", id: b });
+    expect(a.seen.some((m) => m.type === "prompt_removed")).toBe(false);
+    expect(count(a)).toBe(1);
   });
 });

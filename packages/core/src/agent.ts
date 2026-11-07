@@ -298,6 +298,9 @@ export interface AgentSession {
   send(prompt: string, attachments?: readonly AgentAttachment[], options?: { id?: string }): void;
   /** Withdraw a prompt the agent still holds (D56); false if it was already taken. */
   cancelPrompt(id: string): Promise<boolean>;
+  /** Stop the current step and have the agent read a held prompt right away (D56). Claude's
+   * send-now delivers *every* held prompt: withdraw the others first to send just one. */
+  sendNow(id: string): Promise<void>;
   /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. With
    * `cancelQueued`, prompts it holds are withdrawn too (`prompt_state` cancelled); without, they
    * run right after (D56). */

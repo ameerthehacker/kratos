@@ -64,6 +64,7 @@ const report = (content, is_error = false) =>
 let busy = false;
 let turnPrompts = []; // uuids the running turn took
 const held = []; // { uuid, content } waiting for the running turn
+let deliverAll = false; // Send now: the next turn takes everything held at once
 const lifecycle = (uuid, state) => uuid && out({ type: "command_lifecycle", command_uuid: uuid, state, uuid: `life-${uuid}-${state}` });
 const finish = (subtype = "success") => {
   out({ type: "result", subtype });
@@ -71,7 +72,14 @@ const finish = (subtype = "success") => {
   busy = false;
   turnPrompts = [];
   const next = held.shift();
-  if (next) startTurn(next);
+  if (!next) return;
+  const rest = deliverAll ? held.splice(0) : [];
+  deliverAll = false;
+  startTurn(next);
+  for (const prompt of rest) {
+    lifecycle(prompt.uuid, "started");
+    turnPrompts.push(prompt.uuid);
+  }
 };
 const startTurn = ({ uuid, content }) => {
   busy = true;
@@ -199,7 +207,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   }
   else if (msg.type === "control_request" && msg.request.subtype === "interrupt") {
     if (msg.request.cancel_queued) for (const prompt of held.splice(0)) lifecycle(prompt.uuid, "cancelled");
-    success(msg.request_id, {});
+    if (msg.request.send_now) {
+      // Like the real CLI's Send now: stop the step, then deliver *everything* held at once.
+      deliverAll = held.length > 0;
+      success(msg.request_id, { still_queued: held.map((p) => p.uuid), send_now: held.length === 0 ? "nothing_waiting" : busy ? "stopped" : "delivering" });
+    } else success(msg.request_id, {});
     onInterrupt();
   }
   else if (msg.type === "control_request" && msg.request.subtype === "cancel_async_message") {

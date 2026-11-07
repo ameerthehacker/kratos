@@ -90,6 +90,9 @@ export const AskUserQuestionInput = z.object({
 });
 export type AskUserQuestionInput = z.infer<typeof AskUserQuestionInput>;
 
+/** The answer to `interrupt {send_now}` (D56): `stopped` / `delivering`, or `nothing_waiting`. */
+export const SendNowResponse = z.object({ send_now: z.string().optional() });
+
 /** The answer to `cancel_async_message` (D56). */
 export const CancelAsyncMessageResponse = z.object({ cancelled: z.boolean() });
 

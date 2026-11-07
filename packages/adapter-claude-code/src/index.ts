@@ -17,6 +17,7 @@ import { toEvents } from "./map.js";
 import {
   AskUserQuestionInput,
   CancelAsyncMessageResponse,
+  SendNowResponse,
   CliMessage,
   GetSettingsResponse,
   InitializeResponse,
@@ -295,6 +296,13 @@ function startSession(
     async cancelPrompt(id) {
       const answer = await control.request({ subtype: "cancel_async_message", message_uuid: id });
       return CancelAsyncMessageResponse.parse(answer).cancelled;
+    },
+    async sendNow(id) {
+      // The CLI's own Send now (verified, D56): stops the step and delivers what it holds. The
+      // stopped turn ends like an interrupt.
+      interrupted = true;
+      const answer = SendNowResponse.parse(await control.request({ subtype: "interrupt", send_now: true, message_uuid: id }));
+      if (answer.send_now === "nothing_waiting") interrupted = false; // nothing was stopped
     },
     async interrupt(options = {}) {
       interrupted = true;

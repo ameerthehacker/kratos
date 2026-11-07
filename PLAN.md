@@ -351,7 +351,10 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             - Tests: fake claude learns lifecycle lines, a held message taken at its next step
               (or next turn), `cancel_async_message`, interrupt with `cancel_queued`; adapter +
               hub tests incl. replay of a queue and two tabs.
-      - [ ] **3t2. Backend: Send now** (~100) — `send_now {id}`: withdraw the *other* waiting
+      - [x] **3t2. Backend: Send now** (~100) — done: real `claude`: B, C, D queued during a
+            slow command; Send now on C stopped the step, C was read "now" ("CHERRY"), B and D
+            stayed queued and were read together as the next turn ("BANANA DATE"). Fixed on the
+            way: prompts the agent takes together to start a turn are all `next_turn`. Planned as: `send_now {id}`: withdraw the *other* waiting
             prompts (`cancel_async_message`), `interrupt {send_now, message_uuid}`, then queue the
             others again (new agent ids, same Kratos ids — they stay in the card);
             `prompt_read {how: "now", stopped?}` with the step it cut short.

@@ -61,6 +61,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("interrupt") }),
   /** Take a queued prompt back out of the queue (D56), before the agent reads it. */
   z.object({ type: z.literal("remove_queued"), id: z.string() }),
+  /** Stop the current step and have the agent read this queued prompt now; the rest stay
+   * queued (owner, D56). */
+  z.object({ type: z.literal("send_now"), id: z.string() }),
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
@@ -150,8 +153,15 @@ export const ServerMessage = z.discriminatedUnion("type", [
   /** A prompt sent while the agent works (D56): it waits in the queue until the agent reads it. */
   z.object({ type: z.literal("prompt_queued"), id: z.string(), text: z.string(), attachments: z.array(AttachmentRef).optional() }),
   /** The agent read a queued prompt: at a step boundary of the running turn (`step`, after the step
-   * `after` — a tool call id — when there was one), or as a new turn once the last one ended. */
-  z.object({ type: z.literal("prompt_read"), id: z.string(), how: z.enum(["step", "next_turn"]), after: z.string().optional() }),
+   * `after` — a tool call id — when there was one), as a new turn once the last one ended, or
+   * right away by Send now (`now`, having stopped the step `stopped` if one was running). */
+  z.object({
+    type: z.literal("prompt_read"),
+    id: z.string(),
+    how: z.enum(["step", "next_turn", "now"]),
+    after: z.string().optional(),
+    stopped: z.string().optional(),
+  }),
   /** A queued prompt left the queue unread: removed by the owner, or dropped by Stop / the agent
    * ending (`stopped`). */
   z.object({ type: z.literal("prompt_removed"), id: z.string(), reason: z.enum(["removed", "stopped"]) }),

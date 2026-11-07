@@ -185,6 +185,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   for its composer. Files of returned prompts aren't returned. An agent that exits, a shutdown or
   a restart drops a leftover queue (`prompt_removed stopped`).
 - `SessionSummary.queued` for "Working · 2 queued".
+- Send now (3t2, owner: only the chosen prompt goes; the CLI's own delivers everything it holds):
+  the runtime withdraws the *other* queued prompts from the agent (`cancelPrompt` — their
+  `cancelled` is swallowed, they stay queued for tabs), calls `sendNow` (`interrupt {send_now,
+  message_uuid}`), and once the withdrawals are done *and* the chosen prompt is read, sends the
+  others again under new agent ids — same Kratos ids, same order, same files. Waiting for both
+  avoids a race where a re-sent prompt joins the chosen one. Agent ids map back to Kratos ids, and
+  lifecycle lines for an old agent id are ignored. The chosen prompt is logged `prompt_read {how:
+  "now", stopped}` with the step (tool call) that was running. One Send now at a time.
 - Reverse: additive — without ids nothing is followed, and prompts mid-turn behave as before.
 
 ### D55. File attachments: inline with the prompt, stored by id, checked against the harness (step 3s, owner)

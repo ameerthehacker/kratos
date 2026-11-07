@@ -40,7 +40,7 @@ export type TimelineItem =
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
 
-type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" }>;
+type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" }>;
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
 
 const OUTPUT_LINES = 20;

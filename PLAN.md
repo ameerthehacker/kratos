@@ -413,6 +413,54 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             arguments, then exit (sessions are in the DB; running agents would be stopped — wait
             for idle, or ask); how often to check, and whether the design gets an "update
             available" state.
+            Owner's answers: Kratos downloads + verifies by itself, you click to restart into it;
+            check at start + every hour; a restart waits until no agent is working; Homebrew
+            installs are updated by us *and* brew must know (so `brew list`/`upgrade`/`uninstall`
+            stay right). Backend first (5a–5c), UI after (5d). Only a release binary updates:
+            source runs (`pnpm dev`, 0.0.0/commit versions) never check.
+        - [x] **3u5a. Check** (~120 + tests, D61) — `apps/cli/src/updater/`: GitHub's
+              `releases/latest` (fetch, zod-checked; pre-releases are never "latest"), compared with
+              `semver`; at start, then hourly; failures logged at debug, never fatal. State goes to
+              tabs as a new `update` message (core `UpdateStatus`: `idle | available` + version +
+              release URL for now; later slices add their states), on connect and on change;
+              the web store keeps it out of the chat log. Startup logs "kratos 0.2.0 is
+              available". Accept: tests with a faked GitHub (newer / same / older / pre-release /
+              network error / junk JSON). Checked: a binary built as 0.0.9 logs "kratos 0.1.0 is
+              available" from the real GitHub and a tab gets `available`; a source run gets
+              `idle` and never calls GitHub.
+        - [ ] **3u5b. Download + verify** (~120) — when `available`: fetch this platform's
+              `kratos-<v>-<platform>-<arch>.tar.gz` and `SHA256SUMS` into
+              `~/.kratos/updates/<v>/`, check the sha256, unpack (`tar` package) → `ready`. A bad
+              checksum deletes the files and reports `error`; an already-verified download is
+              reused. Right after publishing, the release is "latest" before the workflow has
+              attached its archives: a missing asset means "not yet" (stay `available`, retry at
+              the next check), not an error. Accept: tests against a local HTTP server (good,
+              bad sum, asset not attached yet).
+        - [ ] **3u5c. Apply + restart** (~150) — tab sends `apply_update`; if an agent is
+              working the state is `waiting` and it applies when all sessions are idle. Then:
+              - plain binary: copy the new one next to `process.execPath`, then rename it over
+                (atomic on one filesystem; the running process keeps its old file);
+              - Homebrew (`execPath` under brew's Cellar). Not `brew update`: it refreshes every
+                tap, can be throttled, and the tap trails the release by minutes (owner: brew
+                doesn't see the new version consistently). Instead, each step checked:
+                1. refresh only our tap: `git fetch` + fast-forward to `origin/main` in
+                   `brew --repository ameerthehacker/kratos`;
+                2. `brew info --json=v2 ameerthehacker/kratos/kratos` must show the new version;
+                   if not, the tap job isn't done: stay `waiting`, retry at the next check;
+                3. put our verified archive at `brew --cache --formula ameerthehacker/kratos/kratos`
+                   and run `HOMEBREW_NO_AUTO_UPDATE=1 brew upgrade ameerthehacker/kratos/kratos`
+                   (brew re-checks the sha256 against its formula and installs our file);
+                4. `brew list --versions kratos` and the new binary's `--version` must both show
+                   it; else `error`, and the old version keeps running (no swapping files
+                   behind brew's back). Restart from brew's `bin/kratos` link.
+              Restart: close the server and the store (frees the port), then `process.execve`
+              the new binary with the same arguments plus `--no-open` (open tabs reconnect, so no
+              new one; same PID, same terminal,
+              Ctrl-C still works). Accept: a binary built as 0.0.9
+              updates itself to the real v0.1.0 and comes back up as 0.1.0 (driven by a WebSocket
+              script); brew path checked with a local throwaway tap, as 3u4 was.
+        - [ ] **3u5d. UI** — later, per the design: the version pill shows the state, "Restart to
+              update" button, "waiting for Claude to finish".
       - [x] **3u6. Busy port, clear error** (~10, owner, D60) — done: with 4399 held, kratos
             prints "Port 4399 is already in use (another kratos running?). Stop it, or pick
             another: kratos --port 4400" and exits 1; a free port starts as before. Planned as: a

@@ -8,6 +8,7 @@ import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editor
 import { silentLogger, type Logger } from "./logger.js";
 import { WEB_DIST } from "./paths.js";
 import type { SessionHub } from "./session-hub.js";
+import type { Updater } from "./updater/updater.js";
 import type { KratosVersion } from "./version.js";
 
 export const DEFAULT_HOST = "127.0.0.1";
@@ -32,6 +33,8 @@ export async function startServer(options: {
   iconCacheDir?: string;
   /** Kratos's own version and its link (3u1); default "dev", no link. */
   version?: KratosVersion;
+  /** Its update status goes to every tab (3u5); default none sent. */
+  updater?: Updater;
 }) {
   const version = options.version ?? { version: "dev" };
   const { hub } = options;
@@ -78,6 +81,11 @@ export async function startServer(options: {
   app.get(WS_PATH, { websocket: true }, (socket) => {
     const tab = hub.connect((message) => send(socket, message)); // shows the latest session first
     socket.on("close", tab.disconnect);
+    if (options.updater) {
+      send(socket, { type: "update", status: options.updater.status });
+      const unsubscribe = options.updater.subscribe((status) => send(socket, { type: "update", status }));
+      socket.on("close", unsubscribe);
+    }
 
     socket.on("message", (raw) => {
       const parsed = ClientMessage.safeParse(safeJson(String(raw)));

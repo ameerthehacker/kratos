@@ -9,6 +9,7 @@ import { memoryLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { startServer } from "./server.js";
 import { SessionStore } from "./store/store.js";
+import { Updater } from "./updater/updater.js";
 
 /** The fake `claude` from the adapter's tests: speaks the real control protocol (D30). */
 const FAKE_CLAUDE = fileURLToPath(new URL("../../../packages/adapter-claude-code/test/fake-claude.mjs", import.meta.url));
@@ -139,6 +140,28 @@ describe("kratos server", () => {
       for (const id of ["nope", "vscode", "..%2F..%2Fetc%2Fpasswd"]) {
         expect((await fetch(`http://127.0.0.1:${server.port}/editor-icons/${id}.png`)).status).toBe(404);
       }
+    } finally {
+      tab.close();
+      await server.close();
+    }
+  });
+
+  it("sends every tab the update status on connect, and again when it changes (3u5)", async () => {
+    const cwd = process.cwd();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const release = { tag_name: "v0.2.0", html_url: "https://github.com/ameerthehacker/kratos/releases/tag/v0.2.0", prerelease: false };
+    const updater = new Updater("0.1.0", { fetch: (async () => Response.json(release)) as unknown as typeof fetch });
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code", updater });
+    const tab = await openTab(server.port);
+    try {
+      expect(await tab.waitFor(is("update"))).toEqual({ type: "update", status: { state: "idle" } });
+      await updater.check();
+      await vi.waitFor(() =>
+        expect(tab.messages.filter(is("update")).at(-1)).toEqual({
+          type: "update",
+          status: { state: "available", version: "0.2.0", url: release.html_url },
+        }),
+      );
     } finally {
       tab.close();
       await server.close();

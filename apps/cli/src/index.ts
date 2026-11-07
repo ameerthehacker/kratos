@@ -12,6 +12,7 @@ import { createLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { DEFAULT_HOST, startServer } from "./server.js";
 import { SessionStore } from "./store/store.js";
+import { Updater } from "./updater/updater.js";
 import { kratosVersion } from "./version.js";
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
@@ -52,8 +53,9 @@ const program = new Command()
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
+    const updater = new Updater(version.version, { log }); // 3u5: releases only; a source run never checks
     const port = Number(opts.port);
-    const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version }).catch(
+    const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version, updater }).catch(
       (err: unknown) => {
         if (!(err instanceof Error && "code" in err && err.code === "EADDRINUSE")) throw err;
         store.close(); // nothing else has started yet: no agent runs before a tab connects
@@ -73,6 +75,7 @@ const program = new Command()
           `edit files and run commands in ${cwd}. There is no login yet.`,
       );
     }
+    updater.start(); // now, then hourly
     // The UI opens in the default browser (3u3, owner); `--no-open` for `pnpm dev` and headless use.
     if (opts.open) open(url).catch((err: unknown) => log.warn({ err }, `Couldn't open a browser: visit ${url}`));
 
@@ -83,6 +86,7 @@ const program = new Command()
       if (stopping) return;
       stopping = true;
       log.info({ signal }, "shutting down");
+      updater.stop();
       await server.close(); // stops the agent; its last messages are written to the store
       store.close();
       log.flush(() => process.exit(0)); // let the log file finish writing

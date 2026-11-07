@@ -1,10 +1,10 @@
 import { create } from "zustand";
-import type { ClientMessage, Harness, ServerMessage, SessionSummary } from "@kratos/core";
+import type { ClientMessage, Harness, ServerMessage, SessionSummary, UpdateStatus } from "@kratos/core";
 import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** Messages that belong to a session's log (everything the server replays). */
-export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" }>;
+export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" }>;
 
 type KratosState = {
   connected: boolean;
@@ -19,6 +19,8 @@ type KratosState = {
   ready: boolean;
   /** Text of queued prompts that Stop dropped, for this tab's composer (D56); the composer takes it. */
   returned?: string;
+  /** Kratos's own update status (3u5); shown by the UI in 3u5d. */
+  update?: UpdateStatus;
   log: LogMessage[];
   send: (message: ClientMessage) => void;
   /** Apply one message from the server (called by the connection). */
@@ -47,6 +49,8 @@ export const useKratos = create<KratosState>((set) => ({
         return set({ harnesses: message.list });
       case "prompts_returned": // not part of the log: this tab's own, for its composer
         return set({ returned: message.text });
+      case "update":
+        return set({ update: message.status });
       case "error":
         return clientLog("warn", `server error: ${message.message}`);
       default:

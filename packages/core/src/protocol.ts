@@ -129,8 +129,21 @@ export const Harness = z.object({
 });
 export type Harness = z.infer<typeof Harness>;
 
-/** Server → browser. Everything except pong/error/session/sessions/harnesses is in a session's log. */
+/** Kratos's own update (3u5, D61): `idle` = up to date (or not checked yet, or a source run);
+ * `available` = a newer release, `version` + its release page `url`. More states come with
+ * downloading and applying it (3u5b, 3u5c). */
+export const UpdateStatus = z.object({
+  state: z.enum(["idle", "available"]),
+  version: z.string().optional(),
+  url: z.string().optional(),
+});
+export type UpdateStatus = z.infer<typeof UpdateStatus>;
+
+/** Server → browser. Everything except pong/error/session/sessions/harnesses/update is in a
+ * session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
+  /** Kratos's update status: on connect, and whenever it changes (3u5). */
+  z.object({ type: z.literal("update"), status: UpdateStatus }),
   /** The harnesses and their models: on connect once known, and when (re)loaded. */
   z.object({ type: z.literal("harnesses"), list: z.array(Harness) }),
   /** The session this tab now views; its log replay follows. On a new id, clear the log. */

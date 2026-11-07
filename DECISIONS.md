@@ -156,6 +156,26 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D61. Self-update: checking for a release (step 3u5a, owner)
+- Owner: Kratos downloads and verifies a new release by itself, you click to restart into it;
+  checks at start and every hour; a restart waits until no agent works; Homebrew installs are
+  updated by Kratos *and* brew knows (3u5c settles how, without `brew update`).
+- Check: GitHub's `GET /repos/ameerthehacker/kratos/releases/latest` with Node's `fetch` (10 s
+  timeout, `user-agent: kratos/<version>`, which GitHub requires), the reply zod-checked. That
+  endpoint never returns drafts or pre-releases; a `prerelease: true` answer is ignored anyway,
+  and 404 means no release yet. Unauthenticated: 60 requests/hour per IP, we use one.
+- Compare: `semver` (npm's own version library): `gt(latest, running)`, so 0.2.0 beats
+  0.2.0-rc.1. Only a semver version checks at all: a source run shows a commit hash or "dev"
+  (D57), so `pnpm dev` never calls GitHub.
+- Failures (offline, rate limit, odd JSON, a non-version tag) are logged at debug and change
+  nothing; the next hourly check tries again. A new version is announced at info once.
+- Protocol: `update { status }` (core `UpdateStatus`), sent to each tab on connect and on every
+  change, like `sessions`; not in a session's log. States for now: `idle | available` (+
+  `version`, release `url`); 3u5b/3u5c add theirs when they exist rather than unused ones now.
+- `apps/cli` now depends on `zod` directly (same range as core) to check GitHub's reply.
+- Reverse: delete `apps/cli/src/updater/`, its two lines in `index.ts`, the `updater` option in
+  `server.ts`, `UpdateStatus` + the `update` message in core, the `update` case in the web store.
+
 ### D60. A busy port is an error, not a fallback (step 3u6, owner)
 - Decision: if `listen` fails with `EADDRINUSE`, print one line through commander's `error`
   (like the other startup errors: "Not a folder", `claude` missing) and exit 1 — no stack trace.

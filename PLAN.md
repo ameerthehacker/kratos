@@ -177,7 +177,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               and after a model switch (the default moves with the model) and broadcasts it.
             - Tests: fake claude learns `supportedEffortLevels`, `--effort`, `apply_flag_settings`,
               `get_settings`; adapter start/switch/read; hub start, switch, model-switch re-read.
-      - [ ] **3m4. Effort: UI** (~120, owner, D51) — inside the model chip, like Claude's own
+      - [x] **3m4. Effort: UI** (~120, owner, D51) — inside the model chip, like Claude's own
             picker (owner, revised): the chip reads "Opus 5.5 · High"; its menu gains an
             "Effort  High ›" row opening a submenu of the current model's levels (Low, Medium,
             High, Extra high, Max) with a check on the one in use; no Effort row when the model
@@ -186,6 +186,9 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             model choice. Accept, real `claude`: start at Low, switch to High mid-session, the
             CLI reports high; switch to a model without xhigh while on Extra high → the chip
             shows what the CLI actually uses.
+            Done: both checked with real `claude` (Haiku 5.5 low → high, CLI reported high;
+            xhigh → Opus 4.6, chip shows High as the CLI reports). The chip hides a level the
+            model doesn't list; unknown level ids are capitalized with lodash-es (owner).
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

@@ -184,6 +184,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   passed at the next start, where the CLI clamps/ignores it.
 - A failed read is only logged (the list keeps the choice); a refused switch is an error in
   the conversation, like a failed model switch, and the old level stays.
+- UI (3m4): in the model chip, not its own chip (owner): "Claude Code · Haiku 5.5 Low"; an
+  "Effort  Low ›" row opens a submenu of the model's levels with a check on the one in use
+  (Base UI submenus open on hover/arrow key). No row for a model without levels. The chip
+  never shows a level the model doesn't list (e.g. for the moment after a model switch before
+  the agent reports the clamped level). On Home a pick is remembered with the model choice
+  (`kratos.home-choice`) and dropped if the chosen model lacks it.
+- Level words: Claude's ids → Low/Medium/High/Extra high/Max; an unknown id is capitalized
+  with `lodash-es` `capitalize` (owner: library-first; lodash-es is the ES-module build, so
+  Vite only bundles the functions imported).
 - Reverse: additive — drop `set_effort`/`effort`; the column can stay.
 
 ### D50. Project chip + open in editor (step 3d3, owner)

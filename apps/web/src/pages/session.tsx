@@ -51,9 +51,13 @@ export function SessionPage() {
           agent={
             <AgentPicker
               harnesses={harnesses}
-              value={{ harness: session?.harness ?? "", model: session?.model ?? null }}
-              // Switches this session's model, live if its agent is running (D43). null = the default.
-              onChange={(choice) => choice.model !== session?.model && send({ type: "set_model", model: choice.model })}
+              value={{ harness: session?.harness ?? "", model: session?.model ?? null, effort: session?.effort ?? null }}
+              // Switches this session's model or effort, live if its agent is running (D43, D51).
+              // Model null = the default; effort has no "default" to go back to (D51).
+              onChange={(choice) => {
+                if (choice.model !== session?.model) send({ type: "set_model", model: choice.model });
+                else if (choice.effort && choice.effort !== session?.effort) send({ type: "set_effort", effort: choice.effort });
+              }}
               harnessLocked
               disabled={!connected || viewing !== sessionId}
             />

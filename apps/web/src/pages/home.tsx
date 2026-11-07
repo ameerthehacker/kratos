@@ -31,7 +31,14 @@ export function HomePage() {
 
   const start = (text: string) => {
     pending.current = { text, viewing, seen: log.length };
-    send({ type: "prompt", text, newSession: true, harness: choice?.harness, model: choice?.model ?? undefined });
+    send({
+      type: "prompt",
+      text,
+      newSession: true,
+      harness: choice?.harness,
+      model: choice?.model ?? undefined,
+      effort: choice?.effort ?? undefined,
+    });
   };
   // Sessions with at least one prompt, not marked done (owner, 3d2: done ones live in the sidebar).
   const recent = sessions.filter((s) => s.title !== null && !s.done);
@@ -52,12 +59,16 @@ export function HomePage() {
   );
 }
 
-/** The remembered choice, if the server still offers it; else the first harness on its default model. */
+/** The remembered choice, if the server still offers it; else the first harness on its default
+ * model. A remembered effort level counts only if the chosen model has it (D51). */
 function currentChoice(remembered: AgentChoice | undefined, harnesses: Harness[]): AgentChoice | undefined {
   const harness = harnesses.find((h) => h.id === remembered?.harness) ?? harnesses[0];
   if (!harness) return undefined;
   const model = remembered?.harness === harness.id ? remembered.model : null;
   // A remembered model the agent no longer lists falls back to the default (an empty list = can't tell).
   const known = model === null || harness.models.length === 0 || harness.models.some((m) => m.id === model);
-  return { harness: harness.id, model: known ? model : null };
+  const chosen = known ? model : null;
+  const levels = harness.models.find((m) => (chosen === null ? m.isDefault : m.id === chosen))?.efforts ?? [];
+  const effort = remembered?.harness === harness.id && remembered.effort && levels.includes(remembered.effort) ? remembered.effort : null;
+  return { harness: harness.id, model: chosen, effort };
 }

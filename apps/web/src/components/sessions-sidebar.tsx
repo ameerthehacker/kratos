@@ -41,10 +41,16 @@ export function SessionsSidebar() {
         <Plus className="size-4.5" />
         New session
       </Link>
-      {/* Two sections (owner, 3d2): what's being worked on, and what's done. */}
-      <nav className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-        <SessionSection label="Working" sessions={sessions.filter((s) => !s.done)} />
-        <SessionSection label="Done" sessions={sessions.filter((s) => s.done)} />
+      {/* Two sections (owner, 3d2): what's being worked on, and what's done. Done is pinned to
+          the bottom — it needs the least attention (owner, 3d8); each scrolls on its own, Done
+          taking at most half the height. */}
+      <nav className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SessionSection label="Working" sessions={sessions.filter((s) => !s.done)} />
+        </div>
+        <div className="max-h-1/2 shrink-0 overflow-y-auto">
+          <SessionSection label="Done" sessions={sessions.filter((s) => s.done)} />
+        </div>
       </nav>
     </aside>
   );

@@ -248,6 +248,9 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d8. Done at the bottom** (~10, owner, D49) — the sidebar's Done section is pinned
+            to the bottom of the island (it needs the least attention); Working scrolls above it,
+            Done scrolls on its own within half the height.
       - [x] **3d6. Working indicator** (~120, owner, D52) — while the agent works, a line under
             the conversation says what it is doing now, from its latest unfinished step
             ("Reading store.ts…", "Running the tests…"); between steps it cycles playful words

@@ -273,6 +273,9 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   reopens on click (owner asked to call it Reopen; it keeps
   "Done" at rest because it's the header's only sign of the state). Both labels share one grid
   cell, so the chip doesn't change width. Rows keep their hover icon.
+- Done at the bottom (3d8, owner: "it requires least attention"): the sidebar's Done section is
+  pinned to the bottom of the island instead of following Working. Each scrolls on its own;
+  Done is capped at half the height so a long done list can't push Working away.
 - Reverse: drop the column/message; the UI only filters on `done`.
 
 ### D48. Relative times: date-fns (step 3d1)
@@ -589,6 +592,9 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   broken `stop()` fails the test instead of hanging the whole run (found by mutation testing).
 - Alternatives: `node:test` (built in, but no TS without a loader); per-package turbo `test`
   tasks (unnecessary while there's one test package).
+- Root `vitest.config.ts` (owner): Vitest's default excludes plus `.claude/**`. Agent sessions keep
+  git worktrees in `.claude/worktrees/` (whole repo copies on other branches); without this,
+  `pnpm test` also ran their tests, which failed there.
 
 ### D26. `JsonLinesProcess`: one class owns child-process lifecycle, built on execa (step 2d, owner)
 - Correction (T1): the "EPIPE crashes Kratos" risk below did **not** reproduce on Node 22/macOS —

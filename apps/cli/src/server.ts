@@ -50,6 +50,21 @@ export async function startServer(options: {
     return reply.type("image/png").header("cache-control", "max-age=86400").send(createReadStream(png));
   });
 
+  // Files sent with prompts (D55), for thumbnails and previews: by id, only this project's (the hub
+  // checks). Never run in the page: text always as plain text, no sniffing, no scripts — images
+  // are only png/jpeg/gif/webp (no SVG), and PDFs open in the browser's viewer.
+  app.get<{ Params: { id: string } }>("/attachments/:id", async (request, reply) => {
+    const file = hub.readAttachment(request.params.id);
+    if (!file) return reply.code(404).send("Not found");
+    return reply
+      .type(file.kind === "text" ? "text/plain; charset=utf-8" : file.mediaType)
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'")
+      .header("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`)
+      .header("cache-control", "private, max-age=31536000, immutable") // ids never change content
+      .send(Buffer.from(file.data));
+  });
+
   // App routes like /s/<id> (React Router) aren't files: answer them with the app itself, so deep
   // links and refreshes work. Real missing files (with an extension) still 404.
   app.setNotFoundHandler((request, reply) => {

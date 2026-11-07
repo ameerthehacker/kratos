@@ -156,6 +156,35 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D55. File attachments: inline with the prompt, stored by id, checked against the harness (step 3s, owner)
+- Owner: attach files to a prompt; backend first (the design has no attachments yet).
+- Found on the real CLI (2.1.308, tiny Haiku turns): the stream-json user message's `content` can
+  be a list of blocks — `image` (base64), `document` with a base64 PDF, `document` with
+  `source: {type: "text"}` and a `title` — and the agent read all three correctly. Nothing has
+  to be written into the project, and Claude keeps them in its own transcript for later turns.
+- Shape: each adapter declares an `AttachmentPolicy` (kinds image / pdf / text with media types
+  and max bytes; max count and total), sent to tabs in `Harness.attachments`; core's
+  `classifyAttachment` / `checkAttachmentSet` decide — pure, so the UI can check before sending.
+  Text is judged by content (UTF-8, no NUL), since browsers often don't know a `.ts` file's type;
+  anything else that isn't an accepted image/PDF type is refused (an SVG is text, never an image).
+  `AgentSession.send(prompt, attachments)` takes agent-neutral `{name, kind, mediaType, data}`;
+  the Claude adapter puts the files' blocks first, then the prompt text.
+- Claude's limits: images png/jpeg/gif/webp ≤ 5 MB and PDFs ≤ 30 MB (the Claude API's), text
+  ≤ 1 MB, ≤ 10 files and 30 MB per prompt (under the API's 32 MB request cap).
+- Transport: base64 inline in the `prompt` WebSocket message (`ws` accepts up to 100 MiB).
+  Alternative: upload each file over HTTP first (`@fastify/multipart`) and send ids — progress
+  bars and early errors, but half-uploaded leftovers to clean up and a second place to check.
+  Inline keeps one check, before anything starts; a refused prompt isn't sent and the tab is
+  told why. Revisit if files get big or uploads need progress.
+- Storage: bytes in a file named by Kratos's own random UUID in `attachments/` next to the
+  database (`.kratos/attachments/` for `pnpm dev`, git-ignored; ~/.kratos/attachments
+  otherwise); an `attachments` table (migration 0006) knows name, kind, type, size, session. The
+  session log's `user_prompt` carries only those refs, never bytes.
+- Serving: `GET /attachments/:id` — looked up by id, only this project's sessions, ids checked as
+  UUIDs before any disk access (no path from the browser). Never run in the page: text kinds are
+  served as `text/plain`, with `nosniff` and a `default-src 'none'` CSP.
+- Reverse: additive — the table and folder can stay; drop `attachments` from the prompt.
+
 ### D54. Agent questions: their own callback and messages, answers checked by the server (step 3r, owner)
 - Owner: support the agent asking questions (Claude's AskUserQuestion), per the design's question
   card ("Proposal · question widget"); backend first.

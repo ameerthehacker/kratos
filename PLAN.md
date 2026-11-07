@@ -278,6 +278,37 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             radio/checkbox rows with Recommended, "Other" field, keys 1–4 / ↵ / Esc, Back / Next /
             Send answers, Skip), the step "Asking 2 questions" → "Asked …" with answer chips,
             "Needs your answer" in sidebar and header.
+    - [ ] **3s. File attachments** (owner, D55) — attach images, PDFs and text/code files to a
+          prompt. Found on the real CLI (2.1.308, tiny Haiku turns): the stream-json user message
+          takes a list of content blocks — `image` (base64), `document` with a base64 PDF, and
+          `document` with `source: {type: "text"}` + `title` for a text file — and the agent read
+          all three correctly (colour, a word in a PDF, a number in notes.md). Nothing needs to be
+          written into the project; Claude keeps them in its own transcript for later turns.
+      - [x] **3s1. Backend** (~250 incl. tests) — done: end to end over WebSocket with real
+            `claude` (Haiku): a zip refused before anything started; a PNG, a PDF and an untyped
+            notes.md stored by id next to the DB and read by the agent ("Red, PINEAPPLE, 4711");
+            all three served back from `/attachments/<id>` (the text as text/plain).
+            - core: each harness says what it accepts (`Harness.attachments`: kinds image / pdf /
+              text with media types and max bytes, plus a max count); `AgentSession.send(prompt,
+              attachments?)` with agent-neutral `{name, kind, mediaType, data}`.
+            - Claude adapter: maps them to the blocks above. Limits from the Claude API: images
+              png/jpeg/gif/webp ≤ 5 MB, PDF ≤ 30 MB; text = any UTF-8 file ≤ 1 MB (checked by
+              content: browsers often don't know a `.ts` file's type); ≤ 10 files, ≤ 30 MB total.
+            - protocol: `prompt.attachments?: [{name, mediaType, data (base64)}]` — sent inline over
+              the WebSocket with the prompt, not uploaded separately (no half-uploaded leftovers,
+              one place to check; fine at these sizes locally); `user_prompt` in the log gains
+              `attachments: [{id, name, kind, mediaType, size}]` — metadata only.
+            - store: `attachments` table (migration 0006); the bytes go to a file named by a random
+              id in an `attachments/` folder next to the database (`.kratos/` is git-ignored).
+              `GET /attachments/:id` serves one for thumbnails — looked up by id, only this
+              project's, never a path from the browser.
+            - server checks count, kind, size (and that "text" really is text) before anything
+              starts; a refused prompt isn't sent, and the tab is told why.
+            - Tests: fake claude reports the blocks it got; adapter, hub, store, server (serving
+              and refusing ids) tests.
+      - [ ] **3s2. UI** — needs a design first: the canvas has nothing on attachments yet (attach
+            button / drag and drop / paste, chips or thumbnails in the composer, the prompt bubble,
+            errors).
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

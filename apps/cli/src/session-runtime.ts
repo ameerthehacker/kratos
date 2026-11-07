@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   checkQuestionReply,
   type AgentAdapter,
+  type AgentAttachment,
+  type AttachmentRef,
   type AgentSession,
   type PermissionDecision,
   type PermissionRequest,
@@ -10,6 +12,7 @@ import {
   type ServerMessage,
   type SessionSummary,
 } from "@kratos/core";
+import type { AttachmentFiles } from "./attachment-files.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./store/store.js";
 
@@ -46,6 +49,7 @@ export class SessionRuntime {
       adapter: AgentAdapter;
       cwd: string;
       store: SessionStore;
+      files: AttachmentFiles;
       log: Logger;
       onMessage: (message: ServerMessage) => void;
       onChange: () => void;
@@ -92,12 +96,22 @@ export class SessionRuntime {
     return this.mode;
   }
 
-  prompt(text: string): void {
+  /** Send a prompt, with files already checked by the hub (D55): their bytes are kept by id, the
+   * log gets only what they are. */
+  prompt(text: string, files: readonly AgentAttachment[] = []): void {
     this.deps.store.setTitle(this.id, text);
-    this.publish({ type: "user_prompt", text });
+    const refs: AttachmentRef[] = files.map((file) => {
+      const id = randomUUID();
+      this.deps.files.write(id, file.data);
+      const { name, kind, mediaType } = file;
+      this.deps.store.addAttachment({ id, sessionId: this.id, name, kind, mediaType, size: file.data.byteLength });
+      return { id, name, kind, mediaType, size: file.data.byteLength };
+    });
+    if (refs.length > 0) this.logger.info({ count: refs.length, bytes: refs.reduce((n, r) => n + r.size, 0) }, "attachments stored");
+    this.publish({ type: "user_prompt", text, ...(refs.length > 0 ? { attachments: refs } : {}) });
     this.turnOpen = true;
     // Start the agent on the first prompt, and again (resuming) after it has ended.
-    (this.session ??= this.start()).send(text);
+    (this.session ??= this.start()).send(text, files);
     this.deps.onChange();
   }
 

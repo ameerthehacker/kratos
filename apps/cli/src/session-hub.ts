@@ -1,4 +1,14 @@
-import type { AgentAdapter, ClientMessage, Harness, ServerMessage } from "@kratos/core";
+import {
+  checkAttachmentSet,
+  classifyAttachment,
+  type AgentAdapter,
+  type AgentAttachment,
+  type AttachmentUpload,
+  type ClientMessage,
+  type Harness,
+  type ServerMessage,
+} from "@kratos/core";
+import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { SessionStore } from "./store/store.js";
@@ -34,6 +44,8 @@ export class SessionHub {
     private readonly store: SessionStore,
     /** Kratos's logger (D44); default: silent. */
     log: Logger = silentLogger,
+    /** Where attachment bytes go (D55); default: in memory. */
+    private readonly files: AttachmentFiles = memoryFiles(),
   ) {
     this.rootLog = log;
     this.log = log.child({ component: "hub" });
@@ -66,6 +78,9 @@ export class SessionHub {
         }
         // Checked before anything starts: a refused mode must not start a session in another one.
         if (message.permissionMode && !this.modeAllowed(send, message.permissionMode, message.confirmDangerous)) return;
+        // Same for files (D55): a refused one means nothing is sent.
+        const files = this.checkAttachments(send, message.attachments ?? []);
+        if (!files) return;
         // From Home: new work gets a new session, unless the viewed one is still empty anyway.
         // Whatever this tab was viewing keeps running (D41).
         let target = viewing;
@@ -80,7 +95,7 @@ export class SessionHub {
         if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
         // New work on a done session means it isn't done (owner, 3d2).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
-        target.prompt(message.text);
+        target.prompt(message.text, files);
         return;
       }
       case "set_model":
@@ -128,6 +143,36 @@ export class SessionHub {
     }
   }
 
+  /**
+   * The files sent with a prompt, decoded and checked against what the harness accepts (D55): each
+   * one's kind and size, then count and total. Null (after telling the tab why) if any is refused.
+   */
+  private checkAttachments(send: Send, uploads: readonly AttachmentUpload[]): AgentAttachment[] | null {
+    const policy = this.adapter.attachments;
+    const checked = uploads.map((upload) => {
+      const file = { name: upload.name, mediaType: upload.mediaType, data: new Uint8Array(Buffer.from(upload.data, "base64")) };
+      return { file, result: classifyAttachment(policy, file) };
+    });
+    const problem =
+      checkAttachmentSet(policy, checked.map(({ file }) => file.data.byteLength)) ??
+      checked.flatMap(({ result }) => ("error" in result ? [result.error] : []))[0];
+    if (problem) {
+      send({ type: "error", message: `Couldn't send your prompt: ${problem}` });
+      this.log.info({ problem }, "attachments refused");
+      return null;
+    }
+    return checked.flatMap(({ file, result }) => ("error" in result ? [] : [{ ...file, kind: result.kind, mediaType: result.mediaType }]));
+  }
+
+  /** An attachment of one of this project's sessions, for `/attachments/:id` (D55); undefined
+   * for any other id. */
+  readAttachment(id: string): { name: string; kind: AgentAttachment["kind"]; mediaType: string; data: Uint8Array } | undefined {
+    const stored = this.store.getAttachment(id);
+    if (!stored || this.store.get(stored.sessionId)?.projectDir !== this.cwd) return undefined;
+    const data = this.files.read(id);
+    return data && { name: stored.name, kind: stored.kind, mediaType: stored.mediaType, data };
+  }
+
   /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,
    * which only the consent dialog sends (D53). Tells the tab why when not. */
   private modeAllowed(send: Send, id: string, confirmDangerous = false): boolean {
@@ -160,6 +205,7 @@ export class SessionHub {
         adapter: this.adapter,
         cwd: this.cwd,
         store: this.store,
+        files: this.files,
         log: this.rootLog,
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
@@ -204,7 +250,7 @@ export class SessionHub {
   private loadHarnesses(): void {
     const publish = (models: Harness["models"]) => {
       if (models.length > 0) this.log.info({ harness: this.adapter.id, count: models.length }, "models loaded");
-      this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models, permissionModes: [...this.adapter.permissionModes] }];
+      this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models, permissionModes: [...this.adapter.permissionModes], attachments: this.adapter.attachments }];
       this.broadcast({ type: "harnesses", list: this.harnesses });
     };
     this.adapter.listModels().then(publish, (err) => {

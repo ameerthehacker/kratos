@@ -385,3 +385,36 @@ describe("Claude Code adapter: questions (D54)", () => {
     expect(response).toMatchObject({ behavior: "deny", message: expect.stringContaining("couldn't show these questions") });
   });
 });
+
+describe("Claude Code adapter: attachments (D55)", () => {
+  it("says what it accepts: images, PDFs and text, with the API's limits", () => {
+    const { attachments } = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE });
+    expect(attachments.kinds.map((k) => k.kind)).toEqual(["image", "pdf", "text"]);
+    expect(attachments.maxCount).toBe(10);
+  });
+
+  it("sends files as content blocks before the prompt: images and PDFs base64, text as a titled document", async () => {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+    });
+    const bytes = (text: string) => new TextEncoder().encode(text);
+    session.send("blocks", [
+      { name: "red.png", kind: "image", mediaType: "image/png", data: new Uint8Array([137, 80, 78, 71]) },
+      { name: "spec.pdf", kind: "pdf", mediaType: "application/pdf", data: bytes("%PDF-1.4") },
+      { name: "notes.md", kind: "text", mediaType: "text/plain", data: bytes("# Notes\n4711") },
+    ]);
+    let blocks: unknown;
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") blocks = JSON.parse(event.output);
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    expect(blocks).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", length: 8 } }, // 4 bytes → 8 base64 chars
+      { type: "document", title: "spec.pdf", source: { type: "base64", media_type: "application/pdf", length: 12 } },
+      { type: "document", title: "notes.md", source: { type: "text", media_type: "text/plain", length: 12, data: "# Notes\n4711" } },
+      { type: "text" },
+    ]);
+  });
+});

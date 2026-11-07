@@ -160,4 +160,43 @@ describe("kratos server", () => {
       await server.close();
     }
   });
+
+  it("serves a prompt's attachments by id, safely, and only known ids (D55)", async () => {
+    const cwd = process.cwd();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code" });
+    const tab = await openTab(server.port);
+    try {
+      const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+      tab.send({
+        type: "prompt",
+        text: "blocks",
+        attachments: [
+          { name: "red.png", mediaType: "image/png", data: Buffer.from(png).toString("base64") },
+          { name: "<b>x</b>.html", mediaType: "text/html", data: Buffer.from("<script>alert(1)</script>").toString("base64") },
+        ],
+      });
+      const prompt = await tab.waitFor(is("user_prompt"));
+      await tab.waitFor(turnEnd);
+      const [image, page] = prompt.attachments!;
+      const url = (id: string) => `http://127.0.0.1:${server.port}/attachments/${id}`;
+
+      const got = await fetch(url(image!.id));
+      expect(got.status).toBe(200);
+      expect(got.headers.get("content-type")).toBe("image/png");
+      expect(new Uint8Array(await got.arrayBuffer())).toEqual(png);
+
+      // An HTML file is just text to Kratos: served as plain text, never run as a page.
+      const html = await fetch(url(page!.id));
+      expect(html.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(html.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(html.headers.get("content-security-policy")).toContain("default-src 'none'");
+
+      expect((await fetch(url("6f1c2b9e-0d4a-4c1e-9a77-3b1f1f2a9c10"))).status).toBe(404);
+      expect((await fetch(url("..%2F..%2Fkratos.db"))).status).toBe(404);
+    } finally {
+      tab.close();
+      await server.close();
+    }
+  });
 });

@@ -3,6 +3,8 @@ import which from "which";
 import {
   AgentEvent,
   type AgentAdapter,
+  type AgentAttachment,
+  type AttachmentPolicy,
   type AgentModel,
   type AgentPermissionMode,
   type AgentSession,
@@ -31,6 +33,7 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
     displayName: "Claude Code",
     listModels,
     permissionModes: PERMISSION_MODES,
+    attachments: ATTACHMENTS,
     startSession: (options) => startSession(claudePath, options, listModels),
   };
 }
@@ -84,6 +87,28 @@ const PERMISSION_MODES: AgentPermissionMode[] = [
   },
 ];
 const CLAUDE_DEFAULT_MODE = "default";
+
+/** What Claude Code takes with a prompt (D55): the Claude API's limits for images and PDFs; text
+ * files up to 1 MB (judged by content); the API's 32 MB request cap leaves room for 30 MB. */
+const MB = 1024 * 1024;
+const ATTACHMENTS: AttachmentPolicy = {
+  kinds: [
+    { kind: "image", mediaTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"], maxBytes: 5 * MB },
+    { kind: "pdf", mediaTypes: ["application/pdf"], maxBytes: 30 * MB },
+    { kind: "text", mediaTypes: [], maxBytes: 1 * MB },
+  ],
+  maxCount: 10,
+  maxTotalBytes: 30 * MB,
+};
+
+/** A file as a content block of the stream-json user message (verified on the real CLI, D55):
+ * images and PDFs as base64, text as a text document titled with its file name. */
+function contentBlock(file: AgentAttachment): object {
+  const base64 = Buffer.from(file.data).toString("base64");
+  if (file.kind === "image") return { type: "image", source: { type: "base64", media_type: file.mediaType, data: base64 } };
+  if (file.kind === "pdf") return { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 }, title: file.name };
+  return { type: "document", source: { type: "text", media_type: "text/plain", data: Buffer.from(file.data).toString("utf8") }, title: file.name };
+}
 
 /** Claude's question tool (D54), its "this one's my pick" label suffix, and what a skip tells it. */
 const ASK_TOOL = "AskUserQuestion";
@@ -242,8 +267,10 @@ function startSession(
 
   return {
     events: events(),
-    send(prompt) {
-      proc.send({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+    send(prompt, attachments = []) {
+      // With files: the files first, then the prompt that's about them (D55).
+      const content = attachments.length > 0 ? [...attachments.map(contentBlock), { type: "text", text: prompt }] : prompt;
+      proc.send({ type: "user", message: { role: "user", content }, parent_tool_use_id: null });
     },
     async interrupt() {
       interrupted = true;

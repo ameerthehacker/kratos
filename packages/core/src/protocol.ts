@@ -3,6 +3,8 @@ import {
   AgentEvent,
   AgentModel,
   AgentPermissionMode,
+  AttachmentKind,
+  AttachmentPolicy,
   PermissionDecision,
   PermissionRequest,
   QuestionAnswer,
@@ -18,6 +20,15 @@ import {
  * where the agent works and which agent it is (D34).
  */
 
+/** A file a tab sends with a prompt (D55): base64 bytes, inline in the prompt message. */
+export const AttachmentUpload = z.object({ name: z.string().min(1).max(255), mediaType: z.string().max(255), data: z.string() });
+export type AttachmentUpload = z.infer<typeof AttachmentUpload>;
+
+/** A stored attachment, as the session log and the UI know it (D55): fetch it from
+ * `/attachments/<id>`. */
+export const AttachmentRef = z.object({ id: z.string(), name: z.string(), kind: AttachmentKind, mediaType: z.string(), size: z.number() });
+export type AttachmentRef = z.infer<typeof AttachmentRef>;
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
@@ -30,6 +41,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
     harness: z.string().optional(),
     model: z.string().optional(),
     effort: z.string().optional(),
+    /** Files with the prompt, sent inline (D55); checked by the server against the harness. */
+    attachments: z.array(AttachmentUpload).max(50).optional(),
     /** The mode to start in (D53); a `dangerous` one also needs `confirmDangerous: true`. */
     permissionMode: z.string().optional(),
     confirmDangerous: z.boolean().optional(),
@@ -102,6 +115,8 @@ export const Harness = z.object({
   models: z.array(AgentModel),
   /** Its permission modes (D53); empty = it has none. */
   permissionModes: z.array(AgentPermissionMode),
+  /** The files it accepts with a prompt (D55). */
+  attachments: AttachmentPolicy,
 });
 export type Harness = z.infer<typeof Harness>;
 
@@ -124,7 +139,7 @@ export const ServerMessage = z.discriminatedUnion("type", [
     editors: z.array(Editor),
   }),
   /** A prompt someone sent (so every tab shows the whole conversation). */
-  z.object({ type: z.literal("user_prompt"), text: z.string() }),
+  z.object({ type: z.literal("user_prompt"), text: z.string(), attachments: z.array(AttachmentRef).optional() }),
   z.object({ type: z.literal("agent_event"), event: AgentEvent }),
   /** The agent wants to use a tool; answer with `permission_decision` and this id. */
   z.object({ type: z.literal("permission_request"), id: z.string(), request: PermissionRequest }),

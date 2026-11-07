@@ -12,6 +12,7 @@ if (!REQUIRED.every((arg) => process.argv.includes(arg))) {
 
 const out = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 const waiting = new Map(); // request_id → resolve(response)
+let lastBlocks = []; // content blocks of the last prompt with files (D55)
 const cancelled = new Set();
 let responsesAfterCancel = 0;
 let onInterrupt = () => {};
@@ -127,6 +128,11 @@ const turns = {
     report(JSON.stringify(response.response), response.response?.behavior === "deny");
     finish();
   },
+  // Report the content blocks of the last prompt, minus the bytes (D55).
+  async blocks() {
+    report(JSON.stringify(lastBlocks.map((b) => ({ type: b.type, title: b.title, source: b.source && { type: b.source.type, media_type: b.source.media_type, length: b.source.data.length, data: b.source.type === "text" ? b.source.data : undefined } }))));
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));
@@ -138,7 +144,10 @@ for await (const line of createInterface({ input: process.stdin })) {
   const msg = JSON.parse(line);
   if (msg.type === "user") {
     out({ type: "system", subtype: "init", permissionMode: mode });
-    void turns[msg.message.content]?.();
+    // A prompt with files is a list of content blocks (D55): the turn is named by its text block.
+    const content = msg.message.content;
+    lastBlocks = Array.isArray(content) ? content : [];
+    void turns[Array.isArray(content) ? content.find((b) => b.type === "text")?.text : content]?.();
   }
   else if (msg.type === "control_request" && msg.request.subtype === "interrupt") onInterrupt();
   else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });

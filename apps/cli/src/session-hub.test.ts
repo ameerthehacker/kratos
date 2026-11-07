@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   AgentAdapter,
+  AgentAttachment,
   AgentEvent,
   AgentModel,
   AgentPermissionMode,
+  AttachmentPolicy,
   AgentSession,
   Harness,
   PermissionRequest,
@@ -22,14 +24,16 @@ const WRITE: PermissionRequest = { tool: "Write", input: { file_path: "a.txt" } 
 /** In-memory agent session the test drives by hand: emit events, raise asks, end it. */
 class FakeSession implements AgentSession {
   readonly prompts: string[] = [];
+  readonly files: Array<readonly AgentAttachment[]> = [];
   interrupts = 0;
   stopped = false;
   private stream!: ReadableStreamDefaultController<AgentEvent>;
   readonly events = new ReadableStream<AgentEvent>({ start: (c) => void (this.stream = c) });
 
   constructor(readonly options: Parameters<AgentAdapter["startSession"]>[0]) {}
-  send(prompt: string) {
+  send(prompt: string, attachments: readonly AgentAttachment[] = []) {
     this.prompts.push(prompt);
+    this.files.push(attachments);
   }
   async interrupt() {
     this.interrupts++;
@@ -82,6 +86,15 @@ const MODES: AgentPermissionMode[] = [
   { id: "bypassPermissions", label: "Bypass", shortLabel: "Bypass", kind: "bypass", description: "no checks", dangerous: true },
 ];
 
+const POLICY: AttachmentPolicy = {
+  kinds: [
+    { kind: "image", mediaTypes: ["image/png"], maxBytes: 100 },
+    { kind: "text", mediaTypes: [], maxBytes: 100 },
+  ],
+  maxCount: 2,
+  maxTotalBytes: 150,
+};
+
 const MODELS: AgentModel[] = [
   { id: "default", label: "Default", description: "recommended", group: "latest" },
   { id: "haiku", label: "Haiku", description: "fast", group: "latest" },
@@ -95,6 +108,7 @@ function setup() {
     displayName: "Fake",
     listModels: async () => MODELS,
     permissionModes: MODES,
+    attachments: POLICY,
     startSession: (options) => {
       const agent = new FakeSession(options);
       agents.push(agent);
@@ -136,10 +150,13 @@ function setup() {
   };
   /** Simulate a kratos restart: a new hub over the same database; old agent processes are gone. */
   const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store));
+  /** Another project's hub on the same database (its sessions aren't this project's). */
+  const otherProject = () => new SessionHub(adapter, "/projects/other", store);
   return {
     agents,
     tab,
     restart,
+    otherProject,
     get hub() {
       return hub;
     },
@@ -442,8 +459,8 @@ describe("SessionHub: harness & model (D43)", () => {
     const { tab } = setup();
     const early = tab(); // connected before the models are known
     await tick();
-    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
-    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
+    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES, attachments: POLICY }]);
+    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES, attachments: POLICY }]);
   });
 
   it("starts a session with the model picked on Home and shows it in the list", () => {
@@ -721,5 +738,57 @@ describe("SessionHub: agent questions (D54)", () => {
     const late = tab();
     expect(late.seen.filter((m) => m.type === "question_resolved").at(-1)).toEqual({ type: "question_resolved", id: openId, outcome: "cancelled" });
     expect(status(late)).toBe("idle");
+  });
+});
+
+describe("SessionHub: attachments (D55)", () => {
+  const upload = (name: string, mediaType: string, bytes: Uint8Array | string) => ({
+    name,
+    mediaType,
+    data: Buffer.from(typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes).toString("base64"),
+  });
+
+  it("stores the files, logs only what they are, and passes them to the agent", () => {
+    const { agents, tab, hub, otherProject } = setup();
+    const a = tab();
+    a.receive({
+      type: "prompt",
+      text: "look",
+      newSession: true,
+      attachments: [upload("red.png", "image/png", new Uint8Array([137, 80, 78, 71])), upload("notes.ts", "", "export {}")],
+    });
+    const sent = a.seen.find((m) => m.type === "user_prompt");
+    expect(sent).toMatchObject({
+      type: "user_prompt",
+      text: "look",
+      attachments: [
+        { name: "red.png", kind: "image", mediaType: "image/png", size: 4 },
+        { name: "notes.ts", kind: "text", mediaType: "text/plain", size: 9 },
+      ],
+    });
+    expect(agents[0]!.files[0]!.map((f) => [f.name, f.kind, f.data.byteLength])).toEqual([
+      ["red.png", "image", 4],
+      ["notes.ts", "text", 9],
+    ]);
+    const refs = sent?.type === "user_prompt" ? sent.attachments! : [];
+    expect(Buffer.from(hub.readAttachment(refs[1]!.id)!.data).toString()).toBe("export {}");
+    expect(otherProject().readAttachment(refs[1]!.id)).toBeUndefined(); // only this project's
+    expect(hub.readAttachment("not-an-id")).toBeUndefined();
+  });
+
+  it("refuses the whole prompt — nothing starts — if any file doesn't fit", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const tries: Array<[ReturnType<typeof upload>[], string]> = [
+      [[upload("a.zip", "application/zip", new Uint8Array([80, 75, 0, 3]))], "a.zip: application/zip file can't be attached"],
+      [[upload("big.png", "image/png", new Uint8Array(101))], "big.png is too big"],
+      [[upload("1.txt", "", "a"), upload("2.txt", "", "b"), upload("3.txt", "", "c")], "Up to 2 files per prompt (got 3)"],
+    ];
+    for (const [attachments, problem] of tries) {
+      a.receive({ type: "prompt", text: "look", newSession: true, attachments });
+      expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining(`Couldn't send your prompt: ${problem}`) });
+    }
+    expect(agents).toHaveLength(0);
+    expect(a.seen.some((m) => m.type === "user_prompt")).toBe(false);
   });
 });

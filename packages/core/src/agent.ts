@@ -160,6 +160,62 @@ export function checkQuestionReply(request: QuestionRequest, reply: QuestionRepl
   return null;
 }
 
+// ── Attachments: files sent with a prompt (D55) ─────────────────────────────────────────
+
+export const AttachmentKind = z.enum(["image", "pdf", "text"]);
+export type AttachmentKind = z.infer<typeof AttachmentKind>;
+
+/** What a harness accepts with a prompt (D55): per kind, its media types (none listed = any type,
+ * for text: judged by content) and size; and how many files / bytes in all. No kinds = none. */
+export const AttachmentPolicy = z.object({
+  kinds: z.array(z.object({ kind: AttachmentKind, mediaTypes: z.array(z.string()), maxBytes: z.number() })),
+  maxCount: z.number(),
+  maxTotalBytes: z.number(),
+});
+export type AttachmentPolicy = z.infer<typeof AttachmentPolicy>;
+
+/** A file going to the agent with a prompt, in agent-neutral terms (the adapter maps it). */
+export type AgentAttachment = { name: string; kind: AttachmentKind; mediaType: string; data: Uint8Array };
+
+/**
+ * Which kind a file is under a policy, or why it can't be attached. Images and PDFs by media
+ * type; anything else counts as text if its bytes are UTF-8 without NUL (browsers often don't know
+ * a `.ts` file's type, so the content decides). Pure: the server checks with it, the UI can too.
+ */
+export function classifyAttachment(
+  policy: AttachmentPolicy,
+  file: { name: string; mediaType: string; data: Uint8Array },
+): { kind: AttachmentKind; mediaType: string } | { error: string } {
+  const typed = policy.kinds.find((k) => k.mediaTypes.includes(file.mediaType));
+  const text = policy.kinds.find((k) => k.kind === "text");
+  const rule = typed ?? (text && isUtf8Text(file.data) ? text : undefined);
+  if (!rule) return { error: `${file.name}: ${file.mediaType || "this kind of"} file can't be attached` };
+  if (file.data.byteLength > rule.maxBytes) {
+    return { error: `${file.name} is too big (${megabytes(file.data.byteLength)}; ${rule.kind} files up to ${megabytes(rule.maxBytes)})` };
+  }
+  return { kind: rule.kind, mediaType: rule.kind === "text" ? "text/plain" : file.mediaType };
+}
+
+/** Why a set of files can't go together under a policy (count, total size), or null. */
+export function checkAttachmentSet(policy: AttachmentPolicy, sizes: readonly number[]): string | null {
+  if (sizes.length > policy.maxCount) return `Up to ${policy.maxCount} files per prompt (got ${sizes.length})`;
+  const total = sizes.reduce((sum, n) => sum + n, 0);
+  if (total > policy.maxTotalBytes) return `Up to ${megabytes(policy.maxTotalBytes)} per prompt (got ${megabytes(total)})`;
+  return null;
+}
+
+function isUtf8Text(data: Uint8Array): boolean {
+  if (data.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`;
+
 // ── Adapter + session: behaviour, so plain TS interfaces ────────────────────────────────
 
 /**
@@ -211,6 +267,8 @@ export interface AgentAdapter {
   listModels(): Promise<AgentModel[]>;
   /** The permission modes this agent has (D53); empty = it has no modes (always asks Kratos). */
   readonly permissionModes: readonly AgentPermissionMode[];
+  /** The files it accepts with a prompt (D55); no kinds = none. */
+  readonly attachments: AttachmentPolicy;
   /** Without `conversation`, a fresh, unnamed conversation; without `model` or `effort`, the
    * agent's default. An `effort` the model lacks is the agent's to handle (Claude clamps it; D51). */
   startSession(options: {
@@ -230,8 +288,9 @@ export interface AgentAdapter {
 export interface AgentSession {
   /** Every event for the whole conversation. Ends when the session stops. Iterate it once. */
   readonly events: AsyncIterable<AgentEvent>;
-  /** Send a prompt. Events arrive on `events`; the turn ends with a `turn_end` event. */
-  send(prompt: string): void;
+  /** Send a prompt, with files if any (already checked against the adapter's policy, D55).
+   * Events arrive on `events`; the turn ends with a `turn_end` event. */
+  send(prompt: string, attachments?: readonly AgentAttachment[]): void;
   /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
   interrupt(): Promise<void>;
   /** Switch the running conversation to another model (from listModels); `null` = back to the

@@ -156,6 +156,37 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D56. Steering prompts: the agent holds them, Kratos follows each by id (step 3t, owner)
+- Owner: send prompts while the agent works and see clearly what happens to each; design
+  "Proposal · steering prompts (queue, send now, read)". Backend first.
+- Found on the real CLI (2.1.308, tiny Haiku turns): a user message sent mid-turn is held and
+  taken at the next step boundary *in the same turn* (the reply honoured it); sent during the
+  final reply, it runs as the next turn. A message with a `uuid` gets `command_lifecycle
+  {command_uuid, state}` lines — queued → started → completed | cancelled — with no flag needed
+  (`--replay-user-messages` echoes too, but adds nothing). `cancel_async_message {message_uuid}`
+  → `{cancelled}`; `interrupt {cancel_queued: true}` stops and cancels all waiting; a plain
+  interrupt lets waiting prompts run right after; `interrupt {send_now: true, message_uuid}`
+  stops the step and delivers *all* waiting prompts (3t2). The CLI also reports its own messages
+  (e.g. "[Request interrupted…]") — the adapter only follows ids it sent.
+- Risk: these requests are undocumented — found in the CLI's own strings (its SDK uses them, and
+  init advertises `interrupt_cancel_queued_v1` / `interrupt_send_now_v1`). If they change, the
+  fake claude's tests won't notice; the real-CLI check at each step will.
+- Shape: the agent owns the queue (it decides where a prompt lands); Kratos sends a prompt at once
+  and follows it. Core: `send(prompt, files, {id})`, AgentEvent `prompt_state`, `cancelPrompt`,
+  `interrupt({cancelQueued})`. Alternative: Kratos holds the queue and sends at turn end — but
+  then it can't steer mid-turn, which is the point.
+- Log: `prompt_queued {id, text, attachments?}` → `prompt_read {id, how: step | next_turn,
+  after?}` (after = the tool call that had just finished) or `prompt_removed {id, reason:
+  removed | stopped}`; `prompt_state` events themselves aren't logged. A prompt read after the
+  turn ended reopens the turn (the agent started it by itself). Replay: the timeline puts a read
+  prompt in the chat where it was read; queued ones stay out of it (the queue card is 3t3).
+- Stop (owner): with a queue, Stop stops everything (`cancel_queued`), and once every withdrawn
+  prompt is settled the tab that pressed Stop gets their text (`prompts_returned`, not logged)
+  for its composer. Files of returned prompts aren't returned. An agent that exits, a shutdown or
+  a restart drops a leftover queue (`prompt_removed stopped`).
+- `SessionSummary.queued` for "Working · 2 queued".
+- Reverse: additive — without ids nothing is followed, and prompts mid-turn behave as before.
+
 ### D55. File attachments: inline with the prompt, stored by id, checked against the harness (step 3s, owner)
 - Owner: attach files to a prompt; backend first (the design has no attachments yet).
 - Found on the real CLI (2.1.308, tiny Haiku turns): the stream-json user message's `content` can

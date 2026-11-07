@@ -318,6 +318,47 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             PINEAPPLE, 4711"; a zip refused; paste; 12 files → 10 + note; lightbox). Not built:
             the red drag state for unsupported files (browsers often don't say the type until
             the drop).
+    - [ ] **3t. Steering prompts** (owner, D56) — send more prompts while the agent works and see
+          what happens to each (design "Proposal · steering prompts (queue, send now, read)").
+          Found on the real CLI (2.1.308, tiny Haiku turns): a user message sent mid-turn is held
+          and taken at the next step boundary *in the same turn* (the agent's reply honoured it);
+          sent during the final reply, it runs as the next turn. Every message we tag with a
+          `uuid` gets `command_lifecycle {command_uuid, state}` lines: queued → started →
+          completed | cancelled (no flag needed). `cancel_async_message {message_uuid}` withdraws a
+          waiting one; `interrupt {cancel_queued: true}` stops and cancels all waiting;
+          `interrupt {send_now: true, message_uuid}` stops the step and delivers *all* waiting
+          ones at once. A plain interrupt lets waiting ones run right after. These requests are
+          undocumented (found in the CLI's strings; its own SDK uses them).
+          Owner: Send now sends only the chosen prompt (others stay queued); Stop stops
+          everything and puts the queued prompts' text back in the composer.
+      - [x] **3t1. Backend: queue, statuses, remove, Stop** (~250 incl. tests) — done: end to end
+            over WebSocket with real `claude` (Haiku): a prompt sent during a slow command was
+            queued, read at the step boundary (after the Bash call) and honoured in the same
+            reply; then two queued, one removed (`removed`), Stop dropped the other (`stopped`)
+            and gave its text back to the tab; "queued" counts 1 → 2 → 1 → 0.
+            - core: `send(prompt, attachments, {id})` tags the message; AgentEvent
+              `prompt_state {id, state: queued | started | completed | cancelled}` (only our ids;
+              the CLI's own "[Request interrupted…]" echo is ignored); `cancelPrompt(id)`;
+              `interrupt({cancelQueued})` → the cancelled ids.
+            - runtime: a prompt while a turn is open is *queued*: `prompt_queued {id, text,
+              attachments?}` in the log, sent to the agent at once (it holds it). On `started`:
+              `prompt_read {id, how: "step" | "next_turn", after?}` — mid-turn = read after the
+              last finished step; else it starts a new turn (the runtime then counts the turn as
+              open). `remove_queued {id}` → `cancelPrompt` → `prompt_removed {id}`. Stop with a
+              queue → `interrupt({cancelQueued: true})`, `prompt_removed` for each, and the
+              stopping tab gets their text back (`prompts_returned {text}`, not logged).
+            - protocol: `SessionSummary.queued` (count, for "Working · 2 queued").
+            - Tests: fake claude learns lifecycle lines, a held message taken at its next step
+              (or next turn), `cancel_async_message`, interrupt with `cancel_queued`; adapter +
+              hub tests incl. replay of a queue and two tabs.
+      - [ ] **3t2. Backend: Send now** (~100) — `send_now {id}`: withdraw the *other* waiting
+            prompts (`cancel_async_message`), `interrupt {send_now, message_uuid}`, then queue the
+            others again (new agent ids, same Kratos ids — they stay in the card);
+            `prompt_read {how: "now", stopped?}` with the step it cut short.
+      - [ ] **3t3. UI** — the design: Enter queues while the agent works (send button → Queue),
+            ⌘↵ sends now; the queue card above the composer (Send now, Edit → back to the box,
+            Remove); prompts move into the chat when read, with "Read after …" / "Sent now ·
+            stopped …" / "Sent when the last turn ended"; "Working · N queued" in the sidebar.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

@@ -418,3 +418,86 @@ describe("Claude Code adapter: attachments (D55)", () => {
     ]);
   });
 });
+
+describe("Claude Code adapter: steering (D56)", () => {
+  /** A running session; `log` lists what Kratos saw, compactly. */
+  function running() {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+    });
+    const log: string[] = [];
+    const pump = (async () => {
+      for await (const e of session.events) {
+        if (e.kind === "prompt_state") log.push(`${e.id}:${e.state}`);
+        if (e.kind === "text") log.push(`text:${e.text}`);
+        if (e.kind === "turn_end") log.push(`end:${e.reason}`);
+      }
+    })();
+    const ends = () => log.filter((l) => l.startsWith("end:")).length;
+    return { session, log, waitForEnds: (n: number) => vi.waitFor(() => expect(ends()).toBe(n)), done: async () => (await session.stop(), await pump) };
+  }
+
+  it("holds a prompt sent mid-turn and reads it at the next step, in the same turn", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("steps", [], { id: "A" });
+      session.send("also B", [], { id: "B" });
+      await waitForEnds(1);
+      expect(log).toEqual(["A:queued", "A:started", "B:queued", "B:started", "text:read: also B", "end:completed", "A:completed", "B:completed"]);
+    } finally {
+      await done();
+    }
+  });
+
+  it("runs a prompt held through a reply with no step left as the next turn", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("slow", [], { id: "A" });
+      session.send("model", [], { id: "B" });
+      await waitForEnds(2);
+      expect(log.indexOf("B:started")).toBeGreaterThan(log.indexOf("end:completed")); // after A's turn
+    } finally {
+      await done();
+    }
+  });
+
+  it("withdraws one held prompt, or all of them with Stop", async () => {
+    const one = running();
+    try {
+      one.session.send("steps", [], { id: "A" });
+      one.session.send("also B", [], { id: "B" });
+      expect(await one.session.cancelPrompt("B")).toBe(true);
+      expect(await one.session.cancelPrompt("B")).toBe(false); // already gone
+      await one.waitForEnds(1);
+      expect(one.log).toContain("B:cancelled");
+      expect(one.log).toContain("text:read: nothing");
+    } finally {
+      await one.done();
+    }
+    const all = running();
+    try {
+      all.session.send("steps", [], { id: "A" });
+      all.session.send("also B", [], { id: "B" });
+      all.session.send("also C", [], { id: "C" });
+      await vi.waitFor(() => expect(all.log).toContain("C:queued"));
+      await all.session.interrupt({ cancelQueued: true });
+      await all.waitForEnds(1);
+      expect(all.log).toEqual(expect.arrayContaining(["B:cancelled", "C:cancelled", "end:interrupted"]));
+      expect(all.log.some((l) => l.endsWith(":started") && !l.startsWith("A"))).toBe(false);
+    } finally {
+      await all.done();
+    }
+  });
+
+  it("ignores lifecycle lines for prompts it didn't tag", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("model"); // no id
+      await waitForEnds(1);
+      expect(log.filter((l) => !l.startsWith("end:") && !l.startsWith("text:"))).toEqual([]);
+    } finally {
+      await done();
+    }
+  });
+});

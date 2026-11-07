@@ -132,3 +132,23 @@ describe("buildTimeline: agent questions (D54, 3r2)", () => {
     expect(step(cancelled).chips).toEqual([{ text: "Not answered", tone: "note" }]);
   });
 });
+
+describe("buildTimeline: steering prompts (D56)", () => {
+  it("a queued prompt joins the chat where the agent read it; a removed one never does", () => {
+    const items = buildTimeline([
+      { type: "user_prompt", text: "first" },
+      { type: "prompt_queued", id: "q1", text: "also this" },
+      { type: "prompt_queued", id: "q2", text: "never mind" },
+      agent({ kind: "text", text: "working on it" }),
+      { type: "prompt_read", id: "q1", how: "step" },
+      { type: "prompt_removed", id: "q2", reason: "removed" },
+      agent({ kind: "text", text: "done, with that too" }),
+    ]);
+    expect(items).toEqual([
+      { type: "prompt", text: "first" },
+      { type: "reply", text: "working on it" },
+      { type: "prompt", text: "also this" },
+      { type: "reply", text: "done, with that too" },
+    ]);
+  });
+});

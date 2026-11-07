@@ -30,6 +30,9 @@ export const CliMessage = z.discriminatedUnion("type", [
     ...parent,
   }),
   z.object({ type: z.literal("result"), subtype: z.string() }),
+  /** What became of a message we sent with a `uuid` (verified on the real CLI, D56): queued →
+   * started → completed | cancelled. The CLI also reports its own messages: match by uuid. */
+  z.object({ type: z.literal("command_lifecycle"), command_uuid: z.string(), state: z.string() }),
   /** Status lines: `init` at each turn's start and `status` on a change both carry the permission
    * mode in use (verified on the real CLI, D53). */
   z.object({ type: z.literal("system"), subtype: z.string(), permissionMode: z.string().optional() }),
@@ -86,6 +89,9 @@ export const AskUserQuestionInput = z.object({
     .min(1),
 });
 export type AskUserQuestionInput = z.infer<typeof AskUserQuestionInput>;
+
+/** The answer to `cancel_async_message` (D56). */
+export const CancelAsyncMessageResponse = z.object({ cancelled: z.boolean() });
 
 /** The answer to `set_permission_mode`: the mode the CLI applied ("manual" comes back as "default"). */
 export const SetPermissionModeResponse = z.object({ mode: z.string() });

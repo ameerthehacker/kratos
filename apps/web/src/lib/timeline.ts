@@ -35,7 +35,7 @@ export type TimelineItem =
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
 
-type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" }>;
+type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" }>;
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
 
 const OUTPUT_LINES = 20;
@@ -52,6 +52,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
   const steps = new Map<string, Step>(); // by tool call id
   const asks = new Map<string, Step>(); // by permission request id
   const questions = new Map<string, Step>(); // by question request id
+  const queued = new Map<string, Extract<LogMessage, { type: "prompt_queued" }>>(); // by prompt id (D56)
   let group: Step[] | null = null;
   let thoughts = 0; // thinking has no id of its own
   const addStep = (step: Step) => {
@@ -90,6 +91,17 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
         }
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
       }
+    } else if (message.type === "prompt_queued") {
+      queued.set(message.id, message); // waits in the queue (the queue card is 3t3), not in the chat
+    } else if (message.type === "prompt_read") {
+      // Read by the agent: from here on it's part of the conversation, where it was read (D56).
+      const prompt = queued.get(message.id);
+      if (prompt) {
+        breakGroup();
+        items.push({ type: "prompt", text: prompt.text, ...(prompt.attachments ? { attachments: prompt.attachments } : {}) });
+      }
+    } else if (message.type === "prompt_removed") {
+      queued.delete(message.id); // taken back or dropped: never part of the conversation
     } else if (message.type === "question_request") {
       // The questions ride on the agent's tool call (by id); without one, they show on their own.
       const { request } = message;

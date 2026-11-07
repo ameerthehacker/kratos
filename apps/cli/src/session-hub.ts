@@ -121,8 +121,12 @@ export class SessionHub {
         this.broadcastSessionList();
         return;
       case "interrupt":
-        viewing.interrupt();
+        // Stop with a queue stops everything; the dropped prompts' text comes back to this tab (D56).
+        viewing.interrupt((text) => send({ type: "prompts_returned", text }));
         return;
+      case "remove_queued":
+        for (const runtime of this.runtimes.values()) if (runtime.removeQueued(message.id)) return;
+        return; // already read or removed: nothing to do
       case "question_answer": {
         // Question ids are unique across sessions: the owner checks and takes the answer (D54).
         // Already settled (another tab answered first, or the agent withdrew it): nothing to do,
@@ -233,6 +237,7 @@ export class SessionHub {
         model: s.model,
         effort: this.runtimes.get(s.id)?.effort ?? s.effort,
         permissionMode: this.runtimes.get(s.id)?.permissionMode ?? s.permissionMode,
+        queued: this.runtimes.get(s.id)?.queuedCount ?? 0,
         done: s.doneAt !== null,
       })),
     };

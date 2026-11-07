@@ -31,12 +31,21 @@ class FakeSession implements AgentSession {
   readonly events = new ReadableStream<AgentEvent>({ start: (c) => void (this.stream = c) });
 
   constructor(readonly options: Parameters<AgentAdapter["startSession"]>[0]) {}
-  send(prompt: string, attachments: readonly AgentAttachment[] = []) {
+  readonly promptIds: (string | undefined)[] = [];
+  send(prompt: string, attachments: readonly AgentAttachment[] = [], options: { id?: string } = {}) {
     this.prompts.push(prompt);
     this.files.push(attachments);
+    this.promptIds.push(options.id);
   }
-  async interrupt() {
+  readonly cancelled: string[] = [];
+  async cancelPrompt(id: string) {
+    this.cancelled.push(id);
+    return true;
+  }
+  readonly interruptOptions: Array<{ cancelQueued?: boolean } | undefined> = [];
+  async interrupt(options?: { cancelQueued?: boolean }) {
     this.interrupts++;
+    this.interruptOptions.push(options);
   }
   readonly modelSwitches: (string | null)[] = [];
   async setModel(model: string | null) {
@@ -813,7 +822,103 @@ describe("SessionHub: replay complete (3d9)", () => {
     a.receive({ type: "prompt", text: "first" });
     a.receive({ type: "prompt", text: "second" });
     const late = tab();
-    expect(late.seen.filter((m) => m.type === "user_prompt")).toHaveLength(2);
+    expect(late.seen.filter((m) => m.type === "user_prompt" || m.type === "prompt_queued")).toHaveLength(2); // the 2nd was queued (D56)
     expect(late.seenWhenReady).toBe(late.seen.length); // after the last replayed message
+  });
+});
+
+describe("SessionHub: steering prompts (D56)", () => {
+  const queuedIds = (t: { seen: ServerMessage[] }) => t.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+  const count = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.queued;
+  const status = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.status;
+
+  it("queues a prompt sent while the agent works, and marks where the agent read it", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "also this" });
+    const [id] = queuedIds(a);
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_queued", id, text: "also this" });
+    expect(agents[0]!.promptIds.at(-1)).toBe(id); // sent at once, tagged: the agent holds it
+    expect(count(a)).toBe(1);
+
+    agents[0]!.emit({ kind: "tool_result", id: "t1", output: "ok", isError: false });
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "started" }); // taken at the step boundary
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_read", id, how: "step", after: "t1" });
+    expect(count(a)).toBe(0);
+    expect(a.seen.some((m) => m.type === "agent_event" && m.event.kind === "prompt_state")).toBe(false); // not logged
+  });
+
+  it("a prompt read after the turn ended starts a new turn", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "next" });
+    const [id] = queuedIds(a);
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(status(a)).toBe("idle");
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "started" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_read", id, how: "next_turn" });
+    expect(status(a)).toBe("working");
+  });
+
+  it("takes a queued prompt back on request", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "never mind" });
+    const [id] = queuedIds(a);
+    a.receive({ type: "remove_queued", id: id! });
+    expect(agents[0]!.cancelled).toEqual([id]);
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "cancelled" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_removed", id, reason: "removed" });
+    expect(count(a)).toBe(0);
+  });
+
+  it("Stop with a queue stops everything and gives the queued text back to that tab only", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "fix tests" });
+    a.receive({ type: "prompt", text: "rename file" });
+    const ids = queuedIds(a);
+    a.receive({ type: "interrupt" });
+    expect(agents[0]!.interruptOptions).toEqual([{ cancelQueued: true }]);
+    for (const id of ids) agents[0]!.emit({ kind: "prompt_state", id, state: "cancelled" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_removed")).toEqual(ids.map((id) => ({ type: "prompt_removed", id, reason: "stopped" })));
+    expect(a.seen.at(-1)).toEqual({ type: "prompts_returned", text: "fix tests\n\nrename file" });
+    expect(b.seen.some((m) => m.type === "prompts_returned")).toBe(false);
+  });
+
+  it("a plain Stop with nothing queued doesn't touch the queue", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "interrupt" });
+    expect(agents[0]!.interruptOptions).toEqual([{ cancelQueued: false }]);
+  });
+
+  it("drops a queue the agent can no longer read: it exited, or Kratos restarted", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "queued 1" });
+    await agents[0]!.stop(); // the agent's events end
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_removed")).toEqual([{ type: "prompt_removed", id: queuedIds(a)[0], reason: "stopped" }]);
+
+    a.receive({ type: "prompt", text: "again" }); // starts a new agent
+    a.receive({ type: "prompt", text: "queued 2" });
+    const second = queuedIds(a)[1];
+    restart();
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "prompt_removed").at(-1)).toEqual({ type: "prompt_removed", id: second, reason: "stopped" });
+    expect(count(late)).toBe(0);
   });
 });

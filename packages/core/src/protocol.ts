@@ -59,6 +59,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * mode (Bypass) is refused unless `confirmDangerous` is true — set only by the consent dialog. */
   z.object({ type: z.literal("set_permission_mode"), mode: z.string().min(1), confirmDangerous: z.boolean().optional() }),
   z.object({ type: z.literal("interrupt") }),
+  /** Take a queued prompt back out of the queue (D56), before the agent reads it. */
+  z.object({ type: z.literal("remove_queued"), id: z.string() }),
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
@@ -94,6 +96,8 @@ export const SessionSummary = z.object({
   /** The permission mode in use, as the agent last reported it (else the one chosen); null = the
    * agent's default (D53). */
   permissionMode: z.string().nullable(),
+  /** Prompts sent while it works that the agent hasn't read yet (D56): "Working · 2 queued". */
+  queued: z.number(),
   /** The owner marked it done (3d2): listed under "Done", hidden from Recent. */
   done: z.boolean(),
 });
@@ -143,6 +147,14 @@ export const ServerMessage = z.discriminatedUnion("type", [
   }),
   /** A prompt someone sent (so every tab shows the whole conversation). */
   z.object({ type: z.literal("user_prompt"), text: z.string(), attachments: z.array(AttachmentRef).optional() }),
+  /** A prompt sent while the agent works (D56): it waits in the queue until the agent reads it. */
+  z.object({ type: z.literal("prompt_queued"), id: z.string(), text: z.string(), attachments: z.array(AttachmentRef).optional() }),
+  /** The agent read a queued prompt: at a step boundary of the running turn (`step`, after the step
+   * `after` — a tool call id — when there was one), or as a new turn once the last one ended. */
+  z.object({ type: z.literal("prompt_read"), id: z.string(), how: z.enum(["step", "next_turn"]), after: z.string().optional() }),
+  /** A queued prompt left the queue unread: removed by the owner, or dropped by Stop / the agent
+   * ending (`stopped`). */
+  z.object({ type: z.literal("prompt_removed"), id: z.string(), reason: z.enum(["removed", "stopped"]) }),
   z.object({ type: z.literal("agent_event"), event: AgentEvent }),
   /** The agent wants to use a tool; answer with `permission_decision` and this id. */
   z.object({ type: z.literal("permission_request"), id: z.string(), request: PermissionRequest }),
@@ -163,6 +175,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
     answers: z.array(QuestionAnswer).optional(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
+  /** To the tab that pressed Stop (not logged): the text of the queued prompts Stop dropped, to
+   * put back in its composer (owner, D56). */
+  z.object({ type: z.literal("prompts_returned"), text: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;
 

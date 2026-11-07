@@ -52,6 +52,9 @@ export const AgentEvent = z.discriminatedUnion("kind", [
   /** The agent's permission mode changed — by Kratos, or by the agent itself (e.g. leaving plan
    * mode once its plan is approved). D53. */
   z.object({ kind: z.literal("permission_mode"), mode: z.string() }),
+  /** What became of a prompt sent with an id (D56): waiting while the agent works (`queued`),
+   * taken (`started` — mid-turn at a step boundary, or as a new turn), done, or withdrawn. */
+  z.object({ kind: z.literal("prompt_state"), id: z.string(), state: z.enum(["queued", "started", "completed", "cancelled"]) }),
   /** The agent finished responding to a prompt. The session stays open for the next send(). */
   z.object({
     kind: z.literal("turn_end"),
@@ -289,10 +292,16 @@ export interface AgentSession {
   /** Every event for the whole conversation. Ends when the session stops. Iterate it once. */
   readonly events: AsyncIterable<AgentEvent>;
   /** Send a prompt, with files if any (already checked against the adapter's policy, D55).
-   * Events arrive on `events`; the turn ends with a `turn_end` event. */
-  send(prompt: string, attachments?: readonly AgentAttachment[]): void;
-  /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
-  interrupt(): Promise<void>;
+   * Events arrive on `events`; the turn ends with a `turn_end` event. Sent while a turn runs, the
+   * agent holds it and takes it later (steering, D56); with an `id`, `prompt_state` events say
+   * what became of it. */
+  send(prompt: string, attachments?: readonly AgentAttachment[], options?: { id?: string }): void;
+  /** Withdraw a prompt the agent still holds (D56); false if it was already taken. */
+  cancelPrompt(id: string): Promise<boolean>;
+  /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. With
+   * `cancelQueued`, prompts it holds are withdrawn too (`prompt_state` cancelled); without, they
+   * run right after (D56). */
+  interrupt(options?: { cancelQueued?: boolean }): Promise<void>;
   /** Switch the running conversation to another model (from listModels); `null` = back to the
    * agent's default (3c4). Resolves when the agent confirms — which it reports on its output, so
    * `events` must be being consumed (the hub always does). */

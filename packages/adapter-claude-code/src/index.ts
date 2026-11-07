@@ -14,7 +14,14 @@ import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { AskUserQuestionInput, CliMessage, GetSettingsResponse, InitializeResponse, SetPermissionModeResponse } from "./protocol.js";
+import {
+  AskUserQuestionInput,
+  CancelAsyncMessageResponse,
+  CliMessage,
+  GetSettingsResponse,
+  InitializeResponse,
+  SetPermissionModeResponse,
+} from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -110,6 +117,10 @@ function contentBlock(file: AgentAttachment): object {
   return { type: "document", source: { type: "text", media_type: "text/plain", data: Buffer.from(file.data).toString("utf8") }, title: file.name };
 }
 
+/** The prompt states Kratos follows (D56); the CLI may add others — they're ignored. */
+type PromptState = "queued" | "started" | "completed" | "cancelled";
+const PROMPT_STATES: PromptState[] = ["queued", "started", "completed", "cancelled"];
+
 /** Claude's question tool (D54), its "this one's my pick" label suffix, and what a skip tells it. */
 const ASK_TOOL = "AskUserQuestion";
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -152,6 +163,7 @@ function startSession(
   const proc = new JsonLinesProcess(claudePath, args, { cwd });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
   let currentMode = permissionMode ?? CLAUDE_DEFAULT_MODE; // to report only real changes
+  const ourPrompts = new Set<string>(); // ids we sent: lifecycle lines for others are the CLI's own
 
   const control = new ControlChannel(proc); // requests we send (set_model, effort, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
@@ -241,6 +253,12 @@ function startSession(
       if (!parsed.success) continue; // a line kind Kratos doesn't use
       const msg = parsed.data;
       if (control.handle(msg)) continue; // an answer to one of our requests
+      if (msg.type === "command_lifecycle") {
+        if (ourPrompts.has(msg.command_uuid) && PROMPT_STATES.includes(msg.state as PromptState)) {
+          yield { kind: "prompt_state", id: msg.command_uuid, state: msg.state as PromptState };
+        }
+        continue;
+      }
       if (msg.type === "system") {
         // The CLI repeats the mode at every turn's start: only a change is an event (D53).
         if (msg.permissionMode && msg.permissionMode !== currentMode) {
@@ -267,15 +285,22 @@ function startSession(
 
   return {
     events: events(),
-    send(prompt, attachments = []) {
+    send(prompt, attachments = [], options = {}) {
       // With files: the files first, then the prompt that's about them (D55).
       const content = attachments.length > 0 ? [...attachments.map(contentBlock), { type: "text", text: prompt }] : prompt;
-      proc.send({ type: "user", message: { role: "user", content }, parent_tool_use_id: null });
+      // Tagged with our id, the CLI reports what becomes of it (command_lifecycle, D56).
+      if (options.id) ourPrompts.add(options.id);
+      proc.send({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(options.id ? { uuid: options.id } : {}) });
     },
-    async interrupt() {
+    async cancelPrompt(id) {
+      const answer = await control.request({ subtype: "cancel_async_message", message_uuid: id });
+      return CancelAsyncMessageResponse.parse(answer).cancelled;
+    },
+    async interrupt(options = {}) {
       interrupted = true;
-      // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`.
-      control.request({ subtype: "interrupt" }).catch(() => {});
+      // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`; withdrawn
+      // prompts as `prompt_state` cancelled (D56).
+      control.request({ subtype: "interrupt", ...(options.cancelQueued ? { cancel_queued: true } : {}) }).catch(() => {});
     },
     // null = back to the agent's default, which Claude calls "default" (D43, 3c4).
     async setModel(model) {

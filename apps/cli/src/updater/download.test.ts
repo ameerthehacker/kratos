@@ -9,7 +9,8 @@ import type { UpdateStatus } from "@kratos/core";
 import { assetName, downloadRelease } from "./download.js";
 import { Updater } from "./updater.js";
 
-const TARGET = "darwin-arm64";
+// The machine running the test: the Updater downloads for its own platform (CI runs on Linux x64).
+const TARGET = `${process.platform}-${process.arch}`;
 const NAME = assetName("0.3.0", TARGET);
 
 /** A release archive like the workflow's: one file, `kratos`. */
@@ -43,7 +44,7 @@ async function publish(contents = "new kratos", sums?: string) {
   const archive = await makeArchive(contents);
   files = {
     [`/download/v0.3.0/${NAME}`]: archive,
-    "/download/v0.3.0/SHA256SUMS": sums ?? `${sha(archive)}  ${NAME}\n${"0".repeat(64)}  ${assetName("0.3.0", "linux-x64")}\n`,
+    "/download/v0.3.0/SHA256SUMS": sums ?? `${sha(archive)}  ${NAME}\n${"0".repeat(64)}  ${assetName("0.3.0", "other-cpu")}\n`,
   };
 }
 const download = (dir: string) => downloadRelease({ version: "0.3.0", dir, fetch, base, target: TARGET });
@@ -70,7 +71,7 @@ describe("downloadRelease (3u5b)", () => {
     files = {};
     expect(await download(freshDir())).toBeNull();
     await publish();
-    files["/download/v0.3.0/SHA256SUMS"] = `${"b".repeat(64)}  ${assetName("0.3.0", "linux-x64")}\n`;
+    files["/download/v0.3.0/SHA256SUMS"] = `${"b".repeat(64)}  ${assetName("0.3.0", "other-cpu")}\n`;
     expect(await download(freshDir())).toBeNull();
     await publish();
     delete files[`/download/v0.3.0/${NAME}`];

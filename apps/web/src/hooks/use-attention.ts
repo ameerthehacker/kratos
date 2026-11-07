@@ -4,22 +4,29 @@ import { useNavigate } from "react-router";
 import type { SessionSummary } from "@kratos/core";
 import logoSvg from "@/assets/kratos-logo.svg?raw";
 import { useKratos } from "@/lib/kratos-store";
+import { chime, notifyOnce, trackPresence } from "@/lib/notify";
 
 /** A session that's blocked on you: the agent asked a question, or wants your OK. */
 const waitsForYou = (s: SessionSummary) => !s.done && (s.status === "needs_answer" || s.status === "needs_approval");
+/** A session that just finished its turn: idle now, busy before (3w3). */
+const finished = (s: SessionSummary, was: SessionSummary["status"] | undefined) => !s.done && s.status === "idle" && was !== undefined && was !== "idle";
 
 /**
  * Tells you when an agent is waiting on you while Kratos isn't in front of you (3r3, the design):
  * the tab title counts the waiting sessions ("(1) Question · Kratos"), the favicon — the Kratos
- * logo — gets an amber dot, and a system notification shows when one starts waiting while this
- * tab is hidden ("Claude Code has a question" + the question). Clicking it opens that session.
+ * logo — gets an amber dot, and a system notification shows when one starts waiting ("Claude Code
+ * has a question" + the question) or finishes (3w3) while you're away — as quick settings allow,
+ * once across tabs, with an optional chime. Clicking it opens that session.
  */
 export function useAttention() {
   const sessions = useKratos((s) => s.sessions);
   const harnesses = useKratos((s) => s.harnesses);
   const viewing = useKratos((s) => s.viewing);
   const log = useKratos((s) => s.log);
+  const prefs = useKratos((s) => s.settings?.notifications);
+  const theme = useKratos((s) => s.settings?.theme);
   const navigate = useNavigate();
+  useEffect(trackPresence, []);
   const waiting = sessions.filter(waitsForYou);
   const questions = waiting.filter((s) => s.status === "needs_answer").length;
 
@@ -33,30 +40,39 @@ export function useAttention() {
   useEffect(() => {
     document.title = waiting.length > 0 ? `(${waiting.length}) ${label} · Kratos` : "Kratos";
     setFavicon(waiting.length > 0);
-  }, [waiting.length, label]);
+  }, [waiting.length, label, theme]); // the favicon is drawn in the theme's colours
 
-  // A notification for each session that starts waiting while the tab is hidden. Sessions
-  // already waiting when the page loads don't notify (you're looking at the tab then).
+  // A notification for each session that starts waiting, or finishes, while you're away. Sessions
+  // already in that state when the page loads don't notify (you're looking at the tab then).
   const before = useRef<Map<string, SessionSummary["status"]> | null>(null);
   useEffect(() => {
     const previous = before.current;
     before.current = new Map(sessions.map((s) => [s.id, s.status]));
-    if (!previous || !document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
-    for (const session of sessions.filter(waitsForYou)) {
-      if (previous.get(session.id) === session.status) continue;
+    if (!previous || !prefs?.on) return;
+    for (const session of sessions) {
+      const was = previous.get(session.id);
+      if (was === session.status) continue;
       const agent = harnesses.find((h) => h.id === session.harness)?.name ?? "The agent";
-      const question = session.status === "needs_answer" && session.id === viewing ? openQuestionText(log) : undefined;
-      const note = new Notification(session.status === "needs_answer" ? `${agent} has a question` : `${agent} needs your OK`, {
-        body: question ?? session.title ?? "New session",
-        tag: session.id, // one notification per session: a newer one replaces it
+      const name = session.title ?? "New session";
+      let title: string;
+      let body = name;
+      if (waitsForYou(session) && prefs.needsYou) {
+        title = session.status === "needs_answer" ? `${agent} has a question` : `${agent} needs your OK`;
+        body = (session.status === "needs_answer" && session.id === viewing ? openQuestionText(log) : undefined) ?? name;
+      } else if (finished(session, was) && prefs.finished) {
+        title = `${agent} finished`;
+      } else continue;
+      notifyOnce(`${session.id}:${session.status}`, () => {
+        const note = new Notification(title, { body, tag: session.id }); // one per session: a newer one replaces it
+        note.onclick = () => {
+          window.focus();
+          navigate(`/s/${session.id}`);
+          note.close();
+        };
+        if (prefs.sound) chime();
       });
-      note.onclick = () => {
-        window.focus();
-        navigate(`/s/${session.id}`);
-        note.close();
-      };
     }
-  }, [sessions, harnesses, viewing, log, navigate]);
+  }, [sessions, harnesses, viewing, log, navigate, prefs]);
 }
 
 /**
@@ -64,6 +80,7 @@ export function useAttention() {
  * browsers require; never again once you've answered.
  */
 export function askToNotify(): void {
+  if (useKratos.getState().settings?.notifications.on === false) return; // turned off in quick settings (3w3)
   if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission();
 }
 

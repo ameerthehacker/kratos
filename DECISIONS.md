@@ -156,6 +156,35 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D64. Notifications: in the browser, while you're away, once across tabs (step 3w3, owner)
+- Owner: browser notifications, only when you're not looking at Kratos; settings saved by
+  Kratos; Play a sound on by default (the design has it off).
+- Settings: `notifications { on, needsYou, finished, sound }` in `settings.json`, defaults on;
+  `set_settings` replaces the group whole (the UI sends all four), so the server's shallow merge
+  stays right. An unreadable group falls back to the defaults.
+- Builds on 3r3's `useAttention` (approvals and questions while the tab was hidden), now:
+  "Finished" = a session going from busy to idle (not marked done); "away" = tab hidden or its
+  window not focused; each kind behind its switch, all behind Notify me.
+- Once across tabs (`lib/notify.ts`): every tab sees the same session changes. A tab you're
+  looking at keeps a mark in localStorage, and while one is marked nobody notifies (its title
+  and favicon already show it). Otherwise a Web Lock per event (`kratos-notify:<session>:<status>`,
+  held 5 s) lets the first tab show it and the rest skip. Alternatives: a BroadcastChannel leader
+  election (more code, and the leader can't tell which tab you're looking at); notifications
+  from the server (work with no tab open, but per-OS code and no click-through — owner chose the
+  browser).
+- Permission: "Notify me" shows on only when the browser allows it; switching it on asks (a click,
+  as browsers require); "blocked" says where to unblock. Sending a prompt still asks once (3r3),
+  unless Notify me is off. Notifications need localhost or https: over plain http on a LAN
+  address the browser has no Notification API, and the popover says so.
+- Sound: a two-note chime made with Web Audio (no file, no library), played by the notifying tab.
+  Browsers only allow sound after a click in that tab: the audio is woken on the first click; a
+  tab never clicked stays silent.
+- Also: the favicon is redrawn when the theme changes (it had the old theme's colours).
+- Not checked end to end in a browser (owner released first): the switches, cross-tab once and
+  the chime were tested by type and unit tests only.
+- Reverse: drop `notify.ts`, the Notifications section, `NotificationSettings`, and restore
+  `useAttention`'s hidden-tab check.
+
 ### D63. Quick settings: settings kept by Kratos, themes as CSS token blocks (step 3w1, owner)
 - Owner: build the design's quick settings (Home/Session boards) — themes first, notifications
   next; settings saved by Kratos, the same in every tab and browser.

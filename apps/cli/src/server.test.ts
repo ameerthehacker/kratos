@@ -181,12 +181,12 @@ describe("kratos server", () => {
     const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code", settings: new SettingsStore(file) });
     const [a, b] = [await openTab(server.port), await openTab(server.port)];
     try {
-      expect(await a.waitFor(is("settings"))).toEqual({ type: "settings", settings: { theme: "kratos-dark" } });
+      expect(await a.waitFor(is("settings"))).toMatchObject({ type: "settings", settings: { theme: "kratos-dark", notifications: { on: true } } });
       a.send({ type: "set_settings", settings: { theme: "forest" } });
       for (const tab of [a, b]) {
-        await vi.waitFor(() => expect(tab.messages.filter(is("settings")).at(-1)?.settings).toEqual({ theme: "forest" }));
+        await vi.waitFor(() => expect(tab.messages.filter(is("settings")).at(-1)?.settings).toMatchObject({ theme: "forest" }));
       }
-      expect(new SettingsStore(file).settings).toEqual({ theme: "forest" }); // saved
+      expect(new SettingsStore(file).settings).toMatchObject({ theme: "forest" }); // saved
       a.send({ type: "set_settings", settings: { theme: "neon" } }); // not a theme: refused as invalid
       expect(await a.waitFor(is("error"))).toMatchObject({ message: "invalid message" });
     } finally {

@@ -36,8 +36,22 @@ export type ThemeId = z.infer<typeof ThemeId>;
 
 /** The owner's settings (3w), kept by Kratos in `~/.kratos/settings.json`: the same in every tab
  * and browser. Missing or unknown values fall back to the defaults. */
+/** When the browser tells you about a session while you're away (3w3); the design's defaults,
+ * except the sound: on by default (owner). */
+export const NotificationSettings = z.object({
+  /** "Notify me": off silences the rest. */
+  on: z.boolean().default(true),
+  /** Approvals and questions. */
+  needsYou: z.boolean().default(true),
+  /** A session finished its turn and is idle. */
+  finished: z.boolean().default(true),
+  sound: z.boolean().default(true),
+});
+export type NotificationSettings = z.infer<typeof NotificationSettings>;
+
 export const Settings = z.object({
   theme: ThemeId.catch("kratos-dark").default("kratos-dark"),
+  notifications: NotificationSettings.catch(() => NotificationSettings.parse({})).default(() => NotificationSettings.parse({})),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -89,7 +103,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
   /** Change some settings (3w); every tab then gets the new `settings`. */
-  z.object({ type: z.literal("set_settings"), settings: z.object({ theme: ThemeId }).partial() }),
+  /** A group is replaced whole (send all of `notifications`). */
+  z.object({ type: z.literal("set_settings"), settings: z.object({ theme: ThemeId, notifications: NotificationSettings }).partial() }),
   /** Look for a Kratos update now (3u5d); answered with `update`, also when nothing changed. */
   z.object({ type: z.literal("check_update") }),
   /** Something the browser wants in the server's log file (D44), logged as component "web". */

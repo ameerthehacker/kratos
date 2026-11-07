@@ -640,9 +640,18 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
   - [ ] **3w2. Code and diffs follow the theme** — Shiki on a CSS-variables theme bound to the
         Themes board's code tokens (plain, com, kw, str, num, fn, type, prop) instead of
         `github-dark`; diff tints from the board. Replaces `lib/appearance.ts`'s constant.
-  - [ ] **3w3. Notifications** — the popover's switches; browser notifications (permission asked
-        on first switch-on) when a session needs you (approval, question) or finishes, only while
-        Kratos isn't in front; one per event across tabs; click opens the session; optional sound.
+  - [x] **3w3. Notifications** (~200, before 3w2 — owner) — the popover's Notifications per the
+        design: Notify me (on) → Needs your OK (on) · Finished (on) · Play a sound (on — owner; the design
+        has it off), kept in
+        `settings.json`. Builds on 3r3's `useAttention` (which already notifies on approvals and
+        questions while the tab is hidden): adds Finished (working → idle), "away" = tab hidden or
+        window in the background, the settings, one notification per event across tabs (a tab
+        you're looking at marks it in localStorage; otherwise a Web Lock lets one tab notify), and
+        a short chime (Web Audio, no file). Turning Notify me on asks the browser's permission;
+        blocked shows how to unblock. Accept: tests for the settings; in a browser with granted
+        permission, a hidden tab notifies on a question and on a finish, two tabs notify once,
+        switches off → nothing.
+        Done (D64). Not run: the end-to-end browser check (owner chose to release first).
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

@@ -1,14 +1,16 @@
+import { useState, type ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import type { ThemeId } from "@kratos/core";
+import type { NotificationSettings, ThemeId } from "@kratos/core";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { useKratos } from "@/lib/kratos-store";
 import { THEME_LIST, applyTheme } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 /**
  * The header's quick settings (3w, the design's Home/Session boards): a sliders button that opens
- * the theme picker (3w1); notifications join it in 3w3. Settings are Kratos's (D63): a pick goes
- * to the server, which tells every tab.
+ * the theme picker (3w1) and the notification switches (3w3). Settings are Kratos's (D63): a
+ * change goes to the server, which tells every tab.
  */
 export function QuickSettings() {
   const settings = useKratos((s) => s.settings);
@@ -68,7 +70,60 @@ export function QuickSettings() {
             );
           })}
         </div>
+        {settings && <Notifications prefs={settings.notifications} />}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** "Notify me" and what about (3w3). Notify me shows on only once the browser allows notifications:
+ * turning it on asks (the click browsers require); a block is explained, not hidden. */
+function Notifications({ prefs }: { prefs: NotificationSettings }) {
+  const send = useKratos((s) => s.send);
+  const supported = "Notification" in window; // needs localhost or https (not a LAN address over http)
+  const [permission, setPermission] = useState(supported ? Notification.permission : "denied");
+  const on = prefs.on && permission === "granted";
+
+  const save = (change: Partial<NotificationSettings>) => {
+    const notifications = { ...prefs, ...change };
+    useKratos.setState((s) => (s.settings ? { settings: { ...s.settings, notifications } } : {}));
+    send({ type: "set_settings", settings: { notifications } });
+  };
+  const toggleOn = async (want: boolean) => {
+    if (!want) return save({ on: false });
+    const answer = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    setPermission(answer);
+    if (answer === "granted") save({ on: true });
+  };
+
+  return (
+    <>
+      <div className="-mx-1 my-1 h-px bg-border" />
+      <div className="px-2 pt-2 pb-1.5 text-xs font-medium text-muted-foreground">Notifications</div>
+      <SwitchRow label="Notify me" hint="When a session needs you or finishes" checked={on} disabled={!supported} onChange={toggleOn} />
+      {!supported ? (
+        <p className="px-2 pb-2 text-xs text-muted-foreground">This browser can't show notifications here.</p>
+      ) : permission === "denied" ? (
+        <p className="px-2 pb-2 text-xs text-muted-foreground">Blocked for this site. Allow notifications in your browser's site settings, then turn this on.</p>
+      ) : null}
+      <div className={cn(!on && "opacity-50")}>
+        <SwitchRow label="Needs your OK" hint="Approvals and questions" checked={prefs.needsYou} disabled={!on} onChange={(v) => save({ needsYou: v })} />
+        <SwitchRow label="Finished" hint="A session is done and idle" checked={prefs.finished} disabled={!on} onChange={(v) => save({ finished: v })} />
+        <SwitchRow label="Play a sound" checked={prefs.sound} disabled={!on} onChange={(v) => save({ sound: v })} />
+      </div>
+    </>
+  );
+}
+
+/** One row: the words on the left, the switch on the right; the whole row toggles it. */
+function SwitchRow(props: { label: string; hint?: ReactNode; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className={cn("flex min-h-11 items-center gap-3 rounded-lg px-2 py-1.5", !props.disabled && "cursor-pointer hover:bg-accent")}>
+      <span className="flex min-w-0 flex-1 flex-col text-sm">
+        {props.label}
+        {props.hint && <span className="text-xs text-muted-foreground">{props.hint}</span>}
+      </span>
+      <Switch checked={props.checked} disabled={props.disabled} onCheckedChange={(checked) => props.onChange(checked)} />
+    </label>
   );
 }

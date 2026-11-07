@@ -240,8 +240,11 @@ function addResult(step: Step, output: string, isError: boolean): void {
   const denied = step.chips.some((c) => c.text === DENIED);
   if (isError && !denied) step.chips.push({ text: "Failed", tone: "bad" }); // a denial comes back as an error
   else if (step.kind === "run") {
-    const passed = /(\d+)\s+passed/.exec(output);
-    step.chips.push(passed ? { text: `✓ ${passed[1]} passed`, tone: "ok" } : { text: "✓ Done", tone: "ok" });
+    // Only a result that says something (3x1): a plain "✓ Done" under every command was noise.
+    // The tests' count: vitest and jest print files / suites ("Test Files 4 passed") and jest
+    // snapshots ("Snapshots: 2 passed") on lines of their own; else the last count (pytest…).
+    const passed = [...output.matchAll(/\bTests:?\s[^\n]*?(\d+)\s+passed/g)].at(-1) ?? [...output.matchAll(/(\d+)\s+passed/g)].at(-1);
+    if (passed) step.chips.push({ text: `✓ ${passed[1]} passed`, tone: "ok" });
   }
 }
 

@@ -55,6 +55,21 @@ describe("gitSnapshots (3v1, D65)", () => {
     expect(added).toEqual(["", expect.stringMatching(OID)]);
   });
 
+  it("changed paths without reading them, and a diff of only some paths (D67)", async () => {
+    const { dir, write } = repo();
+    const snapshots = gitSnapshots(dir);
+    const start = (await snapshots.take())!;
+    write("a.txt", "edited\n");
+    write("name with spaces.txt", "new\n");
+    renameSync(join(dir, "b.txt"), join(dir, "c.txt"));
+    const end = (await snapshots.take())!;
+    expect((await snapshots.changedPaths(start, end)).sort()).toEqual(["a.txt", "b.txt", "c.txt", "name with spaces.txt"]);
+    expect(await snapshots.changedPaths(end, end)).toEqual([]);
+    // A rename is kept when either of its sides is asked for.
+    const files = await snapshots.diff(start, end, new Set(["b.txt", "name with spaces.txt"]));
+    expect(files.map((f) => f.path)).toEqual(["c.txt", "name with spaces.txt"]);
+  });
+
   it("a deleted file, a binary one and one too big to send", async () => {
     const { dir, write } = repo();
     const snapshots = gitSnapshots(dir);

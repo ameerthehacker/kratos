@@ -6,7 +6,8 @@ import type { ReadMark } from "@/lib/timeline";
 import { SentFiles } from "@/components/attachments";
 import { clientLog } from "@/lib/log";
 
-/** One of your prompts: a right-aligned bubble, with a copy button under it on hover/focus (3c5),
+/** One of your prompts: a right-aligned bubble, with a copy button beside it on hover/focus (3c5;
+ * beside, not under, so it doesn't hold an empty row below every prompt — 3x1),
  * the files sent with it above (3s2), and — for one sent while the agent worked — how it was read
  * (3t3). */
 export function PromptBubble({ text, attachments = [], read }: { text: string; attachments?: AttachmentRef[]; read?: ReadMark }) {
@@ -27,17 +28,19 @@ export function PromptBubble({ text, attachments = [], read }: { text: string; a
   return (
     <div className="group flex max-w-4/5 flex-col items-end gap-1 self-end">
       <SentFiles files={attachments} />
-      <div className="rounded-2xl bg-secondary px-4 py-2.5 whitespace-pre-wrap">{text}</div>
+      <div className="relative">
+        <div className="rounded-2xl bg-secondary px-4 py-2.5 whitespace-pre-wrap">{text}</div>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={copied ? "Copied" : "Copy prompt"}
+          title={copied ? "Copied" : "Copy"}
+          className="absolute right-full bottom-1.5 mr-1.5 flex size-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          {copied ? <Check className="size-3.5 text-add" /> : <Copy className="size-3.5" />}
+        </button>
+      </div>
       {read && <ReadNote read={read} />}
-      <button
-        type="button"
-        onClick={copy}
-        aria-label={copied ? "Copied" : "Copy prompt"}
-        title={copied ? "Copied" : "Copy"}
-        className="flex size-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        {copied ? <Check className="size-3.5 text-add" /> : <Copy className="size-3.5" />}
-      </button>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 /** `effort`: the level picked or in use; null/absent = none known yet (the agent's default).
  * `permissionMode`: the remembered mode (a dangerous one only after consent); null = the agent's default. */
@@ -56,9 +57,15 @@ export function AgentPicker(props: {
         className="inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs whitespace-nowrap text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <HarnessIcon id={props.value.harness} />
-        {harness?.name ?? "Connecting…"}
+        {/* In a narrow window the logo stands for the name (3x1); screen readers still get it. */}
+        <span className={cn(harness && "max-sm:sr-only")}>{harness?.name ?? "Connecting…"}</span>
         {/* Truncates if the window gets very narrow, so the send button stays in the card. */}
-        {harness && <span className="truncate text-muted-foreground">· {modelLabel(models, props.value.model)}</span>}
+        {harness && (
+          <span className="truncate text-muted-foreground">
+            <span className="max-sm:hidden">· </span>
+            {modelLabel(models, props.value.model)}
+          </span>
+        )}
         {effort && <span className="shrink-0 text-muted-foreground/70">{effortLabel(effort)}</span>}
         <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.2} aria-hidden="true" />
       </DropdownMenuTrigger>
@@ -155,8 +162,8 @@ function ModelItem({ model }: { model: AgentModel }) {
 }
 
 function HarnessIcon({ id }: { id: string }) {
-  if (id === "claude-code") return <ClaudeLogo className="size-3.5 text-claude" />;
-  return <span className="size-2 rounded-full bg-primary" aria-hidden="true" />;
+  if (id === "claude-code") return <ClaudeLogo className="size-3.5 shrink-0 text-claude" />;
+  return <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />;
 }
 
 /** What the chip shows for a model: its label, the raw id if the agent doesn't list it, or "Default". */

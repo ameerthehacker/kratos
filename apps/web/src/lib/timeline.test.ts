@@ -50,6 +50,25 @@ describe("buildTimeline (D45)", () => {
     expect(stopped).toEqual({ type: "event", text: "Stopped" });
   });
 
+  it("a command's result: the test count (vitest's last line, not its file count), else nothing (3x1)", () => {
+    const run = (id: string, output: string) => [
+      agent({ kind: "tool_call", id, tool: "Bash", input: {}, action: { type: "run", command: "pnpm test" } }),
+      agent({ kind: "tool_result", id, output, isError: false }),
+    ];
+    const [, group] = buildTimeline(
+      [
+        { type: "user_prompt", text: "go" },
+        ...run("v", " Test Files  4 passed (4)\n      Tests  2 skipped | 18 passed (20)"),
+        ...run("j", "Test Suites: 4 passed, 4 total\nTests:       18 passed, 18 total\nSnapshots:   3 passed, 3 total"),
+        ...run("p", "18 passed in 0.52s"),
+        ...run("l", "ok"),
+      ],
+      "/repo",
+    );
+    if (group?.type !== "steps") throw new Error("expected steps");
+    expect(group.steps.map((s) => s.chips.map((c) => c.text))).toEqual([["✓ 18 passed"], ["✓ 18 passed"], ["✓ 18 passed"], []]);
+  });
+
   it("attaches asks to their call by id, even two asks for the same tool out of order (3c4)", () => {
     const call = (id: string, command: string) =>
       agent({ kind: "tool_call", id, tool: "Bash", input: { command }, action: { type: "run", command } });

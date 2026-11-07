@@ -70,7 +70,8 @@ export function PermissionPicker(props: {
           )}
         >
           <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{current.shortLabel}</span>
+          {/* Icon only in a narrow window (3x1): the trigger's aria-label names the mode. */}
+          <span className="truncate max-sm:hidden">{current.shortLabel}</span>
           <ChevronDown className={cn("size-3 shrink-0", !current.dangerous && "text-muted-foreground")} strokeWidth={2.2} aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80">

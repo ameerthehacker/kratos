@@ -35,22 +35,28 @@ export function ShortcutsSheet() {
         {/* While open, page keys (Esc = stop, N = next file…) rest; ⌘/ and the rest of General work. */}
         <HotkeysProvider scope={SCOPES.sheet} exclusive={{ allow: ["global"] }}>
           <DialogTitle className="px-2.5 pt-1.5 pb-1 text-base font-medium">Keyboard shortcuts</DialogTitle>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            {SHEET_GROUPS.map((group) => (
-              <section key={group} aria-label={group} className="flex flex-col">
-                <h3 className="px-2.5 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group}</h3>
-                {rows
-                  .filter((row) => row.group === group)
-                  .map((row) => (
-                    <div key={row.name} className="flex min-h-9 items-center gap-3 rounded-lg px-2.5 text-sm text-secondary-foreground">
-                      <span className="min-w-0 flex-1">
-                        {row.name}
-                        {row.when && <span className="text-faint"> · {row.when}</span>}
-                      </span>
-                      <Shortcut hotkey={row.hotkey} keys={row.keys} />
-                    </div>
-                  ))}
-              </section>
+          {/* Two columns that stack on their own (3x1): as a grid, a short group left a hole beside
+              a long one. Groups alternate between them, filled left to right (the design). */}
+          <div className="grid grid-cols-2 gap-x-4">
+            {[0, 1].map((column) => (
+              <div key={column} className="flex flex-col gap-2">
+                {SHEET_GROUPS.filter((_, i) => i % 2 === column).map((group) => (
+                  <section key={group} aria-label={group} className="flex flex-col">
+                    <h3 className="px-2.5 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group}</h3>
+                    {rows
+                      .filter((row) => row.group === group)
+                      .map((row) => (
+                        <div key={row.name} className="flex min-h-9 items-center gap-3 rounded-lg px-2.5 text-sm text-secondary-foreground">
+                          <span className="min-w-0 flex-1">
+                            {row.name}
+                            {row.when && <span className="text-muted-foreground"> · {row.when}</span>}
+                          </span>
+                          <Shortcut hotkey={row.hotkey} keys={row.keys} />
+                        </div>
+                      ))}
+                  </section>
+                ))}
+              </div>
             ))}
           </div>
         </HotkeysProvider>

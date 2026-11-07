@@ -17,6 +17,8 @@ const NAMES: Record<ThemeId, { label: string; short: string; dark: boolean }> = 
 /** The themes in the design's order. */
 export const THEME_LIST = THEMES.map((id) => ({ id, ...NAMES[id] }));
 
+export const isDarkTheme = (id: ThemeId): boolean => NAMES[id].dark;
+
 /** Where this browser remembers the last theme it showed; index.html applies it before the first
  * paint, so a reload doesn't flash the default while the WebSocket connects. */
 const CACHE_KEY = "kratos-theme";

@@ -11,7 +11,7 @@ const VARIANTS = {
   tooltip: "",
   inverse: "bg-background/15 text-background/75",
   secondary: "bg-background",
-  faint: "bg-transparent text-faint",
+  faint: "bg-transparent text-faint ring-1 ring-border", // ringed: a key, not a stray letter (3x1)
 };
 
 /**

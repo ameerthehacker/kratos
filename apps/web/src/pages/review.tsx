@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, Check } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, Check, CircleAlert, FileCode } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { HotkeysProvider, useAppHotkeys, useHotkey, type AppHotkeyId } from "@tanstack/react-hotkeys";
 import { useMediaQuery } from "usehooks-ts";
@@ -99,11 +99,11 @@ export function ReviewPage() {
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-6 px-4 pt-5 pb-6 md:px-10">
               {!changes ? (
-                <p className="text-muted-foreground">Reading the changes…</p>
+                <Notice>Reading the changes…</Notice>
               ) : changes.unavailable ? (
-                <p className="text-muted-foreground">{changes.unavailable}.</p>
+                <Notice icon={<CircleAlert className="size-5" />}>{changes.unavailable}.</Notice>
               ) : !current ? (
-                <p className="text-muted-foreground">No changes yet. Files {agent} changes in this session show here.</p>
+                <Notice icon={<FileCode className="size-5" />}>No changes yet. Files {agent} changes in this session show here.</Notice>
               ) : (
                 <>
                   {changes.note && <p className="flex-none rounded-2xl bg-secondary px-5 py-3 text-sm text-secondary-foreground">{changes.note}.</p>}
@@ -116,6 +116,20 @@ export function ReviewPage() {
         </main>
       </div>
     </HotkeysProvider>
+  );
+}
+
+/** Where the diff would be, when there's none to show (3x1): centred in the island, not a stray line. */
+function Notice({ icon, children }: { icon?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-16 text-center text-sm text-muted-foreground">
+      {icon && (
+        <span aria-hidden="true" className="flex size-10 items-center justify-center rounded-full bg-secondary text-faint">
+          {icon}
+        </span>
+      )}
+      <p className="max-w-md text-balance">{children}</p>
+    </div>
   );
 }
 
@@ -193,7 +207,7 @@ function FileRow({ file, n, current, viewed, onPick, hint }: { file: ChangedFile
       </span>
       {hint && <Shortcut id={hint} variant="faint" />}
       <span className="flex flex-col items-end gap-1.25">
-        {file.skipped ? <span className="text-xs text-faint">{file.skipped === "binary" ? "binary" : "not shown"}</span> : <Counts additions={file.additions} deletions={file.deletions} className="text-xs" />}
+        {file.skipped ? <span className="text-xs text-muted-foreground">{file.skipped === "binary" ? "binary" : "not shown"}</span> : <Counts additions={file.additions} deletions={file.deletions} className="text-xs" />}
         <ChangeBlocks file={file} />
       </span>
     </button>
@@ -213,7 +227,7 @@ function FileHeader({ file, viewed, onViewed }: { file: ChangedFile; viewed: boo
           {file.status === "added" && <Chip className="bg-add/15 text-add">New file</Chip>}
           {file.status === "deleted" && <Chip className="bg-destructive/15 text-destructive">Deleted</Chip>}
           {file.status === "renamed" && <Chip className="bg-secondary text-secondary-foreground">Renamed from {file.oldPath}</Chip>}
-          {file.skipped ? <span className="text-sm text-faint">{SKIPPED[file.skipped]}</span> : <Counts additions={file.additions} deletions={file.deletions} className="text-sm" />}
+          {file.skipped ? <span className="text-sm text-muted-foreground">{SKIPPED[file.skipped]}</span> : <Counts additions={file.additions} deletions={file.deletions} className="text-sm" />}
         </span>
       </div>
       <button

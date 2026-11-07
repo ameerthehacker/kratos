@@ -785,6 +785,43 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         +25 −5 · Review changes" (that turn's start → end snapshot), the header count updating
         live while the agent edits, a dot on files changed since you last looked. Accept: real
         `claude` multi-turn run.
+- [x] **3x. Design review loop** (owner, D67) — screenshot every screen of the dev app (home,
+      sidebar, session, questions, review split / unified, menus, quick settings, shortcuts, a
+      light theme, narrow widths), review critically, score out of 10, fix, re-score, until ≥ 8.
+      The design canvas stays the source of truth: its deliberate choices (30px diff lines, the
+      34px file title, the faint `/`) are scored, not overridden. Scope: `apps/web/src/**`,
+      PLAN/DECISIONS. Accept: before / after screenshots, typecheck, tests, build.
+  - [x] **3x1. Rounds 1–3** (scores 6.5 → 7.4 → 7.8 → 8.0) — round 1: the diff's code and raw
+        commands follow a light theme (they were always github-dark, unreadable on Light / Paper /
+        Mist); no "✓ Done" chip on every command (not in the design; chips that say something
+        stay: passed counts, Failed); the shortcuts sheet's columns stack on their own (no hole
+        where rows lined up across); the header fits a narrow window (version pill hides, the
+        project pill shrinks); a fade where the conversation scrolls under the title; empty and
+        error states centred in the review island. Round 2: in a narrow window the agent chip is
+        logo + model and the mode chip its icon (they truncated to "B", ","); a shortcut's "while
+        working" and a file's "binary" are muted, not faint (faint is ~3:1). Round 3: split diff
+        rows stay 30px but a wrapped line's next line is 22px down (wrapped prose read
+        double-spaced); faint keycaps get a ring (the prompt's "/" read as a typo, the review's
+        N / P as stray letters). Left, by design or another step: the copy row's air under each
+        prompt, "Read after Read …", the 12px review title, picking files at narrow width (3v3b).
+  - [x] **3x2. Rounds 4–5** (8.0 → 8.2) — the review counts only files changed during the
+        session's turns (D67): the README test session went 44 → 2 files (the 2 were edited by
+        someone else while its turns ran: D65's side-by-side limit). Live states reviewed for the
+        first time, on a second Kratos (port 4400, a throwaway repo, a scripted stand-in for
+        `claude` in the scratch folder): working, ask, allowed / denied, queue, questions, review,
+        light theme, 600px. Fixed: "✓ 4 passed" for 18 passing tests (vitest prints its file count
+        first: the last count wins now); a running step said "Searched …" while the working line
+        said "Searching …" (unfinished steps show their intent, as asks already did); the copy
+        button sits beside the prompt, not in an empty row under every one. Left: the sidebar's
+        "Working" holding idle sessions (owner kept the names, 3d7), "store\.set" shown as the raw
+        pattern.
+        Code review fixes: a queued turn whose end snapshot failed is still counted (a turn_end
+        logged inside a gap keeps it); the test chip prefers jest's / vitest's "Tests" line (not
+        jest's "Snapshots: N passed"); `changedPaths` cached per tree pair (trees never change).
+        Left from the review: paths git C-quotes (`"`, `\`, tab, newline in a name) can drop out
+        of `only` (needs our own `-z` parse instead of simple-git's `diffSummary`); a slow start
+        snapshot can briefly count between-turn edits; a whole-session rename can pair your
+        deletion with the agent's new file. Released as v0.9.0.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

@@ -156,6 +156,41 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D67. Design review loop: score the dev app, fix inside the design (step 3x, owner)
+- Owner: screenshot every screen of the dev app, review critically, score, improve until ≥ 8.
+  Screenshots by headless Chromium (playwright-core in a scratch folder, not a dependency); a
+  light theme is checked by rewriting `theme` in the server's WebSocket messages in that browser
+  only, so the owner's saved theme is never touched.
+- Rule: the design canvas stays the source of truth. Its deliberate choices (30px diff rows,
+  the 34px file title, the 12px review title, the faint "/") are scored but not overridden;
+  fixes are defects or places the app drifted from it.
+- Code colours: `CODE_THEMES` (github-light / github-dark) + `useCodeTheme()` in
+  `lib/appearance.ts`, picked by the saved theme's `dark` flag (`isDarkTheme`). The diff
+  (`useLineTokens`, now taking the theme) and raw commands use it; Streamdown already had both
+  themes and switches on the `dark` class. Alternative: Shiki dual themes with CSS variables for
+  the diff — more change for the same result. Reverse: pass `CODE_THEMES.dark` everywhere.
+- Diff rows: `py-1` + 22px line height instead of 30px line height, so a row is still 30px but
+  wrapped lines aren't double-spaced. Reverse: `text-sm/7.5`, no padding.
+- Run results: a command's step shows a chip only when it says something (`✓ N passed`,
+  `Failed`); the plain `✓ Done` is gone. The count is the output's last "N passed" (vitest and
+  jest print files / suites first). Reverse: the lines in `addResult` (`lib/timeline.ts`).
+- A step not finished yet shows its intent ("Search for …"), as an ask's already did; done, its
+  past tense. Reverse: `step.ask ? intent : title` in `step-group.tsx`.
+- Review scope (3x2, owner: "make the best decision"): a session's changes are still its first
+  snapshot vs now (D65), but only for paths changed *during its turns*: each pair of snapshots in
+  a row except a turn's end → the next turn's start (you or another session between turns), plus
+  the open turn's start → now. A failed snapshot only widens a span, so the agent's edits are never
+  dropped. `Snapshots.changedPaths` (`git diff --name-only --no-renames`, no file reads) and
+  `diff(from, to, only)`; `store.snapshotsOf` replaces `firstSnapshot`. Still in: other sessions'
+  edits made while a turn runs (until worktrees), and later edits to a file the agent touched (you
+  review the file as it is now). Alternatives: last turn's end instead of now (hides your
+  follow-up fixes to the agent's files, and the open turn); composing per-turn diffs (exact, but
+  edits by turn, not the file as it is). Reverse: call `diff(first.tree, now)` without `only`.
+  A queued turn has no start snapshot, so if its end snapshot fails its edits sit in an end → start
+  gap (or after the last end): a gap counts when a `turn_end` was logged inside it
+  (`store.turnEndedBetween`, by `logSeq`). `changedPaths` results are cached per tree pair (trees
+  never change; every `get_changes` asks for every turn again), up to 2000 pairs.
+
 ### D66. Keyboard shortcuts: one list, TanStack Hotkeys (step 3k, owner)
 - Owner: shortcuts first class everywhere, shown neatly in the UI (the design's "Proposal ·
   keyboard shortcuts" board), user-configurable later, hardcoded now; library first.
@@ -201,7 +236,8 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   sessions', and empties when you commit); rebuilding from Edit/Write calls (no git, but misses
   anything a command changed).
 - Known limits: sessions running side by side in one folder (D41) show each other's changes
-  until worktrees; your own edits between turns show as the session's. The trees are
+  until worktrees; your own edits between turns show as the session's (narrowed by D67: only
+  files changed during a turn count). The trees are
   unreferenced objects, so `git gc` may prune them after its grace period (2 weeks by default)
   and an old session's review then says the snapshot is gone. Not a git repo → no review.
   Turn boundaries can blur (owner accepted, revisit in 3v4): when queued prompts start the next

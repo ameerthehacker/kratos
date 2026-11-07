@@ -13,7 +13,7 @@ import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
-import type { SessionStore } from "./store/store.js";
+import type { SessionStore, StoredSnapshot } from "./store/store.js";
 
 type Send = (message: ServerMessage) => void;
 
@@ -218,7 +218,8 @@ export class SessionHub {
     return data && { name: stored.name, kind: stored.kind, mediaType: stored.mediaType, data };
   }
 
-  /** What a session changed (3v1, D65): its first snapshot vs the files now. */
+  /** What a session changed (3v1, D65): its first snapshot vs the files now, for the files its
+   * agent touched — changed during one of its turns (D67). */
   private async changes(sessionId: string): Promise<ServerMessage> {
     const reply = (files: ChangedFile[], unavailable?: string, note?: string): ServerMessage => ({
       type: "changes",
@@ -230,7 +231,8 @@ export class SessionHub {
     const unrecorded = "Kratos couldn't record the files when this session started";
     if (!this.snapshots) return reply([], "Reviewing changes isn't available here");
     try {
-      const first = this.store.firstSnapshot(sessionId);
+      const taken = this.store.snapshotsOf(sessionId);
+      const first = taken[0];
       const now = await this.snapshots.take();
       if (now === null) return reply([], "This project isn't in a git repository, so Kratos can't see what changed");
       if (!first) {
@@ -238,7 +240,8 @@ export class SessionHub {
         return this.store.turnEndedBefore(sessionId) ? reply([], `${unrecorded}, so its changes can't be shown`) : reply([]);
       }
       if (!(await this.snapshots.exists(first.tree))) return reply([], "This session's starting snapshot is gone: git cleans up old ones");
-      const files = await this.snapshots.diff(first.tree, now);
+      const working = (this.runtimes.get(sessionId)?.status ?? "idle") !== "idle";
+      const files = await this.snapshots.diff(first.tree, now, await this.touched(sessionId, taken, now, working));
       // Turns that ended before the first snapshot (its start failed): shown from there on, said so.
       const partial = this.store.turnEndedBefore(sessionId, first);
       this.log.debug({ session: sessionId, files: files.length, partial }, "changes read");
@@ -247,6 +250,27 @@ export class SessionHub {
       this.log.warn({ err, session: sessionId }, "could not read changes");
       return reply([], `Couldn't read the changes: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /**
+   * The paths changed while the agent worked (D67): each pair of snapshots in a row, except a turn's
+   * end → the next turn's start (that's you, or another session, between turns), plus the open
+   * turn's start → now. A failed snapshot only widens a span, so the agent's edits are never lost —
+   * including a queued turn's (it has no start snapshot), whose end failed: a turn that ended in a
+   * gap makes it count. Edits by others during a turn still count (until worktrees, D41).
+   */
+  private async touched(sessionId: string, taken: StoredSnapshot[], now: string, working: boolean): Promise<Set<string>> {
+    const spans: Array<[string, string]> = [];
+    taken.forEach((snapshot, i) => {
+      const next = taken[i + 1];
+      if (!next) return;
+      const between = snapshot.kind === "turn_end" && next.kind === "turn_start" && !this.store.turnEndedBetween(sessionId, snapshot, next);
+      if (!between) spans.push([snapshot.tree, next.tree]);
+    });
+    const last = taken.at(-1)!;
+    if (last.kind === "turn_start" || working || this.store.turnEndedBetween(sessionId, last)) spans.push([last.tree, now]);
+    const paths = await Promise.all(spans.filter(([a, b]) => a !== b).map(([a, b]) => this.snapshots!.changedPaths(a, b)));
+    return new Set(paths.flat());
   }
 
   /** Is this one of this project's sessions? Tells the tab when not. */

@@ -43,7 +43,7 @@ export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors:
   return (
     <DropdownMenu>
       {/* A split pill: open | dot | menu. The dot sits outside both buttons so tooltips don't nest. */}
-      <div className="inline-flex h-8 max-w-64 items-center gap-1.5 rounded-full bg-secondary text-xs whitespace-nowrap text-secondary-foreground">
+      <div className="inline-flex h-8 max-w-64 min-w-0 items-center gap-1.5 rounded-full bg-secondary text-xs whitespace-nowrap text-secondary-foreground">
         {primary ? (
           <Tooltip>
             <TooltipTrigger

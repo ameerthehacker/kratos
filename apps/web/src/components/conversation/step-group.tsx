@@ -72,8 +72,9 @@ function StepRow({ step, raw }: { step: Step; raw: boolean }) {
         {step.ask ? <Hand className="size-3.5" /> : <Icon className="size-3.5" strokeWidth={2.2} />}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
-        {/* Not done yet while it waits for you: "Write notes.txt", then "Wrote notes.txt". */}
-        <div className="text-sm leading-snug">{step.ask ? step.intent : step.title}</div>
+        {/* Not done yet — waiting for you, or still running (3x1) — it says what it will do: "Write
+            notes.txt", then "Wrote notes.txt". A step a turn ended in the middle of stays that way. */}
+        <div className="text-sm leading-snug">{step.ask || (!step.finished && !step.stopped) ? step.intent : step.title}</div>
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {chips.map((chip, i) => (

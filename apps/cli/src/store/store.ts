@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { and, asc, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ServerMessage } from "@kratos/core";
@@ -135,9 +135,31 @@ export class SessionStore {
     this.db.insert(snapshots).values({ sessionId, kind, tree, logSeq, createdAt: new Date() }).run();
   }
 
-  /** The session's first snapshot: what its changes are measured from. */
-  firstSnapshot(sessionId: string): StoredSnapshot | undefined {
-    return this.db.select().from(snapshots).where(eq(snapshots.sessionId, sessionId)).orderBy(asc(snapshots.id)).limit(1).get();
+  /** All the session's snapshots, oldest first: its turns' boundaries; the first is what its
+   * changes are measured from. */
+  snapshotsOf(sessionId: string): StoredSnapshot[] {
+    return this.db.select().from(snapshots).where(eq(snapshots.sessionId, sessionId)).orderBy(asc(snapshots.id)).all();
+  }
+
+  /** Did a turn of this session end at or after `since` (and before `until`), by log position?
+   * Then a turn there has no end snapshot of its own (it failed): its edits are in that span (D67).
+   * Snapshots from before `logSeq` existed can't tell: false. */
+  turnEndedBetween(sessionId: string, since: StoredSnapshot, until?: StoredSnapshot): boolean {
+    if (since.logSeq === null) return false;
+    const row = this.db
+      .select({ seq: messages.seq })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.sessionId, sessionId),
+          gte(messages.seq, since.logSeq),
+          until?.logSeq != null ? lt(messages.seq, until.logSeq) : undefined,
+          sql`json_extract(${messages.message}, '$.event.kind') = 'turn_end'`,
+        ),
+      )
+      .limit(1)
+      .get();
+    return row !== undefined;
   }
 
   /** Mark a file viewed at this version, or not viewed (3v3). */

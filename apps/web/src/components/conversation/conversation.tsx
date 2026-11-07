@@ -22,7 +22,12 @@ export function Conversation(props: { items: TimelineItem[]; agent: string; stat
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
 
   return (
-    <StickToBottom className="relative min-h-0 flex-1" resize="smooth" initial="instant">
+    // The fade on top (3x1): what scrolls under the title goes soft instead of being cut off.
+    <StickToBottom
+      className="relative min-h-0 flex-1 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-6 before:bg-linear-to-b before:from-background before:to-transparent"
+      resize="smooth"
+      initial="instant"
+    >
       <StickToBottom.Content className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-6 pt-1 pb-8">
         {items.map((item, i) => {
           switch (item.type) {

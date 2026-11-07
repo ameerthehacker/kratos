@@ -994,10 +994,17 @@ describe("SessionHub: Send now (D56, 3t2)", () => {
   });
 });
 
-/** Snapshots the test controls (3v1): `take` waits until released, files "change" by hand. */
+/** Snapshots the test controls (3v1): `take` waits until released, files "change" by hand —
+ * `edit(path)` puts a change into the next snapshot taken. */
 class FakeSnapshots implements Snapshots {
   repo = true;
   taken = 0;
+  private pending: string[] = [];
+  /** tree number → the paths changed since the one before it. */
+  private changes = new Map<number, string[]>();
+  edit(path: string) {
+    this.pending.push(path);
+  }
   gone = new Set<string>();
   private waiting: Array<() => void> = [];
   /** Hold every `take` until `release()` (to see what waits for it). */
@@ -1007,7 +1014,9 @@ class FakeSnapshots implements Snapshots {
   async take() {
     if (this.hold) await new Promise<void>((resolve) => this.waiting.push(resolve));
     if (this.failing > 0 && this.failing--) throw new Error("git timed out");
-    return this.repo ? `tree${++this.taken}` : null;
+    if (!this.repo) return null;
+    this.changes.set(++this.taken, this.pending.splice(0));
+    return `tree${this.taken}`;
   }
   release() {
     this.hold = false;
@@ -1016,8 +1025,13 @@ class FakeSnapshots implements Snapshots {
   async exists(id: string) {
     return !this.gone.has(id);
   }
-  async diff(from: string, to: string) {
-    return [{ path: `${from}..${to}.txt`, version: `${from}..${to}`, status: "modified" as const, additions: 1, deletions: 0, before: "", after: "x\n" }];
+  async changedPaths(from: string, to: string) {
+    const [a, b] = [from, to].map((tree) => Number(tree.slice(4)));
+    return [...new Set([...this.changes].filter(([n]) => n > a! && n <= b!).flatMap(([, paths]) => paths))];
+  }
+  async diff(from: string, to: string, only?: ReadonlySet<string>) {
+    const paths = (await this.changedPaths(from, to)).filter((path) => !only || only.has(path));
+    return paths.map((path) => ({ path, version: `${from}..${to}`, status: "modified" as const, additions: 1, deletions: 0, before: "", after: "x\n" }));
   }
 }
 
@@ -1071,13 +1085,71 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
 
     a.receive({ type: "prompt", text: "edit" });
     await tick();
+    snapshots.edit("a.txt"); // the agent, during the turn
     agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await tick();
+    snapshots.edit("a.txt"); // you, after it: the same file again…
+    snapshots.edit("mine.txt"); // …and one only you touched
     a.receive({ type: "get_changes", sessionId: a.viewing });
     await tick();
     // tree1 was "now" for the first get_changes; tree2 = turn start, tree3 = turn end, tree4 = now
-    expect(changesOf(a.seen)).toMatchObject({ files: [{ path: "tree2..tree4.txt" }] });
+    expect(changesOf(a.seen)).toMatchObject({ files: [{ path: "a.txt", version: "tree2..tree4" }] });
     expect(changesOf(a.seen)).not.toHaveProperty("note"); // turn 1 ended after its snapshot, even in the same ms
+  });
+
+  it("counts only files changed during the agent's turns, and the open turn's so far (D67)", async () => {
+    const snapshots = new FakeSnapshots();
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "one" });
+    await tick();
+    snapshots.edit("one.txt");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    snapshots.edit("between.txt"); // between turns: not the agent's
+    a.receive({ type: "prompt", text: "two" });
+    await tick();
+    snapshots.edit("two.txt"); // the turn is still open
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    const paths = (m?: ServerMessage) => (m?.type === "changes" ? m.files.map((f) => f.path).sort() : []);
+    expect(paths(changesOf(a.seen))).toEqual(["one.txt", "two.txt"]);
+
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    snapshots.edit("later.txt"); // after the last turn, the session idle
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(paths(changesOf(a.seen))).toEqual(["one.txt", "two.txt"]);
+  });
+
+  it("a queued turn whose end snapshot failed still counts: it has no start snapshot of its own (D67)", async () => {
+    const snapshots = new FakeSnapshots();
+    const { agents, tab } = setup(snapshots);
+    const a = tab();
+    a.receive({ type: "prompt", text: "one" });
+    await tick();
+    a.receive({ type: "prompt", text: "two" }); // queued: the turn is open
+    snapshots.edit("one.txt");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    const [queued] = a.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+    agents[0]!.emit({ kind: "prompt_state", id: queued!, state: "started" }); // the agent starts turn 2 itself
+    await tick();
+    snapshots.edit("two.txt");
+    snapshots.failing = 1; // turn 2's end snapshot
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    const paths = (m?: ServerMessage) => (m?.type === "changes" ? m.files.map((f) => f.path).sort() : []);
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(paths(changesOf(a.seen))).toEqual(["one.txt", "two.txt"]);
+
+    a.receive({ type: "prompt", text: "three" }); // a turn of yours, with its own start snapshot
+    await tick();
+    a.receive({ type: "get_changes", sessionId: a.viewing });
+    await tick();
+    expect(paths(changesOf(a.seen))).toEqual(["one.txt", "two.txt"]);
   });
 
   it("a failed start snapshot: the changes since the first one, with a note that some may be missing", async () => {
@@ -1095,10 +1167,11 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
 
     a.receive({ type: "prompt", text: "two" }); // its start snapshot works
     await tick();
+    snapshots.edit("b.txt");
     a.receive({ type: "get_changes", sessionId: a.viewing });
     await tick();
     const changes = changesOf(a.seen);
-    expect(changes).toMatchObject({ files: [{ path: "tree2..tree3.txt" }], note: expect.stringContaining("earliest turns may be missing") });
+    expect(changes).toMatchObject({ files: [{ path: "b.txt", version: "tree2..tree3" }], note: expect.stringContaining("earliest turns may be missing") });
     expect(changes).not.toHaveProperty("unavailable");
   });
 

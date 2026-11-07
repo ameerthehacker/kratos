@@ -4,6 +4,7 @@ import type { ThemedToken } from "shiki";
 import type { ChangedFile } from "@kratos/core";
 import { SKIPPED } from "@/components/review/counts";
 import { diffLinesOf, foldRows, lineSpans, pairRows, type DiffLine } from "@/lib/diff-rows";
+import { useCodeTheme } from "@/lib/appearance";
 import { languageFor, useLineTokens } from "@/lib/highlight";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +21,9 @@ export function DiffView({ file, layout }: { file: ChangedFile; layout: "split" 
   const rows = useMemo(() => foldRows(lines, open), [lines, open]);
   const pairs = useMemo(() => (layout === "split" ? pairRows(rows) : []), [layout, rows]);
   const lang = languageFor(file.path);
-  const oldTokens = useLineTokens(file.before, lang);
-  const newTokens = useLineTokens(file.after, lang);
+  const codeTheme = useCodeTheme();
+  const oldTokens = useLineTokens(file.before, lang, codeTheme);
+  const newTokens = useLineTokens(file.after, lang, codeTheme);
 
   if (file.skipped) {
     return <div className="flex-none rounded-2xl bg-well px-6 py-8 text-sm text-muted-foreground ring-1 ring-border">{SKIPPED[file.skipped]}</div>;
@@ -40,7 +42,8 @@ export function DiffView({ file, layout }: { file: ChangedFile; layout: "split" 
             pair.type === "fold" ? (
               fold(pair.id, pair.count)
             ) : (
-              <div key={i} className="grid grid-cols-2 font-mono text-sm/7.5">
+              // 30px rows (the design), but a wrapped line's next line comes 22px down, not 30 (3x1).
+              <div key={i} className="grid grid-cols-2 font-mono text-sm/5.5">
                 <Half line={pair.left} number={pair.left?.old} tokens={pair.left && oldTokens?.[pair.left.old! - 1]} />
                 <Half line={pair.right} number={pair.right?.new} tokens={pair.right && newTokens?.[pair.right.new! - 1]} className="border-l border-border" />
               </div>
@@ -81,10 +84,10 @@ function Fold({ count, split, onOpen }: { count: number; split: boolean; onOpen:
 function Line({ line, oldTokens, newTokens }: { line: DiffLine; oldTokens: Tokens; newTokens: Tokens }) {
   const tokens = line.kind === "del" ? oldTokens?.[line.old! - 1] : newTokens?.[line.new! - 1];
   return (
-    <div className={cn("relative flex font-mono text-sm/7.5", tint(line))}>
+    <div className={cn("relative flex py-1 font-mono text-sm/5.5", tint(line))}>
       <ChangeBar line={line} />
-      <span className="w-13 flex-none pr-3.5 text-right text-xs/7.5 text-faint select-none">{line.old}</span>
-      <span className="w-13 flex-none pr-3.5 text-right text-xs/7.5 text-faint select-none">{line.new}</span>
+      <span className="w-13 flex-none pr-3.5 text-right text-xs/5.5 text-faint select-none">{line.old}</span>
+      <span className="w-13 flex-none pr-3.5 text-right text-xs/5.5 text-faint select-none">{line.new}</span>
       <Sign line={line} className="w-5" />
       <Code line={line} tokens={tokens} className="pr-8 whitespace-pre" />
     </div>
@@ -95,9 +98,9 @@ function Line({ line, oldTokens, newTokens }: { line: DiffLine; oldTokens: Token
 function Half({ line, number, tokens, className }: { line: DiffLine | undefined; number: number | undefined; tokens: ThemedToken[] | undefined; className?: string }) {
   if (!line) return <div aria-hidden="true" className={cn("bg-hatch", className)} />;
   return (
-    <div className={cn("relative flex min-w-0", tint(line), className)}>
+    <div className={cn("relative flex min-w-0 py-1", tint(line), className)}>
       <ChangeBar line={line} />
-      <span className="w-12 flex-none pr-3.5 text-right text-xs/7.5 text-faint select-none">{number}</span>
+      <span className="w-12 flex-none pr-3.5 text-right text-xs/5.5 text-faint select-none">{number}</span>
       <Sign line={line} className="w-4.5" />
       <Code line={line} tokens={tokens} className="min-w-0 flex-1 pr-4 whitespace-pre-wrap wrap-anywhere" />
     </div>

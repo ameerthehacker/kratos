@@ -44,7 +44,7 @@ export function Layout() {
     <div className="flex h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
       <SessionsSidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-3xl bg-background">
-        <header className="flex min-h-16 items-center gap-4 px-6 py-3">
+        <header className="flex min-h-16 items-center gap-4 px-6 py-3 max-sm:gap-2 max-sm:px-4">
           {/* The sidebar is gone when closed; this brings it back (3d4). */}
           {!sidebarOpen && <SidebarToggle className="-ml-3 size-9" />}
           <Link
@@ -55,7 +55,8 @@ export function Layout() {
             <KratosLogo />
           </Link>
           {/* Close to the wordmark (the design: −8px), before the spacer. */}
-          {info && <span className="-ml-2"><VersionPill info={info} /></span>}
+          {/* Hidden in a narrow window (3x1), where the project pill needs the room. */}
+          {info && <span className="-ml-2 hidden sm:inline"><VersionPill info={info} /></span>}
           <span className="flex-1" />
           <QuickSettings />
           {/* The connection dot lives in the project chip (3d3), with a tooltip. */}

@@ -14,14 +14,19 @@ export interface Snapshots {
   take(): Promise<string | null>;
   /** Is this snapshot still there? `git gc` prunes unreferenced trees after its grace period. */
   exists(id: string): Promise<boolean>;
-  /** The files that differ between two snapshots, with both texts. */
-  diff(from: string, to: string): Promise<ChangedFile[]>;
+  /** The paths that differ between two snapshots (both sides of a rename), without reading them. */
+  changedPaths(from: string, to: string): Promise<string[]>;
+  /** The files that differ between two snapshots, with both texts; with `only`, just those paths
+   * (a rename counts when either side is in it). */
+  diff(from: string, to: string, only?: ReadonlySet<string>): Promise<ChangedFile[]>;
 }
 
 /** Bigger sides aren't sent: the review page couldn't show them usefully anyway. */
 const MAX_SIDE_BYTES = 256 * 1024;
 /** All the texts of one `changes` message together; files past it are `too_big`. */
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
+/** How many snapshot pairs' changed paths are kept in memory (a pair per turn, roughly). */
+const MAX_CACHED_SPANS = 2000;
 /** Git's own test for binary: a NUL byte in the first 8000 bytes. */
 const BINARY_PROBE = 8000;
 
@@ -45,6 +50,8 @@ export function gitSnapshots(dir: string): Snapshots {
         return null; // not a repository, or no git installed
       }
     })());
+  /** `changedPaths` by "from..to", oldest first (D67). */
+  const spans = new Map<string, string[]>();
 
   return {
     async take() {
@@ -74,7 +81,21 @@ export function gitSnapshots(dir: string): Snapshots {
       );
     },
 
-    async diff(from, to) {
+    async changedPaths(from, to) {
+      const key = `${from}..${to}`;
+      const cached = spans.get(key);
+      if (cached) return cached;
+      const found = await locate();
+      if (!found) return [];
+      // No rename detection: a rename is its deleted and its added path, both of which count.
+      const out = await found.git.raw(["diff", "--name-only", "--no-renames", "-z", from, to]);
+      const paths = out.split("\0").filter(Boolean);
+      // Trees never change, so neither does their diff: every get_changes asks again for each turn.
+      if (spans.size >= MAX_CACHED_SPANS) spans.delete(spans.keys().next().value!);
+      spans.set(key, paths);
+      return paths;
+    },
+    async diff(from, to, only) {
       const found = await locate();
       if (!found) return [];
       const summary = await found.git.diffSummary(["--name-status", "--find-renames", from, to]);
@@ -83,6 +104,7 @@ export function gitSnapshots(dir: string): Snapshots {
       for (const entry of summary.files as DiffResultNameStatusFile[]) {
         const status = statusOf(entry);
         const oldPath = status === "renamed" ? entry.from : undefined;
+        if (only && !only.has(entry.file) && !(oldPath && only.has(oldPath))) continue;
         const before = status === "added" ? EMPTY : await blob(found.git, from, oldPath ?? entry.file);
         const after = status === "deleted" ? EMPTY : await blob(found.git, to, entry.file);
         // This exact change: what "viewed" is kept for (3v3). Another edit gives another version.

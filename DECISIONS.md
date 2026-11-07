@@ -715,7 +715,8 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   attachments yet.
 
 ### D37. Node 24, enforced (step 3p1, owner)
-- `.nvmrc` = `24`; root `engines.node` = `>=24 <25`; `engineStrict: true` in `pnpm-workspace.yaml`
+- `.nvmrc` = `24`; root `engines.node` = `24.x` (was `>=24 <25`, same range; changed for W1 because
+  Vercel ignored the two-part form and built on its Node 26 default); `engineStrict: true` in `pnpm-workspace.yaml`
   so `pnpm install` refuses other versions (verified: Node 22 → `ERR_PNPM_UNSUPPORTED_ENGINE`).
   `@types/node` ^24 everywhere. pnpm comes from Node 24's corepack, matching `packageManager`.
 - nvm's *global* default was left at 22 on purpose (it affects other projects); run `nvm use` in

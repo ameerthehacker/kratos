@@ -413,6 +413,11 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             arguments, then exit (sessions are in the DB; running agents would be stopped — wait
             for idle, or ask); how often to check, and whether the design gets an "update
             available" state.
+      - [x] **3u6. Busy port, clear error** (~10, owner, D60) — done: with 4399 held, kratos
+            prints "Port 4399 is already in use (another kratos running?). Stop it, or pick
+            another: kratos --port 4400" and exits 1; a free port starts as before. Planned as: a
+            taken port crashed with Node's raw `EADDRINUSE` stack trace; instead one line naming
+            the port, the likely cause and the fix, exit 1 with the database closed.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

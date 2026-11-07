@@ -52,7 +52,15 @@ const program = new Command()
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
-    const server = await startServer({ port: Number(opts.port), host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version });
+    const port = Number(opts.port);
+    const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version }).catch(
+      (err: unknown) => {
+        if (!(err instanceof Error && "code" in err && err.code === "EADDRINUSE")) throw err;
+        store.close(); // nothing else has started yet: no agent runs before a tab connects
+        // A clear stop, not a quiet fallback to another port (D60).
+        return program.error(`Port ${port} is already in use (another kratos running?). Stop it, or pick another: kratos --port ${port + 1}`);
+      },
+    );
     const shownHost = LOOPBACK.has(opts.host) ? "localhost" : opts.host;
     const url = `http://${shownHost}:${server.port}`;
     log.info(`kratos ${version.version} running at ${url}`);

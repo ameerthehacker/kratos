@@ -156,6 +156,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D60. A busy port is an error, not a fallback (step 3u6, owner)
+- Decision: if `listen` fails with `EADDRINUSE`, print one line through commander's `error`
+  (like the other startup errors: "Not a folder", `claude` missing) and exit 1 — no stack trace.
+- Alternative: quietly try the next free port. Rejected for now: the usual cause is a second
+  kratos on the same port, and a silently different URL (with a second agent on the same project)
+  is more confusing than a clear stop. Other listen errors (e.g. `EACCES`) still throw as before.
+- Reverse: drop the `catch` around `startServer` in `apps/cli/src/index.ts`.
+
 ### D59. Node 26 (LTS), enforced the same way (owner, after W1's first Vercel deploys)
 - Owner: move to Node 26. Vercel built on its Node 26 default whatever `engines` said (`>=24 <25`,
   then `24.x` — likely because the project reads `apps/site/package.json`, which has no engines),

@@ -156,6 +156,33 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D63. Quick settings: settings kept by Kratos, themes as CSS token blocks (step 3w1, owner)
+- Owner: build the design's quick settings (Home/Session boards) — themes first, notifications
+  next; settings saved by Kratos, the same in every tab and browser.
+- Settings: core `Settings` (zod; `theme` from `THEMES`, an unknown value falls back to the
+  default) in `~/.kratos/settings.json` — per user like the logs, not per project like the
+  database. `SettingsStore` reads it once (missing or unreadable = defaults, logged), writes a
+  change to a temp file renamed over the old one (no half-written file), and tells listeners.
+  Messages: `settings` (server → every tab, on connect and on change) and `set_settings`
+  (partial; an unknown theme fails the zod check like any invalid message).
+  Alternative: localStorage per browser (no server change, but each browser its own).
+- Themes: the Themes board's 8 themes, all 19 app tokens each, as `[data-theme="…"]` blocks in
+  `index.css` (Kratos Dark also on `:root`); shadcn's other names (`--popover`, `--sidebar`,
+  `--ring`, charts…) derived in one `:root, [data-theme]` block. Declared on every themed
+  element on purpose: a variable built from others is resolved where it's declared, so a nested
+  `data-theme` (a swatch) gets its own colours. That's how the swatches are drawn — by their own
+  theme's tokens, with no hex in components (CLAUDE.md UI rule). The Themes board, not the Home
+  board, is the source: the Home board's copies are partial (some themes set 13 of 19).
+- The page sets `data-theme` and the `dark` class (shadcn's `dark:` variants) on `<html>`;
+  `color-scheme` comes with each theme. The last theme shown is cached in localStorage and
+  applied by an inline script in index.html before the first paint, so a reload doesn't flash
+  Kratos Dark while the WebSocket connects (checked: the theme is set at DOMContentLoaded). The
+  picking tab applies a theme at once; the server's `settings` moves the others.
+- Popover: shadcn's Popover (base-ui, like the other menus), added with the shadcn CLI.
+- Not yet: code blocks and diffs keep `github-dark` in every theme until 3w2.
+- Reverse: drop `settings.ts`, the two messages, the theme blocks (restore the `.dark` block),
+  `quick-settings.tsx`, `lib/themes.ts` and the index.html script.
+
 ### D62. Headless `claude` gets artifacts and waits for MCP (step 3u7, owner)
 - Owner: Claude Code in the terminal can read and update claude.ai artifacts (the design canvas);
   inside Kratos it can't, and MCP "doesn't work properly". Found by running `claude` with Kratos's

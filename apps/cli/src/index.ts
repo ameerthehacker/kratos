@@ -11,6 +11,7 @@ import { detectEditors } from "./editors.js";
 import { createLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { DEFAULT_HOST, startServer } from "./server.js";
+import { SettingsStore } from "./settings.js";
 import { SessionStore } from "./store/store.js";
 import { Updater } from "./updater/updater.js";
 import { kratosVersion } from "./version.js";
@@ -55,8 +56,9 @@ const program = new Command()
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
     // 3u5: releases only (a source run never checks); new ones are downloaded to ~/.kratos/updates.
     const updater = new Updater(version.version, { log, downloadTo: join(KRATOS_HOME, "updates") });
+    const settings = new SettingsStore(join(KRATOS_HOME, "settings.json"), log); // 3w: per user, not per project
     const port = Number(opts.port);
-    const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version, updater }).catch(
+    const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version, updater, settings }).catch(
       (err: unknown) => {
         if (!(err instanceof Error && "code" in err && err.code === "EADDRINUSE")) throw err;
         store.close(); // nothing else has started yet: no agent runs before a tab connects

@@ -111,83 +111,230 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Themes (3w1, D63): the owner's Themes board — eight themes, one set of tokens. Every theme sets
+   every app token below; shadcn's other names are derived from them once (next block). A theme
+   applies to whatever carries its `data-theme` (the page's <html>, or a swatch in quick
+   settings). design → ours: bg→background, sec→secondary, acc→accent, ln→border, inp→input,
+   fg→foreground, fg2→secondary-foreground, mu→muted-foreground, fa→faint, pri→primary,
+   prifg→primary-foreground, del→destructive. */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Kratos dark theme: the owner's design tokens mapped onto shadcn's variables (D38).
-   design → shadcn: bg→background, surf→card, chip→secondary/muted, hov→accent, ln→border,
-   bd→input, fg2→secondary-foreground, mu→muted-foreground, acc→primary, del→destructive. */
-.dark {
-    --canvas: #070708; /* behind the islands (owner's island layout) */
+/* Kratos Dark */
+:root, [data-theme="kratos-dark"] {
+    color-scheme: dark;
+    --canvas: #070708;
     --background: #111113;
-    --foreground: #EDEDEF;
     --card: #18181B;
-    --card-foreground: #EDEDEF;
-    --popover: #18181B;
-    --popover-foreground: #EDEDEF;
-    --primary: #7CCFA6;
-    --primary-foreground: #06261A;
     --secondary: #1E1E22;
-    --secondary-foreground: #C8C8CD;
-    --muted: #1E1E22;
-    --muted-foreground: #9B9BA3;
     --accent: #1C1C20;
-    --accent-foreground: #EDEDEF;
-    --destructive: #FF8A7C;
+    --well: #0C0C0E;
     --border: #232327;
     --input: #34343A;
-    --ring: #6CA8FF;
+    --foreground: #EDEDEF;
+    --secondary-foreground: #C8C8CD;
+    --muted-foreground: #9B9BA3;
+    --faint: #62626B;
+    --primary: #7CCFA6;
+    --primary-foreground: #06261A;
+    --add: #6FCF97;
+    --destructive: #FF8A7C;
     --wait: #F2B54A;
     --run: #6CA8FF;
-    --add: #6FCF97;
-    --faint: #5E5E66;
-    --well: #0C0C0E; /* sunken blocks: raw commands, output (chat design) */
-    --vio: #C9A7FF; /* shell commands and flags (chat design) */
-    --chart-1: #7CCFA6;
-    --chart-2: #6CA8FF;
-    --chart-3: #F2B54A;
-    --chart-4: #FF8A7C;
-    --chart-5: #9B9BA3;
-    --sidebar: #111113;
-    --sidebar-foreground: #EDEDEF;
-    --sidebar-primary: #7CCFA6;
-    --sidebar-primary-foreground: #06261A;
-    --sidebar-accent: #1C1C20;
-    --sidebar-accent-foreground: #EDEDEF;
-    --sidebar-border: #232327;
-    --sidebar-ring: #6CA8FF;
+    --vio: #C9A7FF;
+}
+
+/* Kratos Light */
+[data-theme="kratos-light"] {
+    color-scheme: light;
+    --canvas: #E9EBE7;
+    --background: #FFFFFF;
+    --card: #FFFFFF;
+    --secondary: #F0F1EE;
+    --accent: #ECEDE9;
+    --well: #F6F7F4;
+    --border: #E3E5E0;
+    --input: #CDCFC9;
+    --foreground: #17171A;
+    --secondary-foreground: #34343A;
+    --muted-foreground: #5F5F67;
+    --faint: #8A8A92;
+    --primary: #1F7A56;
+    --primary-foreground: #FFFFFF;
+    --add: #1F7A45;
+    --destructive: #B3412E;
+    --wait: #8A5A00;
+    --run: #2462C2;
+    --vio: #6E45B5;
+}
+
+/* Graphite */
+[data-theme="graphite"] {
+    color-scheme: dark;
+    --canvas: #0E0E10;
+    --background: #1A1A1D;
+    --card: #222226;
+    --secondary: #2A2A2F;
+    --accent: #26262A;
+    --well: #141416;
+    --border: #2E2E33;
+    --input: #3E3E45;
+    --foreground: #F2F2F3;
+    --secondary-foreground: #CFCFD4;
+    --muted-foreground: #A3A3AB;
+    --faint: #6E6E77;
+    --primary: #8AB4FF;
+    --primary-foreground: #0B1A33;
+    --add: #74D19C;
+    --destructive: #FF8F85;
+    --wait: #F0B95A;
+    --run: #7FD0E6;
+    --vio: #C7A6FF;
+}
+
+/* Midnight */
+[data-theme="midnight"] {
+    color-scheme: dark;
+    --canvas: #05070F;
+    --background: #0B1020;
+    --card: #121A30;
+    --secondary: #18213A;
+    --accent: #151D34;
+    --well: #080C18;
+    --border: #1E2742;
+    --input: #2C3756;
+    --foreground: #E8ECF8;
+    --secondary-foreground: #C3CAE0;
+    --muted-foreground: #98A3C0;
+    --faint: #5D688A;
+    --primary: #9C8CFF;
+    --primary-foreground: #140E3A;
+    --add: #6FD3A0;
+    --destructive: #FF8C9A;
+    --wait: #F5C26B;
+    --run: #6CB4FF;
+    --vio: #D4A6FF;
+}
+
+/* Forest */
+[data-theme="forest"] {
+    color-scheme: dark;
+    --canvas: #060B08;
+    --background: #0D1511;
+    --card: #131E18;
+    --secondary: #19261F;
+    --accent: #16221B;
+    --well: #09100C;
+    --border: #1F2D25;
+    --input: #2D3F34;
+    --foreground: #E6F0EA;
+    --secondary-foreground: #C2D3C8;
+    --muted-foreground: #96AB9E;
+    --faint: #5D7264;
+    --primary: #E8C872;
+    --primary-foreground: #2A1E00;
+    --add: #7ED6A0;
+    --destructive: #FF9580;
+    --wait: #F29E5C;
+    --run: #7DB8F0;
+    --vio: #C9A7FF;
+}
+
+/* Paper */
+[data-theme="paper"] {
+    color-scheme: light;
+    --canvas: #EDEAE3;
+    --background: #FBF9F4;
+    --card: #FFFFFF;
+    --secondary: #F1EDE4;
+    --accent: #EEE9DF;
+    --well: #F5F1E8;
+    --border: #E4DED2;
+    --input: #CFC7B8;
+    --foreground: #1F1C17;
+    --secondary-foreground: #3B362E;
+    --muted-foreground: #655E52;
+    --faint: #968E7F;
+    --primary: #A8481F;
+    --primary-foreground: #FFFFFF;
+    --add: #2B7340;
+    --destructive: #A3302A;
+    --wait: #835400;
+    --run: #2B5AA8;
+    --vio: #6845A8;
+}
+
+/* Mist */
+[data-theme="mist"] {
+    color-scheme: light;
+    --canvas: #E6EAF0;
+    --background: #F7F9FC;
+    --card: #FFFFFF;
+    --secondary: #EDF1F6;
+    --accent: #E8EDF4;
+    --well: #F2F5F9;
+    --border: #DDE3EC;
+    --input: #C5CEDB;
+    --foreground: #141A24;
+    --secondary-foreground: #2E3747;
+    --muted-foreground: #58616F;
+    --faint: #7F889A;
+    --primary: #3059C2;
+    --primary-foreground: #FFFFFF;
+    --add: #21733F;
+    --destructive: #AE3631;
+    --wait: #835400;
+    --run: #0B7180;
+    --vio: #6A42B0;
+}
+
+/* High contrast */
+[data-theme="contrast"] {
+    color-scheme: dark;
+    --canvas: #000000;
+    --background: #000000;
+    --card: #0A0A0A;
+    --secondary: #161616;
+    --accent: #1F1F1F;
+    --well: #000000;
+    --border: #6A6A6A;
+    --input: #8A8A8A;
+    --foreground: #FFFFFF;
+    --secondary-foreground: #FFFFFF;
+    --muted-foreground: #D4D4D4;
+    --faint: #A8A8A8;
+    --primary: #7CFFB8;
+    --primary-foreground: #000000;
+    --add: #7CFFB8;
+    --destructive: #FF9B8F;
+    --wait: #FFD166;
+    --run: #8EC5FF;
+    --vio: #E0B8FF;
+}
+
+/* shadcn's remaining names, worked out per theme (declared wherever a theme is, so a nested
+   `data-theme` gets its own). */
+:root, [data-theme] {
+    --card-foreground: var(--foreground);
+    --popover: var(--card);
+    --popover-foreground: var(--foreground);
+    --muted: var(--secondary);
+    --accent-foreground: var(--foreground);
+    --ring: var(--run);
+    --chart-1: var(--primary);
+    --chart-2: var(--run);
+    --chart-3: var(--wait);
+    --chart-4: var(--destructive);
+    --chart-5: var(--muted-foreground);
+    --sidebar: var(--background);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--run);
 }
 
 @layer base {

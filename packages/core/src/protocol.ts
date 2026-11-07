@@ -29,6 +29,18 @@ export type AttachmentUpload = z.infer<typeof AttachmentUpload>;
 export const AttachmentRef = z.object({ id: z.string(), name: z.string(), kind: AttachmentKind, mediaType: z.string(), size: z.number() });
 export type AttachmentRef = z.infer<typeof AttachmentRef>;
 
+/** The app's themes (3w1, the design's Themes board); the UI names and draws them. */
+export const THEMES = ["kratos-dark", "kratos-light", "graphite", "midnight", "forest", "paper", "mist", "contrast"] as const;
+export const ThemeId = z.enum(THEMES);
+export type ThemeId = z.infer<typeof ThemeId>;
+
+/** The owner's settings (3w), kept by Kratos in `~/.kratos/settings.json`: the same in every tab
+ * and browser. Missing or unknown values fall back to the defaults. */
+export const Settings = z.object({
+  theme: ThemeId.catch("kratos-dark").default("kratos-dark"),
+});
+export type Settings = z.infer<typeof Settings>;
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
@@ -76,6 +88,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open_in"), editor: z.string() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
+  /** Change some settings (3w); every tab then gets the new `settings`. */
+  z.object({ type: z.literal("set_settings"), settings: z.object({ theme: ThemeId }).partial() }),
   /** Look for a Kratos update now (3u5d); answered with `update`, also when nothing changed. */
   z.object({ type: z.literal("check_update") }),
   /** Something the browser wants in the server's log file (D44), logged as component "web". */
@@ -145,9 +159,11 @@ export const UpdateStatus = z.object({
 });
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 
-/** Server → browser. Everything except pong/error/session/sessions/harnesses/update is in a
- * session's log. */
+/** Server → browser. Everything except pong/error/session/sessions/harnesses/update/settings is
+ * in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
+  /** The owner's settings (3w): on connect, and whenever any tab changes them. */
+  z.object({ type: z.literal("settings"), settings: Settings }),
   /** Kratos's update status: on connect, and whenever it changes (3u5). */
   z.object({ type: z.literal("update"), status: UpdateStatus }),
   /** The harnesses and their models: on connect once known, and when (re)loaded. */

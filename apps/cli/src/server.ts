@@ -8,6 +8,7 @@ import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editor
 import { silentLogger, type Logger } from "./logger.js";
 import { WEB_DIST } from "./paths.js";
 import type { SessionHub } from "./session-hub.js";
+import type { SettingsStore } from "./settings.js";
 import type { Updater } from "./updater/updater.js";
 import type { KratosVersion } from "./version.js";
 
@@ -35,6 +36,8 @@ export async function startServer(options: {
   version?: KratosVersion;
   /** Its update status goes to every tab (3u5); default none sent. */
   updater?: Updater;
+  /** The owner's settings (3w): sent to every tab, changed by any; default none. */
+  settings?: SettingsStore;
 }) {
   const version = options.version ?? { version: "dev" };
   const { hub } = options;
@@ -86,6 +89,11 @@ export async function startServer(options: {
       const unsubscribe = options.updater.subscribe((status) => send(socket, { type: "update", status }));
       socket.on("close", unsubscribe);
     }
+    if (options.settings) {
+      send(socket, { type: "settings", settings: options.settings.settings });
+      const unsubscribe = options.settings.subscribe((settings) => send(socket, { type: "settings", settings }));
+      socket.on("close", unsubscribe);
+    }
 
     socket.on("message", (raw) => {
       const parsed = ClientMessage.safeParse(safeJson(String(raw)));
@@ -101,6 +109,13 @@ export async function startServer(options: {
           agent: options.agent,
           editors: publicEditors(editors),
         });
+      } else if (parsed.data.type === "set_settings") {
+        try {
+          options.settings?.update(parsed.data.settings); // every tab, this one too, gets `settings`
+        } catch (err) {
+          log.warn({ err }, "could not save settings");
+          send(socket, { type: "error", message: `Could not save settings: ${err instanceof Error ? err.message : String(err)}` });
+        }
       } else if (parsed.data.type === "check_update") {
         // Answer this tab even when nothing changed, so its "Check again" settles (3u5d).
         const { updater } = options;

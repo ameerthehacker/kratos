@@ -620,9 +620,29 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             real run: mark from each of the three places, reload keeps it. Done: all three
             places + reopen verified on a copy of the dev DB; reopen-on-prompt by hub test.
             Also (owner): both sections collapse; Done starts collapsed; remembered per browser.
-- [ ] **Settings (owner, later)** — user-configurable appearance, starting with the code
-      theme (reply code blocks + raw commands; today one constant in `apps/web/src/lib/appearance.ts`),
-      likely with light/dark. Stored per user (not per project). To be designed with the owner.
+- [ ] **3w. Quick settings** (owner, design: Home + Session boards' "Quick settings", Themes board)
+      — a sliders button in the header (before the project pill) opens a popover: Theme (8
+      swatches) and Notifications (Notify me → Needs your OK · Finished · Play a sound). Owner:
+      settings saved by Kratos in `~/.kratos/settings.json`, shared by every tab and browser;
+      notifications from the browser, only when you're not looking at Kratos; themes first.
+  - [x] **3w1. Themes** (~250 logic + ~200 lines of theme colours) — core `Settings` (zod) +
+        `settings` / `set_settings` messages; the CLI keeps `settings.json` (validated, written
+        atomically) and sends changes to every tab. The 8 themes from the Themes board as CSS
+        blocks (`[data-theme=…]`, every theme sets every app token; shadcn's names derived once).
+        The page sets `data-theme` (+ `dark` for dark themes) on `<html>`, remembering the last
+        one in the browser so a reload doesn't flash the default. Popover per the design (base-ui
+        Popover via shadcn), each swatch drawn by its own theme's tokens (no hex in components).
+        Accept: tests for the settings file and messages; screenshots of the popover and of the
+        app in a light and a dark theme; a change in one tab shows in another.
+        Checked: screenshots (popover in Kratos Dark and Paper, the app in Paper and Midnight); a
+        second tab followed the pick without a reload; after a reload the theme is on <html> at
+        DOMContentLoaded; settings.json holds the last pick. Code blocks stay github-dark (3w2).
+  - [ ] **3w2. Code and diffs follow the theme** — Shiki on a CSS-variables theme bound to the
+        Themes board's code tokens (plain, com, kw, str, num, fn, type, prop) instead of
+        `github-dark`; diff tints from the board. Replaces `lib/appearance.ts`'s constant.
+  - [ ] **3w3. Notifications** — the popover's switches; browser notifications (permission asked
+        on first switch-on) when a session needs you (approval, question) or finishes, only while
+        Kratos isn't in front; one per event across tabs; click opens the session; optional sound.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

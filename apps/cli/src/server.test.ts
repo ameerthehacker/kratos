@@ -8,6 +8,7 @@ import { WS_PATH, type ClientMessage, type ServerMessage } from "@kratos/core";
 import { memoryLogger } from "./logger.js";
 import { SessionHub } from "./session-hub.js";
 import { startServer } from "./server.js";
+import { SettingsStore } from "./settings.js";
 import { SessionStore } from "./store/store.js";
 import { Updater } from "./updater/updater.js";
 
@@ -169,6 +170,28 @@ describe("kratos server", () => {
       expect(tab.messages.filter(is("update")).at(-1)?.status).toMatchObject({ state: "available", version: "0.2.0" });
     } finally {
       tab.close();
+      await server.close();
+    }
+  });
+
+  it("sends every tab the settings on connect, and a change from one tab to all of them (3w)", async () => {
+    const cwd = process.cwd();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const file = join(mkdtempSync(join(tmpdir(), "kratos-settings-")), "settings.json");
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code", settings: new SettingsStore(file) });
+    const [a, b] = [await openTab(server.port), await openTab(server.port)];
+    try {
+      expect(await a.waitFor(is("settings"))).toEqual({ type: "settings", settings: { theme: "kratos-dark" } });
+      a.send({ type: "set_settings", settings: { theme: "forest" } });
+      for (const tab of [a, b]) {
+        await vi.waitFor(() => expect(tab.messages.filter(is("settings")).at(-1)?.settings).toEqual({ theme: "forest" }));
+      }
+      expect(new SettingsStore(file).settings).toEqual({ theme: "forest" }); // saved
+      a.send({ type: "set_settings", settings: { theme: "neon" } }); // not a theme: refused as invalid
+      expect(await a.waitFor(is("error"))).toMatchObject({ message: "invalid message" });
+    } finally {
+      a.close();
+      b.close();
       await server.close();
     }
   });

@@ -222,7 +222,12 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             - Tests: fake claude learns `--permission-mode`, `set_permission_mode` (Bypass refused
               without the allow flag), `status` lines, and a plan turn (ExitPlanMode ask → status
               default); adapter + hub tests incl. the refused-without-consent case.
-      - [ ] **3q2. UI** (~150) — a mode chip next to the agent chip ("◎ Ask ▾") listing the
+      - [x] **3q2. UI** (~150) — done to design option A (owner): key caps removed from the
+            composer, "✋ Ask ▾" chip with an icon per agent-neutral `kind`; the last safe pick, on
+            Home or in a session, carries to new sessions (owner) — Bypass too, once consented
+            (owner; the dialog says so). Checked with
+            real `claude`: Plan → ExitPlanMode allowed → chip back to Ask. Desktop only (owner).
+            Planned as: a mode chip next to the agent chip ("◎ Ask ▾") listing the
             harness's modes with one-line descriptions; Home remembers the pick (with model and
             effort), a session switches live and shows agent-made changes (plan → Ask). Picking
             Bypass opens a consent dialog first (what it turns off, that it's this session only).

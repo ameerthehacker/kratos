@@ -1,21 +1,18 @@
 import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowUp, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-/** Key caps get a hairline edge so they read as keys on the card's dark surface. */
-const KEY = "ring-1 ring-border";
-
 /**
  * The prompt box (owner's design A, 3d1): a short placeholder, 16px text that grows as you type,
- * a soft accent glow while focused, the agent chip, keyboard hints and a round send button.
- * Enter sends, Shift+Enter = newline.
+ * a soft accent glow while focused, the agent and permission chips and a round send button.
+ * Enter sends, Shift+Enter = newline. The key-cap hints were dropped to make room for the mode
+ * chip (owner, 3q2 design option A).
  */
 export function PromptCard(props: {
-  /** The agent chip (an AgentPicker). */
-  agent: ReactNode;
+  /** The chips on the left of the bottom row: AgentPicker and PermissionPicker. */
+  chips: ReactNode;
   onSend: (text: string) => void;
   placeholder: string;
   /** "large" on Home (room for a first description), "compact" for replies. */
@@ -59,23 +56,9 @@ export function PromptCard(props: {
         )}
       />
       <div className="flex items-center gap-2">
-        {props.agent}
-        <span className="flex-1" />
-        {/* Real key caps (shadcn Kbd) instead of plain text; hidden on narrow screens. */}
-        <span className="hidden items-center gap-3 text-xs text-faint sm:flex" aria-hidden="true">
-          {/* Labels sit outside the key group: <kbd> would render them monospace. */}
-          <span className="flex items-center gap-1.5">
-            <Kbd className={KEY}>↵</Kbd>
-            send
-          </span>
-          <span className="flex items-center gap-1.5">
-            <KbdGroup>
-              <Kbd className={KEY}>⇧</Kbd>
-              <Kbd className={KEY}>↵</Kbd>
-            </KbdGroup>
-            new line
-          </span>
-        </span>
+        {/* min-w-0: in a very narrow window the chips' text truncates and send stays in the card
+            (no phone layout: mobile will be its own app — owner). */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">{props.chips}</div>
         {showStop ? (
           <Button
             type="button"

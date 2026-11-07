@@ -16,8 +16,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** `effort`: the level picked or in use; null/absent = none known yet (the agent's default). */
-export type AgentChoice = { harness: string; model: string | null; effort?: string | null };
+/** `effort`: the level picked or in use; null/absent = none known yet (the agent's default).
+ * `permissionMode`: the remembered mode (a dangerous one only after consent); null = the agent's default. */
+export type AgentChoice = { harness: string; model: string | null; effort?: string | null; permissionMode?: string | null };
 
 /**
  * The prompt card's agent chip (D43): "logo · Claude Code · Opus High ▾". Opens a menu to pick
@@ -52,20 +53,21 @@ export function AgentPicker(props: {
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={props.disabled || !harness}
-        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs whitespace-nowrap text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+        className="inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs whitespace-nowrap text-secondary-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       >
         <HarnessIcon id={props.value.harness} />
         {harness?.name ?? "Connecting…"}
-        {harness && <span className="text-muted-foreground">· {modelLabel(models, props.value.model)}</span>}
-        {effort && <span className="text-muted-foreground/70">{effortLabel(effort)}</span>}
-        <ChevronDown className="size-3 text-muted-foreground" strokeWidth={2.2} aria-hidden="true" />
+        {/* Truncates if the window gets very narrow, so the send button stays in the card. */}
+        {harness && <span className="truncate text-muted-foreground">· {modelLabel(models, props.value.model)}</span>}
+        {effort && <span className="shrink-0 text-muted-foreground/70">{effortLabel(effort)}</span>}
+        <ChevronDown className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.2} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-72">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Harness</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={props.value.harness}
-            onValueChange={(id: string) => props.onChange({ harness: id, model: null, effort: null })}
+            onValueChange={(id: string) => props.onChange({ harness: id, model: null, effort: null, permissionMode: null })}
           >
             {props.harnesses.map((h) => (
               <DropdownMenuRadioItem

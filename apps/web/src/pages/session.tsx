@@ -3,6 +3,8 @@ import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { SessionSummary } from "@kratos/core";
 import { AgentPicker } from "@/components/agent-picker";
+import { PermissionPicker } from "@/components/permission-picker";
+import { useHomeChoice } from "@/lib/home-choice";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { DoneButton } from "@/components/done-button";
@@ -21,6 +23,8 @@ export function SessionPage() {
   );
   const session = sessions.find((s) => s.id === sessionId);
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
+  const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
+  const rememberMode = useHomeChoice((s) => s.rememberMode);
   const shown = viewing === sessionId ? log : NO_LOG;
   const items = useMemo(() => buildTimeline(shown, cwd), [shown, cwd]);
 
@@ -48,19 +52,36 @@ export function SessionPage() {
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
         <PromptCard
-          agent={
-            <AgentPicker
-              harnesses={harnesses}
-              value={{ harness: session?.harness ?? "", model: session?.model ?? null, effort: session?.effort ?? null }}
-              // Switches this session's model or effort, live if its agent is running (D43, D51).
-              // Model null = the default; effort has no "default" to go back to (D51).
-              onChange={(choice) => {
-                if (choice.model !== session?.model) send({ type: "set_model", model: choice.model });
-                else if (choice.effort && choice.effort !== session?.effort) send({ type: "set_effort", effort: choice.effort });
-              }}
-              harnessLocked
-              disabled={!connected || viewing !== sessionId}
-            />
+          chips={
+            <>
+              <AgentPicker
+                harnesses={harnesses}
+                value={{ harness: session?.harness ?? "", model: session?.model ?? null, effort: session?.effort ?? null }}
+                // Switches this session's model or effort, live if its agent is running (D43, D51).
+                // Model null = the default; effort has no "default" to go back to (D51).
+                onChange={(choice) => {
+                  if (choice.model !== session?.model) send({ type: "set_model", model: choice.model });
+                  else if (choice.effort && choice.effort !== session?.effort) send({ type: "set_effort", effort: choice.effort });
+                }}
+                harnessLocked
+                disabled={!connected || viewing !== sessionId}
+              />
+              <PermissionPicker
+                agentName={agentName}
+                modes={modes}
+                value={session?.permissionMode ?? null}
+                // Live if its agent runs (D53); the server refuses a dangerous mode without consent.
+                // A pick also becomes the mode new sessions start in — Bypass too, once consented
+                // (owner, 3q2).
+                onChange={(mode, confirmed) => {
+                  if (!session || mode === session.permissionMode) return;
+                  send({ type: "set_permission_mode", mode, ...(confirmed ? { confirmDangerous: true } : {}) });
+                  const picked = modes.find((m) => m.id === mode);
+                  if (picked && (!picked.dangerous || confirmed)) rememberMode(session.harness, picked.isDefault ? null : mode);
+                }}
+                disabled={!connected || viewing !== sessionId}
+              />
+            </>
           }
           onSend={(text) => send({ type: "prompt", text })}
           onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}

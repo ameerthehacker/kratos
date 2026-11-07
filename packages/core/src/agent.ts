@@ -123,6 +123,11 @@ export type AgentModel = z.infer<typeof AgentModel>;
 export const AgentPermissionMode = z.object({
   id: z.string(),
   label: z.string(),
+  /** For the chip ("Ask", "Accept edits"); the menu shows `label`. */
+  shortLabel: z.string(),
+  /** Agent-neutral meaning, so the UI can pick an icon without knowing agent ids (like ToolAction):
+   * ask first, accept edits, plan only, the agent's own checker, never ask (refuse), no checks. */
+  kind: z.enum(["ask", "edits", "plan", "auto", "never_ask", "bypass", "other"]),
   description: z.string(),
   /** The agent's own default: choosing it means "no mode chosen" (null). */
   isDefault: z.boolean().optional(),

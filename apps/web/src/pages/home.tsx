@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
+import { PermissionPicker } from "@/components/permission-picker";
 import { PromptCard } from "@/components/prompt-card";
 import { RecentList } from "@/components/recent-list";
 import { useHomeChoice } from "@/lib/home-choice";
@@ -15,6 +16,11 @@ export function HomePage() {
   );
   const { choice: remembered, setChoice } = useHomeChoice();
   const choice = currentChoice(remembered, harnesses);
+  const harness = harnesses.find((h) => h.id === choice?.harness);
+  const permissionMode = choice?.permissionMode ?? null;
+  // A dangerous mode (Bypass) is only ever stored after its consent dialog, so sending it
+  // carries that consent (owner: remember Bypass too; D53).
+  const dangerous = harness?.permissionModes.find((m) => m.id === permissionMode)?.dangerous ?? false;
   const navigate = useNavigate();
   // After sending, go to the session the prompt landed in — known once the server echoes it.
   const pending = useRef<{ text: string; viewing?: string; seen: number } | null>(null);
@@ -38,6 +44,8 @@ export function HomePage() {
       harness: choice?.harness,
       model: choice?.model ?? undefined,
       effort: choice?.effort ?? undefined,
+      permissionMode: permissionMode ?? undefined,
+      confirmDangerous: dangerous || undefined,
     });
   };
   // Sessions with at least one prompt, not marked done (owner, 3d2: done ones live in the sidebar).
@@ -48,7 +56,21 @@ export function HomePage() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
         <h1 className="text-center font-heading text-display font-semibold">What should we build?</h1>
         <PromptCard
-          agent={<AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />}
+          chips={
+            <>
+              <AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />
+              <PermissionPicker
+                agentName={harness?.name ?? "The agent"}
+                modes={harness?.permissionModes ?? []}
+                value={permissionMode}
+                onChange={(id, confirmed) => {
+                  const mode = harness?.permissionModes.find((m) => m.id === id);
+                  if (!choice || !mode || (mode.dangerous && !confirmed)) return;
+                  setChoice({ ...choice, permissionMode: mode.isDefault ? null : id }); // default = none chosen
+                }}
+              />
+            </>
+          }
           onSend={start}
           disabled={!connected}
           placeholder="Describe a change…"
@@ -60,7 +82,8 @@ export function HomePage() {
 }
 
 /** The remembered choice, if the server still offers it; else the first harness on its default
- * model. A remembered effort level counts only if the chosen model has it (D51). */
+ * model. A remembered effort level counts only if the chosen model has it (D51); a remembered
+ * permission mode only if the harness still has it (D53). */
 function currentChoice(remembered: AgentChoice | undefined, harnesses: Harness[]): AgentChoice | undefined {
   const harness = harnesses.find((h) => h.id === remembered?.harness) ?? harnesses[0];
   if (!harness) return undefined;
@@ -70,5 +93,7 @@ function currentChoice(remembered: AgentChoice | undefined, harnesses: Harness[]
   const chosen = known ? model : null;
   const levels = harness.models.find((m) => (chosen === null ? m.isDefault : m.id === chosen))?.efforts ?? [];
   const effort = remembered?.harness === harness.id && remembered.effort && levels.includes(remembered.effort) ? remembered.effort : null;
-  return { harness: harness.id, model: chosen, effort };
+  const rememberedMode = remembered?.harness === harness.id ? remembered.permissionMode : null;
+  const mode = harness.permissionModes.find((m) => m.id === rememberedMode);
+  return { harness: harness.id, model: chosen, effort, permissionMode: mode?.id ?? null };
 }

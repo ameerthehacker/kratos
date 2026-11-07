@@ -70,9 +70,9 @@ class FakeSession implements AgentSession {
 }
 
 const MODES: AgentPermissionMode[] = [
-  { id: "default", label: "Ask", description: "asks", isDefault: true },
-  { id: "acceptEdits", label: "Accept edits", description: "edits freely" },
-  { id: "bypassPermissions", label: "Bypass", description: "no checks", dangerous: true },
+  { id: "default", label: "Ask", shortLabel: "Ask", kind: "ask", description: "asks", isDefault: true },
+  { id: "acceptEdits", label: "Accept edits", shortLabel: "Edits", kind: "edits", description: "edits freely" },
+  { id: "bypassPermissions", label: "Bypass", shortLabel: "Bypass", kind: "bypass", description: "no checks", dangerous: true },
 ];
 
 const MODELS: AgentModel[] = [

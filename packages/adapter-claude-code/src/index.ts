@@ -69,14 +69,16 @@ async function fetchModels(claudePath: string): Promise<AgentModel[]> {
  * has no request that lists them, so the adapter knows them; the CLI still refuses unknown ones.
  */
 const PERMISSION_MODES: AgentPermissionMode[] = [
-  { id: "default", label: "Ask before acting", description: "Asks before editing files or running commands.", isDefault: true },
-  { id: "acceptEdits", label: "Accept edits", description: "Edits files without asking; asks before other commands." },
-  { id: "plan", label: "Plan first", description: "Only reads and plans; asks you to approve the plan before changing anything." },
-  { id: "auto", label: "Auto", description: "Claude Code's own checker decides what needs your approval." },
-  { id: "dontAsk", label: "Don't ask", description: "Never asks: anything not already allowed is refused." },
+  { id: "default", label: "Ask before acting", shortLabel: "Ask", kind: "ask", description: "Asks before editing files or running commands.", isDefault: true },
+  { id: "acceptEdits", label: "Accept edits", shortLabel: "Accept edits", kind: "edits", description: "Edits files without asking; asks before other commands." },
+  { id: "plan", label: "Plan first", shortLabel: "Plan", kind: "plan", description: "Only reads and plans; asks you to approve the plan before changing anything." },
+  { id: "auto", label: "Auto", shortLabel: "Auto", kind: "auto", description: "Claude Code's own checker decides what needs your approval." },
+  { id: "dontAsk", label: "Don't ask", shortLabel: "Don't ask", kind: "never_ask", description: "Never asks: anything not already allowed is refused." },
   {
     id: "bypassPermissions",
     label: "Bypass permissions",
+    shortLabel: "Bypass",
+    kind: "bypass",
     description: "No checks at all: every edit and command runs without asking.",
     dangerous: true,
   },

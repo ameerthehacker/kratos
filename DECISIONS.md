@@ -175,7 +175,8 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   `permission_mode` only on a real change (the adapter drops the per-turn repeats), so Kratos
   follows switches the agent makes itself. It goes into the session log like any agent event.
 - Consent is enforced by the server, not just the UI: a `dangerous` mode in `set_permission_mode`
-  or a Home `prompt` is refused unless `confirmDangerous: true` (only the consent dialog sends it),
+  or a Home `prompt` is refused unless `confirmDangerous: true` (sent only after the consent
+  dialog — or, for a remembered Bypass, from the consent that stored it),
   and a refused Home prompt starts nothing. Unknown modes are refused before reaching the agent.
 - Every Claude process starts with `--allow-dangerously-skip-permissions`, so Bypass can be
   switched on mid-session without restarting the agent. Alternative: restart (resume) the agent
@@ -184,6 +185,20 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Store: `sessions.permission_mode` (migration 0005) = chosen or last reported; null = never
   chosen. Resume passes it, so a session keeps its mode across restarts (Bypass included —
   consent is per session, given once).
+- UI (3q2, owner picked design option A of three): the composer drops its key-cap hints to make
+  room; a mode chip ("✋ Ask ▾") sits after the agent chip; its menu ("Permissions") lists each
+  mode with its description, the dangerous one apart in red; picking it opens a shadcn
+  AlertDialog ("Turn off all permission checks?" — Cancel / Turn off checks) and only its confirm
+  sends `confirmDangerous`. Icons come from an agent-neutral `kind` (ask, edits, plan, auto,
+  never_ask, bypass, other) plus a `shortLabel` on each mode, so the UI never knows Claude's ids
+  (like ToolAction). Memory (owner: "new session does not carry the last mode"): the last mode
+  picked — on Home or inside a session — is what new sessions start in. That includes Bypass
+  (owner, reversing my first cut, which never remembered it): it can only be stored after its
+  consent dialog, which now says "New sessions will start this way too, until you pick another
+  mode", and Home then sends `confirmDangerous` with it. Trade-off accepted: one consent covers
+  later sessions; the red chip on Home keeps it visible. Agent-made switches
+  (leaving plan mode) don't change that memory: only your picks do. Desktop widths only (owner:
+  mobile will be its own app); chips just truncate in a very narrow window.
 - Later: a plan-approval card for `ExitPlanMode` (today a generic ask).
 - Reverse: additive — drop `set_permission_mode`/`permissionMode` and the allow flag.
 

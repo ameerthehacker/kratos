@@ -101,4 +101,4 @@ jobs:
           git add Formula/kratos.rb
           git diff --cached --quiet && { echo "Formula already up to date"; exit 0; }
           git commit -m "kratos $VERSION"
-          git push
+          git push origin HEAD:main # also creates main in a still-empty tap

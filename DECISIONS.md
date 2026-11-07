@@ -267,6 +267,10 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
     uninstalled and untapped. Not checked: the workflow on GitHub (no actionlint here; YAML
     parses), and Homebrew on Linux — whether brew's post-install processing of a Linux binary
     leaves pkg's injected blob intact is for the first real release to show.
+  - Actions: `actions/checkout@v7`, `actions/setup-node@v7`, `pnpm/action-setup@v6`, pinned by
+    major — the v4s ran on Node 20, which GitHub deprecated (0.1.0's run warned). Their breaking
+    changes don't touch us: setup-node's automatic caching is npm-only and we set `cache: pnpm`;
+    pnpm/action-setup v6 adds pnpm 11 support. First exercised by the next release.
   - Reverse: delete the workflow and the formula script; releases go back to manual.
 - Opens the browser (owner, 3u3): `kratos` opens the UI in the default browser once it listens
   (`open`, already used for editors); `--no-open` skips it. `pnpm dev` passes `--no-open` (the UI

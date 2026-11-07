@@ -459,8 +459,25 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               Ctrl-C still works). Accept: a binary built as 0.0.9
               updates itself to the real v0.1.0 and comes back up as 0.1.0 (driven by a WebSocket
               script); brew path checked with a local throwaway tap, as 3u4 was.
-        - [ ] **3u5d. UI** — later, per the design: the version pill shows the state, "Restart to
-              update" button, "waiting for Claude to finish".
+        - [x] **3u5d. UI** (~190, owner, before 5b/5c; D61) — owner: reuse the version pill; it
+              shows when an update is available; clicking opens a dialog to view the release,
+              check again, and update — saying Kratos restarts by itself once every agent is
+              done. Built from Claude's draft (the design artifact couldn't be opened here).
+              - Pill: as today when up to date; mint tint + dot + "0.1.0 → 0.2.0" when available.
+                Click = the dialog (the release/commit link moves into it).
+              - Dialog: "Kratos 0.2.0 is available" / "Kratos 0.1.0 is up to date" + "checked 4
+                minutes ago"; View release notes · Check again · Update & restart, with "Kratos
+                restarts by itself once every agent is done (N working now)". Update & restart is
+                disabled until 3u5c makes it work. Source runs: "Running from source", View commit.
+              - Backend: `check_update` (client → server; the server answers that tab with the
+                status even if nothing changed) and `checkedAt` in the status.
+              - Local testing: `KRATOS_VERSION=0.0.9 pnpm dev` makes a source run act as release
+                0.0.9, so it checks the real GitHub and sees v0.1.0.
+              Accept: screenshots of the pill and dialog (available, up to date, source run);
+              Check again updates "checked …"; tests for `check_update` and `KRATOS_VERSION`.
+              Checked: screenshots of all three (servers run as 0.0.9, 0.1.0 and from source,
+              against the real GitHub); Check again settled on "checked just now". Not seen yet:
+              the "N sessions working now" wording with an agent running.
       - [x] **3u6. Busy port, clear error** (~10, owner, D60) — done: with 4399 held, kratos
             prints "Port 4399 is already in use (another kratos running?). Stop it, or pick
             another: kratos --port 4400" and exits 1; a free port starts as before. Planned as: a

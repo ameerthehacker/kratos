@@ -159,9 +159,14 @@ describe("kratos server", () => {
       await vi.waitFor(() =>
         expect(tab.messages.filter(is("update")).at(-1)).toEqual({
           type: "update",
-          status: { state: "available", version: "0.2.0", url: release.html_url },
+          status: { state: "available", version: "0.2.0", url: release.html_url, checkedAt: expect.any(Number) },
         }),
       );
+      // "Check again" (3u5d): answered even though nothing changed but the time.
+      const before = tab.messages.filter(is("update")).length;
+      tab.send({ type: "check_update" });
+      await vi.waitFor(() => expect(tab.messages.filter(is("update")).length).toBeGreaterThan(before));
+      expect(tab.messages.filter(is("update")).at(-1)?.status).toMatchObject({ state: "available", version: "0.2.0" });
     } finally {
       tab.close();
       await server.close();

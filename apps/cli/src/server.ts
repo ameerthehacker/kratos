@@ -101,6 +101,10 @@ export async function startServer(options: {
           agent: options.agent,
           editors: publicEditors(editors),
         });
+      } else if (parsed.data.type === "check_update") {
+        // Answer this tab even when nothing changed, so its "Check again" settles (3u5d).
+        const { updater } = options;
+        if (updater) void updater.check().then(() => send(socket, { type: "update", status: updater.status }));
       } else if (parsed.data.type === "open_in") {
         const editor = parsed.data.editor;
         openEditor(editor).then(

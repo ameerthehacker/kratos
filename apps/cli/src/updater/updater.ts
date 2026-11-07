@@ -83,10 +83,10 @@ export class Updater {
       const latest = await latestRelease(this.fetch, `kratos/${this.running}`);
       if (!latest || !semver.gt(latest.version, this.running)) {
         this.log.debug({ latest: latest?.version, running: this.running }, "up to date");
-        return this.set({ state: "idle" });
+        return this.set({ state: "idle", checkedAt: Date.now() });
       }
       if (this.now.version !== latest.version) this.log.info(`kratos ${latest.version} is available: ${latest.url}`);
-      this.set({ state: "available", ...latest });
+      this.set({ state: "available", ...latest, checkedAt: Date.now() });
     } catch (err) {
       this.log.debug({ err }, "update check failed");
     }

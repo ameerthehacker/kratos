@@ -17,6 +17,15 @@ describe("kratosVersion (3u1)", () => {
     expect(kratosVersion({ packageVersion: () => "0.0.0", commit: () => undefined })).toEqual({ version: "dev" });
   });
 
+  it("KRATOS_VERSION makes a source run act as that release, to try updates locally (3u5d)", () => {
+    process.env.KRATOS_VERSION = "0.0.9";
+    try {
+      expect(kratosVersion()).toEqual({ version: "0.0.9", url: "https://github.com/ameerthehacker/kratos/releases/tag/v0.0.9" });
+    } finally {
+      delete process.env.KRATOS_VERSION;
+    }
+  });
+
   it("this checkout is unreleased: its commit", () => {
     expect(kratosVersion().version).toMatch(/^[0-9a-f]{7,}$/);
   });

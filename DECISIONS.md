@@ -173,6 +173,23 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   change, like `sessions`; not in a session's log. States for now: `idle | available` (+
   `version`, release `url`); 3u5b/3u5c add theirs when they exist rather than unused ones now.
 - `apps/cli` now depends on `zod` directly (same range as core) to check GitHub's reply.
+- UI (3u5d, owner: reuse the version pill). The design artifact couldn't be opened from the
+  session (a claude.ai chat artifact the Docs tools can't read), so this follows Claude's draft:
+  - Pill: unchanged when up to date; when a release is out, mint (`bg-primary/15 text-primary`)
+    with a dot and "0.0.9 → 0.1.0". It's now a button for the dialog, not a link: the release /
+    commit link moved into the dialog (one place for everything about the version).
+  - Dialog (shadcn `Dialog`, `sm:max-w-md` — at `max-w-sm` the three buttons overflowed):
+    title says available / up to date, "checked 4 minutes ago" (`Intl.RelativeTimeFormat`, no
+    date library for one phrase), Release notes, Check again, Update & restart + "Kratos restarts
+    by itself once every agent is done (N sessions working now)". Update & restart stays disabled
+    until 3u5c can apply. Source runs: "Running from source" + View commit.
+  - `check_update` (client → server): the server answers that tab with `update` after checking,
+    even when nothing changed, so the button's spinner always settles. `checkedAt` (set when GitHub
+    answers) makes every successful check a change, so all tabs see the new time too.
+  - `KRATOS_VERSION=<semver>` (env) makes a source run act as that release, to try updates
+    locally: `KRATOS_VERSION=0.0.9 pnpm dev` sees the real v0.1.0. A dev knob, not a flag: users
+    have no reason to fake their version. 3u5b/3u5c will need a fake release server too (to try
+    a download without publishing); added then.
 - Reverse: delete `apps/cli/src/updater/`, its two lines in `index.ts`, the `updater` option in
   `server.ts`, `UpdateStatus` + the `update` message in core, the `update` case in the web store.
 

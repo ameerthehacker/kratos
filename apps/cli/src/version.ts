@@ -24,8 +24,9 @@ export function kratosVersion(sources: VersionSources = realSources): KratosVers
 }
 
 const realSources: VersionSources = {
+  // KRATOS_VERSION: act as that release, to try updates locally (3u5d; e.g. 0.0.9 sees v0.1.0).
   // Same path from src/ and dist/: both sit one level below apps/cli.
-  packageVersion: () => JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
+  packageVersion: () => process.env.KRATOS_VERSION || JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
   // The checkout Kratos runs from (not the project it works on).
   commit: () => {
     try {

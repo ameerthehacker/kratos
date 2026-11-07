@@ -76,6 +76,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open_in"), editor: z.string() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
+  /** Look for a Kratos update now (3u5d); answered with `update`, also when nothing changed. */
+  z.object({ type: z.literal("check_update") }),
   /** Something the browser wants in the server's log file (D44), logged as component "web". */
   z.object({
     type: z.literal("client_log"),
@@ -136,6 +138,8 @@ export const UpdateStatus = z.object({
   state: z.enum(["idle", "available"]),
   version: z.string().optional(),
   url: z.string().optional(),
+  /** When GitHub last answered (ms since epoch); absent before the first check. */
+  checkedAt: z.number().optional(),
 });
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 

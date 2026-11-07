@@ -31,7 +31,7 @@ async function checkOnce(running: string, answer: Parameters<typeof fakeGitHub>[
 describe("updater: is there a newer release?", () => {
   it("a newer release is available, with its page; asks GitHub's API with a user agent", async () => {
     const { updater, seen, lines, calls } = await checkOnce("0.1.0", { tag: "v0.2.0" });
-    expect(updater.status).toEqual({ state: "available", version: "0.2.0", url: `${RELEASES}/v0.2.0` });
+    expect(updater.status).toEqual({ state: "available", version: "0.2.0", url: `${RELEASES}/v0.2.0`, checkedAt: expect.any(Number) });
     expect(seen).toEqual([updater.status]);
     expect(calls).toEqual([
       {
@@ -42,11 +42,12 @@ describe("updater: is there a newer release?", () => {
     expect(lines.map((l) => l.msg)).toContain(`kratos 0.2.0 is available: ${RELEASES}/v0.2.0`);
   });
 
-  it("the same or an older release: up to date, nothing announced", async () => {
+  it("the same or an older release: up to date (and when it was checked), nothing announced", async () => {
     for (const tag of ["v0.2.0", "v0.1.9", "0.2.0"]) {
-      const { updater, seen } = await checkOnce("0.2.0", { tag });
-      expect(updater.status).toEqual({ state: "idle" });
-      expect(seen).toEqual([]); // idle from the start: no change to send
+      const { updater, seen, lines } = await checkOnce("0.2.0", { tag });
+      expect(updater.status).toEqual({ state: "idle", checkedAt: expect.any(Number) });
+      expect(seen).toEqual([updater.status]);
+      expect(lines.filter((l) => String(l.msg).includes("is available"))).toEqual([]);
     }
   });
 
@@ -56,14 +57,15 @@ describe("updater: is there a newer release?", () => {
   });
 
   it("ignores pre-releases and a repo without releases", async () => {
-    expect((await checkOnce("0.1.0", { tag: "v0.2.0-rc.1", prerelease: true })).updater.status).toEqual({ state: "idle" });
-    expect((await checkOnce("0.1.0", { status: 404 })).updater.status).toEqual({ state: "idle" });
+    for (const answer of [{ tag: "v0.2.0-rc.1", prerelease: true }, { status: 404 }]) {
+      expect((await checkOnce("0.1.0", answer)).updater.status).toMatchObject({ state: "idle", checkedAt: expect.any(Number) });
+    }
   });
 
   it("a failed check changes nothing and is only logged at debug", async () => {
     for (const answer of [new TypeError("fetch failed"), { status: 503 }, { body: "<html>rate limited</html>" }, { body: '{"tag_name": 5}' }, { tag: "nightly" }]) {
       const { updater, seen, lines } = await checkOnce("0.1.0", answer);
-      expect(updater.status).toEqual({ state: "idle" });
+      expect(updater.status).toEqual({ state: "idle" }); // no checkedAt: GitHub didn't answer
       expect(seen).toEqual([]);
       expect(lines.filter((l) => (l.level as number) > 20)).toEqual([]); // nothing above debug
       expect(lines.map((l) => l.msg)).toContain("update check failed");

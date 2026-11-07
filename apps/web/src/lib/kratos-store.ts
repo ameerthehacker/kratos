@@ -39,8 +39,16 @@ export const useKratos = create<KratosState>((set) => ({
   send: () => {},
   receive: (message) => {
     switch (message.type) {
-      case "pong":
+      case "pong": {
+        // Reconnected to another Kratos version (an update, a brew upgrade): this page is that
+        // old version's code and can't read the new messages, so load the new one (3u8).
+        // Releases only: a source run's version is its commit, and reloading on every commit would
+        // lose drafts in tabs Vite keeps current anyway.
+        const shown = useKratos.getState().info?.serverVersion;
+        const release = (v?: string) => !!v && /^\d+\.\d+\.\d+/.test(v);
+        if (release(shown) && release(message.serverVersion) && shown !== message.serverVersion) return location.reload();
         return set({ info: message });
+      }
       case "session": // a session's replay follows from scratch
         return set({ viewing: message.id, log: [], ready: false });
       case "session_ready":

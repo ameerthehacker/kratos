@@ -29,6 +29,9 @@ export type Tab = {
  */
 export class SessionHub {
   private readonly runtimes = new Map<string, SessionRuntime>();
+  private readonly idleWaiters = new Set<() => void>();
+  /** Set while an update installs (3u5c): new turns would be cut off by the restart. */
+  private held = false;
   /** Which session each connected tab is viewing. */
   private readonly views = new Map<Send, string>();
 
@@ -63,6 +66,22 @@ export class SessionHub {
     };
   }
 
+  /** Sessions whose agent is mid-turn (working, or waiting on you) or has prompts queued. */
+  get busyCount(): number {
+    return [...this.runtimes.values()].filter((runtime) => runtime.status !== "idle" || runtime.queuedCount > 0).length;
+  }
+
+  /** Refuse new prompts (3u5c: from installing an update to the restart), or allow them again. */
+  holdNewTurns(on: boolean): void {
+    this.held = on;
+  }
+
+  /** Resolves once no session is busy — at once if none is (3u5c: restart only then). */
+  whenIdle(): Promise<void> {
+    if (this.busyCount === 0) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.add(resolve));
+  }
+
   /** Server shutdown: withdraw every session's open asks and stop every agent. */
   async close(): Promise<void> {
     await Promise.all([...this.runtimes.values()].map((runtime) => runtime.close()));
@@ -72,6 +91,10 @@ export class SessionHub {
     const viewing = this.runtime(this.views.get(send)!);
     switch (message.type) {
       case "prompt": {
+        if (this.held) {
+          send({ type: "error", message: "Kratos is installing an update and restarts in a moment. Send this again once it's back." });
+          return;
+        }
         if (message.harness && message.harness !== this.adapter.id) {
           send({ type: "error", message: `Unknown harness ${message.harness}` });
           return;
@@ -248,6 +271,10 @@ export class SessionHub {
 
   private broadcastSessionList(): void {
     this.broadcast(this.sessionList());
+    if (this.idleWaiters.size > 0 && this.busyCount === 0) {
+      for (const resolve of this.idleWaiters) resolve();
+      this.idleWaiters.clear();
+    }
   }
 
   private broadcast(message: ServerMessage): void {

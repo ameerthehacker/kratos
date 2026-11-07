@@ -290,6 +290,50 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
     0.2.0` + a temporary `HOME` downloads the real v0.3.0, which is the better check.
   - `parseSums` repeats the formula script's few lines: that script is plain `.mjs` outside
     `src/`, not part of the bundle.
+- Apply + restart (3u5c): "Update & restart" sends `apply_update`; the updater goes `waiting`
+  (until the hub says no session is working or waiting on you) → `applying` → install → restart.
+  Any failure: back to `ready` with the error; this Kratos keeps running (seen end to end).
+  - How it was installed decides how it updates: not a packaged binary (`node:sea`) = source,
+    refused; under `…/Cellar/kratos/<v>/bin/` = Homebrew, using that prefix's `brew`; otherwise
+    the binary file. Plain binary: the new one is copied next to the old, must print the new
+    `--version`, then is renamed over it. Homebrew: as planned (D61 owner notes) — tap
+    fast-forwarded with git, formula must list the version, our archive in brew's cache, `brew
+    upgrade` with auto-update off, then brew and the binary must both report the version.
+  - Restart: `process.execve` — this process becomes the new binary (same PID and terminal; ports
+    and files closed first). Arguments rebuilt from the parsed options + `--no-open`, so nothing
+    depends on how `argv` looks inside a packaged binary. Checked before anything is stopped
+    (`execve` exists on macOS and Linux only).
+  - Commands run with Node's `execFile` and a plain callback: in the packaged binary pkg patches
+    `child_process`, and `promisify(execFile)` there resolves to the output string, not
+    `{ stdout }` — found by the end-to-end run, invisible to unit tests (unpackaged).
+  - Downloads of the running version and older are removed when Kratos starts (not right after
+    installing: a restart that fails would leave "Try again" with nothing to install).
+  - Checked: a binary built from this code as 0.4.9 updated itself to the real v0.5.0 (same PID
+    before and after, 0.5.0 on the port and on disk, ~4 s from the click); and the same through
+    the real UI in a browser. Homebrew: the command order and the "tap not there yet" stop are
+    unit-tested with a fake runner; the first real brew update is the release after this one.
+- Stale tabs (3u8): a tab remembers the server version from its first `pong`; a different one
+  after a reconnect (update, brew upgrade) reloads the page, which is the new version's UI.
+  Releases only: a source run's version is its commit, and Vite keeps those tabs current anyway.
+  Checked in the browser: the tab reloaded itself onto 0.5.0 right after the restart.
+- Popover (3u5e, owner: the dialog and its progress "don't look good"): the modal became a
+  popover under the pill, like quick settings — a small title naming the version, one muted line
+  (or a real progress bar: the downloader reports bytes per chunk, the updater passes them on at
+  most 4×/s; a Content-Length below what arrived is ignored, so it never shows >100%), the error
+  in place of that line, release notes left and the one action right (Update & restart, Cancel
+  while waiting — new `cancel_update` — or Try again). Focus lands on the panel, not its first
+  link. shadcn's Progress (base-ui), added with the shadcn CLI.
+- Code review round (owner asked before 0.6.0) — fixed:
+  - A session with queued prompts counts as busy (its next turn starts at the turn's end).
+  - New prompts are held (refused with a reason) from installing to the restart, released if
+    installing fails: `brew upgrade` can take minutes, and a turn started then would be cut off.
+  - `process.execve` is checked before installing; if the swap still fails after the server is
+    closed there is nothing to return to, so Kratos logs that the update is installed and exits
+    (starting it again runs the new version), instead of hanging with no server.
+  - Ctrl-C while waiting cancels the update (closing the agents would otherwise "finish" them and
+    trigger the install mid-quit); a restart refuses once Kratos is quitting.
+  - While waiting or installing, an hourly check only moves `checkedAt`, even if a newer release
+    appeared; states are built from the current one, so `checkedAt` never rolls back.
 - Reverse: delete `apps/cli/src/updater/`, its two lines in `index.ts`, the `updater` option in
   `server.ts`, `UpdateStatus` + the `update` message in core, the `update` case in the web store.
 

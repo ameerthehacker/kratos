@@ -116,6 +116,10 @@ export async function startServer(options: {
           log.warn({ err }, "could not save settings");
           send(socket, { type: "error", message: `Could not save settings: ${err instanceof Error ? err.message : String(err)}` });
         }
+      } else if (parsed.data.type === "apply_update") {
+        void options.updater?.apply(); // every tab follows it through `update`
+      } else if (parsed.data.type === "cancel_update") {
+        options.updater?.cancel();
       } else if (parsed.data.type === "check_update") {
         // Answer this tab even when nothing changed, so its "Check again" settles (3u5d).
         const { updater } = options;

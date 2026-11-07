@@ -174,6 +174,26 @@ describe("kratos server", () => {
     }
   });
 
+  it("while an update installs, new prompts are refused with a reason; then allowed again (3u5c)", async () => {
+    const cwd = process.cwd();
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code" });
+    const tab = await openTab(server.port);
+    try {
+      expect(hub.busyCount).toBe(0);
+      await hub.whenIdle(); // nothing running: at once
+      hub.holdNewTurns(true);
+      tab.send({ type: "prompt", text: "hello", newSession: true });
+      expect(await tab.waitFor(is("error"))).toMatchObject({ message: expect.stringMatching(/installing an update/) });
+      hub.holdNewTurns(false);
+      tab.send({ type: "prompt", text: "model", newSession: true }); // a scripted turn of the fake claude
+      await tab.waitFor(turnEnd);
+    } finally {
+      tab.close();
+      await server.close();
+    }
+  });
+
   it("sends every tab the settings on connect, and a change from one tab to all of them (3w)", async () => {
     const cwd = process.cwd();
     const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, SessionStore.open(":memory:"));

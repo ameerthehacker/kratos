@@ -440,7 +440,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               Mac (60 MB, 19 s), its hash matches the release's SHA256SUMS, the unpacked binary
               prints 0.3.0; the pill stays mint and the dialog says "downloaded and verified".
               A failed download shows as an `error` on `available` (no state of its own).
-        - [ ] **3u5c. Apply + restart** (~150) — tab sends `apply_update`; if an agent is
+        - [x] **3u5c. Apply + restart** (~250 + tests) — tab sends `apply_update`; if an agent is
               working the state is `waiting` and it applies when all sessions are idle. Then:
               - plain binary: copy the new one next to `process.execPath`, then rename it over
                 (atomic on one filesystem; the running process keeps its old file);
@@ -463,6 +463,20 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               Ctrl-C still works). Accept: a binary built as 0.0.9
               updates itself to the real v0.1.0 and comes back up as 0.1.0 (driven by a WebSocket
               script); brew path checked with a local throwaway tap, as 3u4 was.
+              As built: the hub reports when no session is busy (working, or waiting on you);
+              the updater goes ready → waiting → applying, and any failure goes back to `ready`
+              with the error (the old Kratos keeps running). How it was installed: not a packaged
+              binary (`node:sea`) = source, can't replace itself; a binary under `…/Cellar/kratos/`
+              = Homebrew (that prefix's `brew`); else the binary file itself. Both paths check the
+              new binary's `--version` before restarting. The restart args are rebuilt from the
+              parsed options (project, port, host, db, logs) + `--no-open`. Commands run with
+              Node's `execFile` (no shell). Old downloads are removed at the next start.
+              Real check: a local binary built as 0.4.9 updates itself to the real v0.5.0 and
+              comes back on the same port as 0.5.0. Homebrew: command order tested with a fake
+              runner; the real brew path is first exercised by the release after this one.
+              Checked: 0.4.9 (built from this code) → real v0.5.0, same PID, 0.5.0 on the port
+              and on disk; again by clicking the button in a browser. Found and fixed on the way:
+              `promisify(execFile)` returns no `stdout` inside the packaged binary.
         - [x] **3u5d. UI** (~190, owner, before 5b/5c; D61) — owner: reuse the version pill; it
               shows when an update is available; clicking opens a dialog to view the release,
               check again, and update — saying Kratos restarts by itself once every agent is
@@ -497,10 +511,22 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             environment wins. Accept: tests; through Kratos, a new session's first reply lists
             the Artifact tools and the Docs connector's. Checked: it does; through Kratos it also
             read the design (12 artboards) and called the Docs `guide` tool. Not tried: edits.
-      - [ ] **3u8. Stale tabs reload** (~15) — a tab that reconnects to a Kratos of another
+      - [x] **3u5e. Update popover** (~200, owner: "the download progress and the dialog don't
+            look good — a popover from the pill, better progress and button placement") — the
+            dialog becomes a popover under the version pill, like quick settings: title +
+            versions + a check-again icon; one state line; a real progress bar while downloading
+            (the server reports bytes, a few times a second); release notes on the left, the one
+            main action on the right (Update & restart / Cancel while waiting / Try again after a
+            failure). New: `cancel_update` backs out of waiting. Accept: screenshots of up to
+            date, downloading (bar moving), ready, failed; tests for progress and cancel.
+            Checked: screenshots of all six states (up to date, downloading 31 of 60 MB, ready,
+            waiting with Cancel, failed with Try again, source run), from real flows. Then a code
+            review round; its 9 findings fixed (D61).
+      - [x] **3u8. Stale tabs reload** (~15) — a tab that reconnects to a Kratos of another
             version (after `brew upgrade` + restart, later after 3u5c) still runs the old page and
             rejects new messages ("unknown message from server", seen with 0.1.0 → 0.2.0). The
             page remembers the first `pong`'s `serverVersion`; a different one later → reload.
+            Checked: after "Update & restart" the open tab reloaded itself onto 0.5.0.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

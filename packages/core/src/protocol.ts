@@ -105,6 +105,10 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Change some settings (3w); every tab then gets the new `settings`. */
   /** A group is replaced whole (send all of `notifications`). */
   z.object({ type: z.literal("set_settings"), settings: z.object({ theme: ThemeId, notifications: NotificationSettings }).partial() }),
+  /** Install the downloaded update and restart into it once no agent is working (3u5c). */
+  z.object({ type: z.literal("apply_update") }),
+  /** Stop waiting to apply it (3u5e); back to ready. */
+  z.object({ type: z.literal("cancel_update") }),
   /** Look for a Kratos update now (3u5d); answered with `update`, also when nothing changed. */
   z.object({ type: z.literal("check_update") }),
   /** Something the browser wants in the server's log file (D44), logged as component "web". */
@@ -162,11 +166,15 @@ export type Harness = z.infer<typeof Harness>;
 
 /** Kratos's own update (3u5, D61): `idle` = up to date (or not checked yet, or a source run);
  * `available` = a newer release, `version` + its release page `url`; `downloading` it in the
- * background; `ready` = downloaded and checked (3u5b). `error` says why the last download failed;
- * the next check tries again. Applying it comes with 3u5c. */
+ * background; `ready` = downloaded and checked (3u5b); after `apply_update`, `waiting` for every
+ * agent to finish, then `applying` (installing, then restarting into it; 3u5c). `error` says why
+ * the last download or install failed; Kratos keeps running and can try again. */
 export const UpdateStatus = z.object({
-  state: z.enum(["idle", "available", "downloading", "ready"]),
+  state: z.enum(["idle", "available", "downloading", "ready", "waiting", "applying"]),
   error: z.string().optional(),
+  /** Bytes of the release archive so far (`total` when the server said), while downloading and
+   * after (3u5e). */
+  progress: z.object({ received: z.number(), total: z.number().optional() }).optional(),
   version: z.string().optional(),
   url: z.string().optional(),
   /** When GitHub last answered (ms since epoch); absent before the first check. */

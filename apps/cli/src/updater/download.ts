@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -23,7 +23,15 @@ export type Downloaded = { archive: string; binary: string };
  * publishing, the workflow is still building them. Throws on a checksum mismatch (the bad file is
  * deleted) and on network errors. A file already downloaded and still matching is reused.
  */
-export async function downloadRelease(options: { version: string; dir: string; fetch: typeof fetch; base?: string; target?: string }): Promise<Downloaded | null> {
+export async function downloadRelease(options: {
+  version: string;
+  dir: string;
+  fetch: typeof fetch;
+  base?: string;
+  target?: string;
+  /** Bytes of the archive so far, per chunk (`total` from Content-Length, if sent). */
+  onProgress?: (received: number, total?: number) => void;
+}): Promise<Downloaded | null> {
   const { version, dir } = options;
   const url = (file: string) => `${options.base ?? RELEASES}/v${version}/${file}`;
   const name = assetName(version, options.target);
@@ -44,10 +52,16 @@ export async function downloadRelease(options: { version: string; dir: string; f
     if (!response.ok || !response.body) throw new Error(`${name}: GitHub answered ${response.status}`);
     const part = `${archive}.part`;
     const hash = createHash("sha256");
+    const total = Number(response.headers.get("content-length")) || undefined;
+    let received = 0;
     await pipeline(
       Readable.fromWeb(response.body as ReadableStream<Uint8Array>),
       async function* (chunks: AsyncIterable<Buffer>) {
-        for await (const chunk of chunks) yield (hash.update(chunk), chunk);
+        for await (const chunk of chunks) {
+          hash.update(chunk);
+          options.onProgress?.((received += chunk.length), total);
+          yield chunk;
+        }
       },
       createWriteStream(part),
     );
@@ -57,6 +71,10 @@ export async function downloadRelease(options: { version: string; dir: string; f
       throw new Error(`${name} doesn't match its checksum (expected ${expected.slice(0, 12)}…, got ${got.slice(0, 12)}…)`);
     }
     await rename(part, archive);
+    options.onProgress?.(received, received); // complete, even if the server didn't send a length
+  } else {
+    const { size } = await stat(archive); // already here and still matching
+    options.onProgress?.(size, size);
   }
   await rm(binary, { force: true }); // always unpacked from the archive just checked
   await extract({ file: archive, cwd: dir, filter: (path) => path === "kratos" });

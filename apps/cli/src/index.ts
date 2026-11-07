@@ -53,7 +53,8 @@ const program = new Command()
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");
-    const updater = new Updater(version.version, { log }); // 3u5: releases only; a source run never checks
+    // 3u5: releases only (a source run never checks); new ones are downloaded to ~/.kratos/updates.
+    const updater = new Updater(version.version, { log, downloadTo: join(KRATOS_HOME, "updates") });
     const port = Number(opts.port);
     const server = await startServer({ port, host: opts.host, hub, cwd, agent: adapter.displayName, log, editors, iconCacheDir, version, updater }).catch(
       (err: unknown) => {

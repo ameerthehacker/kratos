@@ -219,6 +219,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
     locally: `KRATOS_VERSION=0.0.9 pnpm dev` sees the real v0.1.0. A dev knob, not a flag: users
     have no reason to fake their version. 3u5b/3u5c will need a fake release server too (to try
     a download without publishing); added then.
+- Download (3u5b): when a check finds a newer release, the updater fetches its `SHA256SUMS`, then
+  `kratos-<v>-<platform>-<arch>.tar.gz` into `~/.kratos/updates/<v>/`, hashing while it streams
+  (`.part` until it matches), and unpacks only `kratos` with `tar` (npm's own archive library,
+  the common choice; rejects absolute and `..` paths). States `downloading` → `ready`; the
+  archive is kept for brew (3u5c), and an archive still matching is reused, not fetched again.
+  - "Not yet" vs error: the workflow attaches `SHA256SUMS` last, after every archive, so no
+    `SHA256SUMS` (or no line for this machine) means the release is still building: back to
+    `available`, quietly, retried at the next check. A checksum mismatch or a network failure is
+    logged at warn and shown as `error` on `available` (not a state of its own): the dialog can
+    say what failed, and the next check simply retries.
+  - A local test server, not a fake fetch, for downloads: the real streaming, hashing, `.part`
+    and unpack code runs. No fake release server for manual testing after all: `KRATOS_VERSION=
+    0.2.0` + a temporary `HOME` downloads the real v0.3.0, which is the better check.
+  - `parseSums` repeats the formula script's few lines: that script is plain `.mjs` outside
+    `src/`, not part of the bundle.
 - Reverse: delete `apps/cli/src/updater/`, its two lines in `index.ts`, the `updater` option in
   `server.ts`, `UpdateStatus` + the `update` message in core, the `update` case in the web store.
 

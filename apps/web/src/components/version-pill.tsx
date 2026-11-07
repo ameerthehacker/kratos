@@ -13,7 +13,7 @@ import { useKratos, type ServerInfo } from "@/lib/kratos-store";
 export function VersionPill({ info }: { info: Pick<ServerInfo, "serverVersion" | "versionUrl"> }) {
   const update = useKratos((s) => s.update);
   const version = info.serverVersion;
-  const available = update?.state === "available" ? update : undefined;
+  const available = update && update.state !== "idle" ? update : undefined; // newer: available, downloading or ready
   const look = available ? "bg-primary/15 text-primary hover:bg-primary/25" : "bg-secondary text-muted-foreground hover:bg-accent hover:text-secondary-foreground";
   return (
     <Dialog>
@@ -39,7 +39,7 @@ function UpdateDialog({ info }: { info: Pick<ServerInfo, "serverVersion" | "vers
   useEffect(() => setChecking(false), [update]); // the server answers every check with `update`
   const version = info.serverVersion;
   const release = /^\d+\.\d+\.\d+/.test(version);
-  const available = update?.state === "available" ? update : undefined;
+  const available = update && update.state !== "idle" ? update : undefined; // newer: available, downloading or ready
   const working = sessions.filter((s) => s.status !== "idle").length;
 
   const notes = (url: string | undefined, label: string) =>
@@ -72,7 +72,12 @@ function UpdateDialog({ info }: { info: Pick<ServerInfo, "serverVersion" | "vers
         <DialogDescription>
           {available && <>You're on {version} · </>}
           {update?.checkedAt ? `checked ${ago(update.checkedAt)}` : "not checked yet"}
+          {available?.state === "downloading" && <> · downloading…</>}
+          {available?.state === "ready" && <> · downloaded and verified</>}
         </DialogDescription>
+        {available?.error && (
+          <p className="text-sm text-destructive">Download failed: {available.error}. Kratos tries again at the next check.</p>
+        )}
       </DialogHeader>
       {available && (
         // Applying lands with 3u5c; until then the button explains what it will do.

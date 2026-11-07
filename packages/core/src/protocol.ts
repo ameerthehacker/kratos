@@ -132,10 +132,12 @@ export const Harness = z.object({
 export type Harness = z.infer<typeof Harness>;
 
 /** Kratos's own update (3u5, D61): `idle` = up to date (or not checked yet, or a source run);
- * `available` = a newer release, `version` + its release page `url`. More states come with
- * downloading and applying it (3u5b, 3u5c). */
+ * `available` = a newer release, `version` + its release page `url`; `downloading` it in the
+ * background; `ready` = downloaded and checked (3u5b). `error` says why the last download failed;
+ * the next check tries again. Applying it comes with 3u5c. */
 export const UpdateStatus = z.object({
-  state: z.enum(["idle", "available"]),
+  state: z.enum(["idle", "available", "downloading", "ready"]),
+  error: z.string().optional(),
   version: z.string().optional(),
   url: z.string().optional(),
   /** When GitHub last answered (ms since epoch); absent before the first check. */

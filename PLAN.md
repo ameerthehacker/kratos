@@ -428,7 +428,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               network error / junk JSON). Checked: a binary built as 0.0.9 logs "kratos 0.1.0 is
               available" from the real GitHub and a tab gets `available`; a source run gets
               `idle` and never calls GitHub.
-        - [ ] **3u5b. Download + verify** (~120) — when `available`: fetch this platform's
+        - [x] **3u5b. Download + verify** (~120) — when `available`: fetch this platform's
               `kratos-<v>-<platform>-<arch>.tar.gz` and `SHA256SUMS` into
               `~/.kratos/updates/<v>/`, check the sha256, unpack (`tar` package) → `ready`. A bad
               checksum deletes the files and reports `error`; an already-verified download is
@@ -436,6 +436,10 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
               attached its archives: a missing asset means "not yet" (stay `available`, retry at
               the next check), not an error. Accept: tests against a local HTTP server (good,
               bad sum, asset not attached yet).
+              Checked: a source run as 0.2.0 (temporary HOME) downloaded the real v0.3.0 for this
+              Mac (60 MB, 19 s), its hash matches the release's SHA256SUMS, the unpacked binary
+              prints 0.3.0; the pill stays mint and the dialog says "downloaded and verified".
+              A failed download shows as an `error` on `available` (no state of its own).
         - [ ] **3u5c. Apply + restart** (~150) — tab sends `apply_update`; if an agent is
               working the state is `waiting` and it applies when all sessions are idle. Then:
               - plain binary: copy the new one next to `process.execPath`, then rename it over

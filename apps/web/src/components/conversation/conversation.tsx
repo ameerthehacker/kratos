@@ -12,7 +12,10 @@ import { currentActivity, type TimelineItem } from "@/lib/timeline";
 /**
  * A session's conversation, drawn like the owner's chat design (D45): your prompts as bubbles,
  * the agent's replies as markdown, its tool calls as plain-words steps. Scrolls itself and stays
- * pinned to the newest message unless you scroll up.
+ * pinned to the newest message unless you scroll up. Mount it once a session's history has
+ * fully arrived (`session_ready`), keyed by session: its first size is then the whole chat, so it
+ * opens at the bottom (`initial`, instant) and only later messages glide in (`resize`, smooth) —
+ * no scroll through the replay (owner, 3d9).
  */
 export function Conversation(props: { items: TimelineItem[]; agent: string; status?: SessionSummary["status"] }) {
   const { items } = props;

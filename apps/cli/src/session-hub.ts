@@ -195,6 +195,7 @@ export class SessionHub {
     this.views.set(send, sessionId);
     send({ type: "session", id: sessionId });
     for (const message of runtime.messages) send(message);
+    send({ type: "session_ready", id: sessionId });
   }
 
   /** The session's runtime, loaded from the store on first use. */

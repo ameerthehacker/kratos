@@ -35,7 +35,7 @@ export type TimelineItem =
   | { type: "steps"; steps: Step[] }
   | { type: "event"; text: string };
 
-type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "sessions" | "harnesses" }>;
+type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" }>;
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
 
 const OUTPUT_LINES = 20;

@@ -85,7 +85,8 @@ describe("kratos server", () => {
         "agent_event:tool_result",
         "agent_event:turn_end",
       ];
-      expect(summary(tab.messages)).toEqual(["session", "pong", ...conversation]);
+      // A new session's (empty) replay is complete at once; later messages are new (3d9).
+      expect(summary(tab.messages)).toEqual(["session", "session_ready", "pong", ...conversation]);
       expect(tab.messages.find(is("permission_resolved"))).toMatchObject({ id: ask.id, outcome: "allowed" });
       // The server's log tells the same story (D44).
       const logged = (msg: string) => lines.find((l) => l.msg === msg);
@@ -102,7 +103,8 @@ describe("kratos server", () => {
 
       const late = await openTab(server.port); // no ping: the replay arrives on connect by itself
       await late.waitFor(turnEnd);
-      expect(summary(late.messages)).toEqual(["session", ...conversation]);
+      await late.waitFor(is("session_ready"));
+      expect(summary(late.messages)).toEqual(["session", ...conversation, "session_ready"]); // the replay, then "complete"
       late.close();
       await vi.waitFor(() => expect(disconnects).toBe(1));
 

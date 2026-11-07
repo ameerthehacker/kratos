@@ -126,6 +126,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("harnesses"), list: z.array(Harness) }),
   /** The session this tab now views; its log replay follows. On a new id, clear the log. */
   z.object({ type: z.literal("session"), id: z.string() }),
+  /** That session's replay is complete: everything after it is new (3d9). Lets the UI show the
+   * whole history at once — e.g. open a chat at its bottom instead of scrolling through it. */
+  z.object({ type: z.literal("session_ready"), id: z.string() }),
   /** All of this project's sessions, most recent first: on connect and whenever one changes. */
   z.object({ type: z.literal("sessions"), list: z.array(SessionSummary) }),
   /** Reply to `ping`: server info + timestamp. */

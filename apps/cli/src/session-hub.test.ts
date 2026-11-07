@@ -118,14 +118,23 @@ function setup() {
   const store = SessionStore.open(":memory:");
   let hub = new SessionHub(adapter, "/projects/demo", store);
 
-  /** A browser tab on the current hub. Like the real UI: its log clears when it switches session. */
+  /** A browser tab on the current hub. Like the real UI: its log clears when it switches session,
+   * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then). */
   const tab = () => {
-    const state = { seen: [] as ServerMessage[], sessionIds: [] as string[], list: [] as SessionSummary[], harnesses: [] as Harness[] };
+    const state = {
+      seen: [] as ServerMessage[],
+      sessionIds: [] as string[],
+      list: [] as SessionSummary[],
+      harnesses: [] as Harness[],
+      seenWhenReady: undefined as number | undefined,
+    };
     const handle = hub.connect((m) => {
       if (m.type === "session") {
         state.sessionIds.push(m.id);
         state.seen = [];
-      } else if (m.type === "sessions") state.list = m.list;
+        state.seenWhenReady = undefined;
+      } else if (m.type === "session_ready") state.seenWhenReady = state.seen.length;
+      else if (m.type === "sessions") state.list = m.list;
       else if (m.type === "harnesses") state.harnesses = m.list;
       else state.seen.push(m);
     });
@@ -139,6 +148,9 @@ function setup() {
       },
       get harnesses() {
         return state.harnesses;
+      },
+      get seenWhenReady() {
+        return state.seenWhenReady;
       },
       /** The session this tab views now. */
       get viewing() {
@@ -790,5 +802,18 @@ describe("SessionHub: attachments (D55)", () => {
     }
     expect(agents).toHaveLength(0);
     expect(a.seen.some((m) => m.type === "user_prompt")).toBe(false);
+  });
+});
+
+describe("SessionHub: replay complete (3d9)", () => {
+  it("tells a tab when a session's whole log has been replayed, so it can show it at once", () => {
+    const { tab } = setup();
+    const a = tab();
+    expect(a.seenWhenReady).toBe(0); // a new, empty session: ready straight away
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "second" });
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "user_prompt")).toHaveLength(2);
+    expect(late.seenWhenReady).toBe(late.seen.length); // after the last replayed message
   });
 });

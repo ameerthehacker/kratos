@@ -20,14 +20,15 @@ const NO_LOG: LogMessage[] = [];
 /** `/s/:sessionId` — one session's conversation. Opening the URL makes this tab view it. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const { connected, harnesses, sessions, viewing, log, send, cwd } = useKratos(
-    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send, cwd: s.info?.cwd })),
+  const { connected, harnesses, sessions, viewing, log, send, cwd, loaded } = useKratos(
+    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send, cwd: s.info?.cwd, loaded: s.ready })),
   );
   const session = sessions.find((s) => s.id === sessionId);
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
   const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
   const rememberMode = useHomeChoice((s) => s.rememberMode);
   const shown = viewing === sessionId ? log : NO_LOG;
+  const ready = viewing === sessionId && loaded; // this session's whole history has arrived
   const items = useMemo(() => buildTimeline(shown, cwd, agentName), [shown, cwd, agentName]);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
@@ -49,7 +50,9 @@ export function SessionPage() {
   return (
     <main className="flex min-h-0 flex-1 flex-col">
       {session && <SessionHeader session={session} />}
-      <Conversation items={items} agent={agentName} status={session?.status} />
+      {/* Only once the whole history is here (the server says so), keyed by session: it then opens
+          at its bottom instead of scrolling through the replay (owner, 3d9). */}
+      {ready ? <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} /> : <div className="min-h-0 flex-1" />}
       {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
       <div className="mx-auto w-full max-w-3xl px-6 pb-5">
         <QuestionDock questions={openQuestions(items)} agent={agentName} onAnswer={(id, reply) => send({ type: "question_answer", id, reply })} />

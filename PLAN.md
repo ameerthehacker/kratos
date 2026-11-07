@@ -377,6 +377,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d9. Two UX fixes** (~40, owner) — opening a session jumps to its bottom instead of
+            scrolling through the whole chat: the log replays message by message, so the server now
+            says when the replay is complete (`session_ready`, after the last replayed message) and
+            the conversation mounts only then — its first size is the whole chat (instant), later
+            messages glide in (owner rejected a first cut that guessed "done" from a 300 ms pause).
+            Marking the open session done takes you Home. Checked: done → Home in the browser
+            pane; opening at the bottom by the owner in `pnpm dev` (the pane got no animation
+            frames, so it can't show scrolling).
       - [x] **3d8. Done at the bottom** (~10, owner, D49) — the sidebar's Done section is pinned
             to the bottom of the island (it needs the least attention); Working scrolls above it,
             Done scrolls on its own within half the height.

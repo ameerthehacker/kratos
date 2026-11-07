@@ -64,6 +64,41 @@ export function foldRows(lines: readonly DiffLine[], open: ReadonlySet<number> =
   return rows;
 }
 
+/** A split row (3v3): the old line on the left, the new on the right; a side is absent where a
+ * change has more lines on the other. Folds stay folds. */
+export type SplitRow = { type: "pair"; left?: DiffLine; right?: DiffLine } | Extract<DiffRow, { type: "fold" }>;
+
+/** Side by side: unchanged lines on both sides; each run of removed lines paired in order with
+ * the added run right after it (the same pairing the word marks use). */
+export function pairRows(rows: readonly DiffRow[]): SplitRow[] {
+  const pairs: SplitRow[] = [];
+  for (let i = 0; i < rows.length; ) {
+    const row = rows[i]!;
+    if (row.type === "fold") {
+      pairs.push(row);
+      i++;
+    } else if (row.line.kind === "same") {
+      pairs.push({ type: "pair", left: row.line, right: row.line });
+      i++;
+    } else {
+      // A run of removed lines and the added run right after it, exactly as `markWords` pairs
+      // them, so a line's marked words sit opposite the line they were compared with.
+      const kindAt = (at: number) => {
+        const next = rows[at];
+        return next?.type === "line" ? next.line.kind : undefined;
+      };
+      const dels: DiffLine[] = [];
+      const adds: DiffLine[] = [];
+      for (; kindAt(i) === "del"; i++) dels.push((rows[i] as Extract<DiffRow, { type: "line" }>).line);
+      for (; kindAt(i) === "add"; i++) adds.push((rows[i] as Extract<DiffRow, { type: "line" }>).line);
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++) {
+        pairs.push({ type: "pair", ...(dels[k] ? { left: dels[k] } : {}), ...(adds[k] ? { right: adds[k] } : {}) });
+      }
+    }
+  }
+  return pairs;
+}
+
 /** A piece of a line to draw: its text, its syntax colour, and whether it's a changed word. */
 export type Span = { text: string; color?: string; marked: boolean };
 

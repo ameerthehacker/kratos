@@ -477,10 +477,13 @@ export class SessionRuntime {
   private async takeSnapshot(kind: "turn_start" | "turn_end"): Promise<void> {
     if (!this.deps.snapshots) return;
     const started = Date.now();
+    // Its place in the log is now, when it's asked for: after the prompt that starts the turn, or
+    // the turn_end it follows — whatever is logged while git works comes after it.
+    const logSeq = this.log.length;
     try {
       const tree = await this.deps.snapshots.take();
       if (tree === null) return; // not a git repository
-      this.deps.store.addSnapshot(this.id, kind, tree);
+      this.deps.store.addSnapshot(this.id, kind, tree, logSeq);
       this.logger.debug({ kind, tree, ms: Date.now() - started }, "snapshot taken");
     } catch (err) {
       this.logger.warn({ err, kind }, "snapshot failed");

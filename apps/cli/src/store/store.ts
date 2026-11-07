@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ServerMessage } from "@kratos/core";
 import { MIGRATIONS } from "../paths.js";
-import { attachments, messages, sessions, snapshots } from "./schema.js";
+import { attachments, messages, sessions, snapshots, viewedFiles } from "./schema.js";
 
 
 export type StoredSession = typeof sessions.$inferSelect;
@@ -131,8 +131,8 @@ export class SessionStore {
   }
 
   /** Record a snapshot taken at a turn boundary (3v1, D65). */
-  addSnapshot(sessionId: string, kind: StoredSnapshot["kind"], tree: string): void {
-    this.db.insert(snapshots).values({ sessionId, kind, tree, createdAt: new Date() }).run();
+  addSnapshot(sessionId: string, kind: StoredSnapshot["kind"], tree: string, logSeq: number): void {
+    this.db.insert(snapshots).values({ sessionId, kind, tree, logSeq, createdAt: new Date() }).run();
   }
 
   /** The session's first snapshot: what its changes are measured from. */
@@ -140,16 +140,43 @@ export class SessionStore {
     return this.db.select().from(snapshots).where(eq(snapshots.sessionId, sessionId)).orderBy(asc(snapshots.id)).limit(1).get();
   }
 
-  /** Did a turn of this session end before `at`? Then its changes predate any snapshot taken
-   * since (3v1): the start snapshot failed, or the session is older than snapshots. */
-  turnEndedBefore(sessionId: string, at: Date): boolean {
+  /** Mark a file viewed at this version, or not viewed (3v3). */
+  setViewed(sessionId: string, path: string, version: string, viewed: boolean): void {
+    const row = and(eq(viewedFiles.sessionId, sessionId), eq(viewedFiles.path, path));
+    if (!viewed) {
+      this.db.delete(viewedFiles).where(row).run();
+      return;
+    }
+    this.db
+      .insert(viewedFiles)
+      .values({ sessionId, path, version, viewedAt: new Date() })
+      .onConflictDoUpdate({ target: [viewedFiles.sessionId, viewedFiles.path], set: { version, viewedAt: new Date() } })
+      .run();
+  }
+
+  /** A session's viewed files: path → the version viewed. */
+  viewed(sessionId: string): Record<string, string> {
+    const rows = this.db.select().from(viewedFiles).where(eq(viewedFiles.sessionId, sessionId)).all();
+    return Object.fromEntries(rows.map((r) => [r.path, r.version]));
+  }
+
+  /** Did a turn of this session end before this snapshot was taken (ever, without one)? Then
+   * its changes predate the snapshot (3v1): the start snapshot failed, or the session is older
+   * than snapshots. By log position, so a turn ending in the same millisecond is never confused
+   * with one before; snapshots from before `logSeq` existed fall back to their time. */
+  turnEndedBefore(sessionId: string, snapshot?: StoredSnapshot): boolean {
+    const before = !snapshot
+      ? undefined
+      : snapshot.logSeq !== null
+        ? lt(messages.seq, snapshot.logSeq)
+        : lt(messages.createdAt, snapshot.createdAt);
     const row = this.db
       .select({ seq: messages.seq })
       .from(messages)
       .where(
         and(
           eq(messages.sessionId, sessionId),
-          lt(messages.createdAt, at),
+          before,
           sql`json_extract(${messages.message}, '$.event.kind') = 'turn_end'`,
         ),
       )

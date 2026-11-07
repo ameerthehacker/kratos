@@ -1017,7 +1017,7 @@ class FakeSnapshots implements Snapshots {
     return !this.gone.has(id);
   }
   async diff(from: string, to: string) {
-    return [{ path: `${from}..${to}.txt`, status: "modified" as const, additions: 1, deletions: 0, before: "", after: "x\n" }];
+    return [{ path: `${from}..${to}.txt`, version: `${from}..${to}`, status: "modified" as const, additions: 1, deletions: 0, before: "", after: "x\n" }];
   }
 }
 
@@ -1077,6 +1077,7 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
     await tick();
     // tree1 was "now" for the first get_changes; tree2 = turn start, tree3 = turn end, tree4 = now
     expect(changesOf(a.seen)).toMatchObject({ files: [{ path: "tree2..tree4.txt" }] });
+    expect(changesOf(a.seen)).not.toHaveProperty("note"); // turn 1 ended after its snapshot, even in the same ms
   });
 
   it("a failed start snapshot: the changes since the first one, with a note that some may be missing", async () => {
@@ -1092,7 +1093,6 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
     await tick();
     expect(changesOf(a.seen)).toMatchObject({ files: [], unavailable: expect.stringContaining("couldn't record the files") });
 
-    await new Promise((resolve) => setTimeout(resolve, 5)); // the next snapshot is later than turn 1's end
     a.receive({ type: "prompt", text: "two" }); // its start snapshot works
     await tick();
     a.receive({ type: "get_changes", sessionId: a.viewing });
@@ -1100,6 +1100,30 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
     const changes = changesOf(a.seen);
     expect(changes).toMatchObject({ files: [{ path: "tree2..tree3.txt" }], note: expect.stringContaining("earliest turns may be missing") });
     expect(changes).not.toHaveProperty("unavailable");
+  });
+
+  it("keeps viewed files per session, tells every tab, and still has them after a restart (3v3)", async () => {
+    const { tab, restart, otherProject } = setup(new FakeSnapshots());
+    const a = tab();
+    const b = tab();
+    const viewedOf = (seen: ServerMessage[]) => seen.findLast((m) => m.type === "viewed");
+    a.receive({ type: "set_viewed", sessionId: a.viewing, path: "src/x.ts", version: "v1", viewed: true });
+    expect(viewedOf(b.seen)).toEqual({ type: "viewed", sessionId: a.viewing, files: { "src/x.ts": "v1" } });
+    a.receive({ type: "set_viewed", sessionId: a.viewing, path: "src/x.ts", version: "v2", viewed: true }); // viewed again after a new edit
+    a.receive({ type: "set_viewed", sessionId: a.viewing, path: "b.md", version: "v1", viewed: true });
+    a.receive({ type: "set_viewed", sessionId: a.viewing, path: "b.md", version: "v1", viewed: false });
+    expect(viewedOf(b.seen)).toEqual({ type: "viewed", sessionId: a.viewing, files: { "src/x.ts": "v2" } });
+
+    restart();
+    const c = tab();
+    c.receive({ type: "get_changes", sessionId: c.viewing });
+    await tick();
+    expect(c.seen.slice(-2).map((m) => m.type)).toEqual(["changes", "viewed"]); // in that order
+    expect(viewedOf(c.seen)).toMatchObject({ files: { "src/x.ts": "v2" } });
+
+    const seen: ServerMessage[] = [];
+    otherProject().connect((m) => seen.push(m)).receive({ type: "set_viewed", sessionId: c.viewing, path: "a", version: "v", viewed: true });
+    expect(seen.at(-1)).toEqual({ type: "error", message: `No session ${c.viewing} in this project` });
   });
 
   it("says why when there's nothing to show: no git, a pruned snapshot, another project's id", async () => {

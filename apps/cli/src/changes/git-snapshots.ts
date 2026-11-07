@@ -85,7 +85,9 @@ export function gitSnapshots(dir: string): Snapshots {
         const oldPath = status === "renamed" ? entry.from : undefined;
         const before = status === "added" ? EMPTY : await blob(found.git, from, oldPath ?? entry.file);
         const after = status === "deleted" ? EMPTY : await blob(found.git, to, entry.file);
-        const base = { path: entry.file, ...(oldPath ? { oldPath } : {}), status };
+        // This exact change: what "viewed" is kept for (3v3). Another edit gives another version.
+        const version = `${before.id}..${after.id}`;
+        const base = { path: entry.file, ...(oldPath ? { oldPath } : {}), status, version };
         if (!("text" in before) || !("text" in after)) {
           const skipped = SKIP_ORDER.find((reason) => [before, after].some((side) => "skipped" in side && side.skipped === reason));
           files.push({ ...base, additions: 0, deletions: 0, skipped: skipped! });
@@ -117,8 +119,10 @@ function plainEnv(): Record<string, string> {
 }
 
 type Skipped = NonNullable<ChangedFile["skipped"]>;
-type Blob = { text: string } | { skipped: Skipped };
-const EMPTY: Blob = { text: "" };
+/** One side of a file: its git object id ("" when the side doesn't exist), and its text or why
+ * there's none. */
+type Blob = { id: string } & ({ text: string } | { skipped: Skipped });
+const EMPTY: Blob = { id: "", text: "" };
 /** When the two sides are skipped for different reasons, the file is shown as the first. */
 const SKIP_ORDER: Skipped[] = ["submodule", "binary", "too_big"];
 
@@ -129,11 +133,11 @@ async function blob(git: SimpleGit, tree: string, path: string): Promise<Blob> {
   const entry = (await git.raw(["--literal-pathspecs", "ls-tree", "-l", tree, "--", path])).trim();
   const [, type, object, size] = entry.split(/\s+/);
   if (!object) throw new Error(`${path} isn't in snapshot ${tree}`);
-  if (type === "commit") return { skipped: "submodule" };
-  if (Number(size) > MAX_SIDE_BYTES) return { skipped: "too_big" };
+  if (type === "commit") return { id: object, skipped: "submodule" };
+  if (Number(size) > MAX_SIDE_BYTES) return { id: object, skipped: "too_big" };
   const bytes = await git.showBuffer([object]);
-  if (bytes.subarray(0, BINARY_PROBE).includes(0)) return { skipped: "binary" };
-  return { text: bytes.toString("utf8") };
+  if (bytes.subarray(0, BINARY_PROBE).includes(0)) return { id: object, skipped: "binary" };
+  return { id: object, text: bytes.toString("utf8") };
 }
 
 function statusOf(entry: DiffResultNameStatusFile): ChangedFile["status"] {

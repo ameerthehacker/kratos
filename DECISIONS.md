@@ -210,8 +210,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   `codeToTokens` on each whole side (multi-line strings and comments come out right), language
   by extension or file name, loaded on demand; `shiki` is now a direct dependency at the version
   react-shiki already uses. Shiki's token colours are inline styles: theme data, not design values.
+- Split / Unified (3v3, owner: split by default): the choice is a per-browser preference
+  (`kratos.review`, like the sidebar's, D49) rather than a Kratos setting: it's about the
+  screen you're on. Below 1024px wide the page is always unified. Split pairs removed with
+  added lines within each change (same pairing as the word marks); long lines wrap so both sides
+  stay row by row (unified scrolls sideways instead); an empty side is hatched (`bg-hatch`).
+- Viewed (3v3): kept by Kratos per session in SQLite (`viewed_files`, migration 0008) so it's the
+  same in every tab and browser, for one version of the change: `ChangedFile.version` is the
+  before..after git object ids. Another edit to the file → another version → unviewed (owner),
+  with no cleanup needed; an edit back to the viewed content shows viewed again. `set_viewed` →
+  every tab gets `viewed`; the page marks it at once and the server's echo confirms.
+  Alternatives: per browser (localStorage, but then it's lost in another browser); a content
+  hash computed by the server (the blob ids are that already).
+- Ordering snapshots against turns (3v3 review): each snapshot keeps `log_seq`, its place in the
+  session log when it was asked for (migration 0009). "A turn ended before the first snapshot"
+  compares log positions; millisecond timestamps tie, and either tie-break was wrong in some
+  case. Snapshots from before the column fall back to their time.
 - Reverse: drop `apps/cli/src/changes/`, the snapshot columns/table and `get_changes`/`changes`;
-  the review page, its route and `Shell`.
+  the review page, its route and `Shell`; `viewed_files`, `set_viewed`/`viewed`.
 
 ### D64. Notifications: in the browser, while you're away, once across tabs (step 3w3, owner)
 - Owner: browser notifications, only when you're not looking at Kratos; settings saved by

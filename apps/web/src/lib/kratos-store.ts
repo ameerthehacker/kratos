@@ -6,7 +6,7 @@ export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** What a session changed, as the server last said (3v1). */
 export type Changes = Extract<ServerMessage, { type: "changes" }>;
 /** Messages that belong to a session's log (everything the server replays). */
-export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" }>;
+export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" | "viewed" }>;
 
 type KratosState = {
   connected: boolean;
@@ -28,20 +28,32 @@ type KratosState = {
   log: LogMessage[];
   /** Each session's changes, by id, as last asked for with `get_changes` (3v2). */
   changes: Record<string, Changes>;
+  /** Each session's files marked viewed in review: path → the version viewed (3v3). */
+  viewed: Record<string, Record<string, string>>;
+  /** Mark a file viewed or not: shown at once, then saved by Kratos, which tells every tab. */
+  setViewed: (sessionId: string, path: string, version: string, viewed: boolean) => void;
   send: (message: ClientMessage) => void;
   /** Apply one message from the server (called by the connection). */
   receive: (message: ServerMessage) => void;
 };
 
 /** Kratos UI state (D39): written by useKratosConnection, read by any component. */
-export const useKratos = create<KratosState>((set) => ({
+export const useKratos = create<KratosState>((set, get) => ({
   connected: false,
   sessions: [],
   harnesses: [],
   log: [],
   changes: {},
+  viewed: {},
   ready: false,
   send: () => {},
+  setViewed: (sessionId, path, version, viewed) => {
+    set((state) => {
+      const { [path]: _, ...others } = state.viewed[sessionId] ?? {};
+      return { viewed: { ...state.viewed, [sessionId]: viewed ? { ...others, [path]: version } : others } };
+    });
+    get().send({ type: "set_viewed", sessionId, path, version, viewed });
+  },
   receive: (message) => {
     switch (message.type) {
       case "pong": {
@@ -70,6 +82,8 @@ export const useKratos = create<KratosState>((set) => ({
         return set({ settings: message.settings });
       case "changes": // a reply to this tab's get_changes, not part of the log
         return set((state) => ({ changes: { ...state.changes, [message.sessionId]: message } }));
+      case "viewed": // after `changes`, and whenever any tab marks a file (3v3)
+        return set((state) => ({ viewed: { ...state.viewed, [message.sessionId]: message.files } }));
       case "error":
         return clientLog("warn", `server error: ${message.message}`);
       default:

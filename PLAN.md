@@ -717,15 +717,37 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         Checked: real `claude` (Haiku) renamed a method in a 300-line file, added a file, deleted
         one → screenshots at 1440 (session header "3 files +7 −5", deleted / new / long file with
         4 folds, one opened, the rename marked word by word) and 390 wide; 7 row tests, 184 in
-        all, build, typecheck. Left for later: picking files at narrow width (3v3), "Open in
+        all, build, typecheck. Left for later: picking files at narrow width (3v3b), "Open in
         editor" for one file (the server opens only the project folder), the fold bar's
         enclosing-scope label ("class SessionHub"). Size: ~320 lines of code + 87 of tests.
-  - [ ] **3v3. Split, Viewed, moving through** (~150) — Split / Unified toggle (split pairs
-        deletions with additions, hatched empty sides), Viewed per file with the progress meter
-        ("2 of 4 viewed"), Previous / "Next · name" (marks viewed) / Finish review, keys
-        n p v s, narrow width → unified. Viewed kept by Kratos per session, keyed by the file's
-        content so it un-views when the agent changes the file again. Accept: screenshots split
-        + unified; keys; viewed survives reload and resets after a new edit.
+  - [x] **3v3. Split / Unified + Viewed** (~300, owner: split the default) — a Split | Unified
+        switch in the main header, split by default, remembered per browser; split pairs each
+        removed line with its added one side by side (long lines wrap, an empty side hatched);
+        below 1024px wide always unified (split needs the width; the switch hides). Viewed per
+        file: the checkbox pill beside the file name, a tick in the file list, the progress
+        meter + "2 of 4 viewed" under the totals. Kept by Kratos per session (SQLite), for one
+        version of the change (`ChangedFile.version` = its before..after git blob ids): when the
+        agent changes the file again it's unviewed. Every tab sees a change at once (`viewed`
+        message). Accept: tests for pairing rows, viewed store/hub (incl. un-viewing on a new
+        version); screenshots split + unified + narrow; viewed survives reload and resets after a
+        new edit (real `claude`).
+        Checked: fresh browser → Split; Unified picked survives a reload; two files marked
+        viewed → "2 of 3 viewed", a second tab shows it without reloading, survives a reload; with
+        the page left open, real `claude` edited one viewed file → 8 s later "1 of 3", that file
+        unviewed, the other still viewed (owner: a changed file must unview); 390 wide → no
+        switch, unified. Also (owner): only the file list scrolls (back link, title, progress
+        stay), the back link hugs its text; the file's title + Viewed never move and the diff is
+        a fixed-size box filling the rest of the island with its own scroll bars (checked: the
+        only scroller in the main island, 684px showing 8450px; the title at the same y after
+        scrolling; a short file sits at the top of the full box).
+        Code review (owner asked) fixed: "earliest turns may be missing" is decided by log
+        position, not time (a turn ending in the same ms as its snapshot gave a false note:
+        `snapshots.log_seq`, migration 0009); split pairs exactly as the word marks do; a failed
+        `get_changes` reply is logged, not an unhandled rejection; one in-project check in the
+        hub. Left: a Viewed click undone within one round trip can flicker once. 187 tests, typecheck, build. Size: ~330 lines of code + ~90 of tests.
+  - [ ] **3v3b. Moving through** (~100) — Previous / "Next · name" (marks viewed) / Finish
+        review under the diff, keys n p v s (into 3k's shortcut list if it's built by then),
+        picking files at narrow width.
   - [ ] **3v4. Way in from the turn** (~120) — the turn's summary step "Changed 4 files
         +25 −5 · Review changes" (that turn's start → end snapshot), the header count updating
         live while the agent edits, a dot on files changed since you last looked. Accept: real

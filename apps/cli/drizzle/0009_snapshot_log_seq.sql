@@ -1,0 +1,1 @@
+ALTER TABLE `snapshots` ADD `log_seq` integer;

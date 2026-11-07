@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffLinesOf, foldRows, lineSpans, type DiffRow } from "./diff-rows";
+import { diffLinesOf, foldRows, lineSpans, pairRows, type DiffRow, type SplitRow } from "./diff-rows";
 
 const numbered = (n: number, from = 1) => Array.from({ length: n }, (_, i) => `line ${i + from}`).join("\n") + "\n";
 /** A row as a short string: "  3 3 line 3", "+  4 new", "-5   old", "… 7". */
@@ -83,5 +83,22 @@ describe("lineSpans (3v2)", () => {
       { text: "a ", marked: false },
       { text: "b", marked: true },
     ]);
+  });
+});
+
+describe("pairRows (3v3)", () => {
+  /** A pair as "old | new" line numbers, "." for an empty side; folds as "…". */
+  const sides = (rows: SplitRow[]) => rows.map((r) => (r.type === "fold" ? "…" : `${r.left?.old ?? "."} | ${r.right?.new ?? "."}`));
+
+  it("puts unchanged lines on both sides and pairs each change's removed lines with its added ones", () => {
+    const before = "a\nb\nc\nd\ne\n";
+    const after = "a\nB\nC\nC2\nd\n"; // b,c → B,C,C2 (one more on the right); e removed (nothing on the right)
+    expect(sides(pairRows(foldRows(diffLinesOf(before, after))))).toEqual(["1 | 1", "2 | 2", "3 | 3", ". | 4", "4 | 5", "5 | ."]);
+  });
+
+  it("keeps folds where they are", () => {
+    const before = numbered(20);
+    const rows = foldRows(diffLinesOf(before, before.replace("line 10\n", "line ten\n")));
+    expect(sides(pairRows(rows))).toEqual(["…", "7 | 7", "8 | 8", "9 | 9", "10 | 10", "11 | 11", "12 | 12", "13 | 13", "…"]);
   });
 });

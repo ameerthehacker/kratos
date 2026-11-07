@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { gitSnapshots } from "./git-snapshots.js";
+import type { ChangedFile } from "@kratos/core";
+
+const OID = /^[0-9a-f]{40}$/;
+/** The files without their versions (checked on their own: before..after object ids). */
+const withoutVersions = (files: ChangedFile[]) => files.map(({ version, ...rest }) => rest);
 
 /** A throwaway repo with one commit: a.txt, b.txt, .gitignore (ignores *.log). */
 function repo(): { dir: string; git: (...args: string[]) => string; write: (path: string, text: string | Buffer) => void } {
@@ -36,11 +41,18 @@ describe("gitSnapshots (3v1, D65)", () => {
     rmSync(join(dir, ".gitignore"));
     write(".gitignore", "*.log\n"); // deleted and recreated as it was: no change
     const files = await snapshots.diff(start, (await snapshots.take())!);
-    expect(files).toEqual([
+    expect(withoutVersions(files)).toEqual([
       { path: "a.txt", status: "modified", additions: 2, deletions: 1, before: "one\ntwo\nthree\n", after: "one\nTWO\nthree\nfour\n" },
       { path: "c.txt", oldPath: "b.txt", status: "renamed", additions: 0, deletions: 0, before: "keep me\n".repeat(20), after: "keep me\n".repeat(20) },
       { path: "src/new.ts", status: "added", additions: 1, deletions: 0, before: "", after: "export const x = 1;\n" },
     ]);
+    // Versions: before..after object ids; none on the side that doesn't exist; same blob for a
+    // rename with no edit.
+    const [edited, renamed, added] = files.map((f) => f.version.split(".."));
+    expect(edited).toEqual([expect.stringMatching(OID), expect.stringMatching(OID)]);
+    expect(edited![0]).not.toBe(edited![1]);
+    expect(renamed![0]).toBe(renamed![1]);
+    expect(added).toEqual(["", expect.stringMatching(OID)]);
   });
 
   it("a deleted file, a binary one and one too big to send", async () => {
@@ -51,7 +63,7 @@ describe("gitSnapshots (3v1, D65)", () => {
     write("logo.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 1, 2]));
     write("big.json", "x".repeat(300 * 1024));
     const files = await snapshots.diff(start, (await snapshots.take())!);
-    expect(files).toEqual([
+    expect(withoutVersions(files)).toEqual([
       { path: "a.txt", status: "deleted", additions: 0, deletions: 3, before: "one\ntwo\nthree\n", after: "" },
       { path: "big.json", status: "added", additions: 0, deletions: 0, skipped: "too_big" },
       { path: "logo.png", status: "added", additions: 0, deletions: 0, skipped: "binary" },

@@ -61,6 +61,8 @@ export type Settings = z.infer<typeof Settings>;
  * nested repository (its files are another repo's). */
 export const ChangedFile = z.object({
   path: z.string(),
+  /** This exact change (before..after git object ids): "viewed" is kept for one version (3v3). */
+  version: z.string(),
   oldPath: z.string().optional(),
   status: z.enum(["added", "modified", "deleted", "renamed"]),
   additions: z.number(),
@@ -116,8 +118,10 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("question_answer"), id: z.string(), reply: QuestionReply }),
   /** Open the project folder in one of the editors listed in `pong` (3d3). */
   z.object({ type: z.literal("open_in"), editor: z.string() }),
-  /** What a session of this project changed (3v1, D65); answered with `changes`. */
+  /** What a session of this project changed (3v1, D65); answered with `changes`, then `viewed`. */
   z.object({ type: z.literal("get_changes"), sessionId: z.string() }),
+  /** Mark one version of a changed file viewed in review, or not (3v3); every tab gets `viewed`. */
+  z.object({ type: z.literal("set_viewed"), sessionId: z.string(), path: z.string(), version: z.string(), viewed: z.boolean() }),
   /** Ask for server info; answered with `pong`. Send on connect. */
   z.object({ type: z.literal("ping") }),
   /** Change some settings (3w); every tab then gets the new `settings`. */
@@ -201,7 +205,7 @@ export const UpdateStatus = z.object({
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 
 /** Server → browser. Everything except pong/error/session/sessions/harnesses/update/settings/
- * changes is in a session's log. */
+ * changes/viewed is in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
   /** The owner's settings (3w): on connect, and whenever any tab changes them. */
   z.object({ type: z.literal("settings"), settings: Settings }),
@@ -277,6 +281,10 @@ export const ServerMessage = z.discriminatedUnion("type", [
     unavailable: z.string().optional(),
     note: z.string().optional(),
   }),
+  /** The files of a session you've marked viewed in review, each with the version you viewed
+   * (3v3, not logged): after `changes`, and to every tab when one changes. A file whose version
+   * differs has changed since. */
+  z.object({ type: z.literal("viewed"), sessionId: z.string(), files: z.record(z.string(), z.string()) }),
   /** To the tab that pressed Stop (not logged): the text of the queued prompts Stop dropped, to
    * put back in its composer (owner, D56). */
   z.object({ type: z.literal("prompts_returned"), text: z.string() }),

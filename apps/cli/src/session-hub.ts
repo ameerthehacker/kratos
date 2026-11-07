@@ -139,10 +139,7 @@ export class SessionHub {
         else send({ type: "error", message: `No session ${message.id} in this project` });
         return;
       case "set_done":
-        if (this.store.get(message.id)?.projectDir !== this.cwd) {
-          send({ type: "error", message: `No session ${message.id} in this project` });
-          return;
-        }
+        if (!this.inProject(send, message.id)) return;
         this.store.setDone(message.id, message.done);
         this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
         this.broadcastSessionList();
@@ -171,11 +168,18 @@ export class SessionHub {
         for (const runtime of this.runtimes.values()) if (runtime.decide(message.id, message.decision)) return;
         return;
       case "get_changes":
-        if (this.store.get(message.sessionId)?.projectDir !== this.cwd) {
-          send({ type: "error", message: `No session ${message.sessionId} in this project` });
-          return;
-        }
-        void this.changes(message.sessionId).then(send);
+        if (!this.inProject(send, message.sessionId)) return;
+        void this.changes(message.sessionId)
+          .then((changes) => {
+            send(changes);
+            send({ type: "viewed", sessionId: message.sessionId, files: this.store.viewed(message.sessionId) });
+          })
+          .catch((err: unknown) => this.log.warn({ err, session: message.sessionId }, "could not send changes"));
+        return;
+      case "set_viewed":
+        if (!this.inProject(send, message.sessionId)) return;
+        this.store.setViewed(message.sessionId, message.path, message.version, message.viewed);
+        this.broadcast({ type: "viewed", sessionId: message.sessionId, files: this.store.viewed(message.sessionId) });
         return;
       case "ping":
       case "client_log":
@@ -231,18 +235,25 @@ export class SessionHub {
       if (now === null) return reply([], "This project isn't in a git repository, so Kratos can't see what changed");
       if (!first) {
         // No turn yet — or every snapshot so far failed, or the session is older than snapshots.
-        return this.store.turnEndedBefore(sessionId, new Date()) ? reply([], `${unrecorded}, so its changes can't be shown`) : reply([]);
+        return this.store.turnEndedBefore(sessionId) ? reply([], `${unrecorded}, so its changes can't be shown`) : reply([]);
       }
       if (!(await this.snapshots.exists(first.tree))) return reply([], "This session's starting snapshot is gone: git cleans up old ones");
       const files = await this.snapshots.diff(first.tree, now);
       // Turns that ended before the first snapshot (its start failed): shown from there on, said so.
-      const partial = this.store.turnEndedBefore(sessionId, first.createdAt);
+      const partial = this.store.turnEndedBefore(sessionId, first);
       this.log.debug({ session: sessionId, files: files.length, partial }, "changes read");
       return reply(files, undefined, partial ? `${unrecorded}, so changes from its earliest turns may be missing` : undefined);
     } catch (err) {
       this.log.warn({ err, session: sessionId }, "could not read changes");
       return reply([], `Couldn't read the changes: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  /** Is this one of this project's sessions? Tells the tab when not. */
+  private inProject(send: Send, sessionId: string): boolean {
+    if (this.store.get(sessionId)?.projectDir === this.cwd) return true;
+    send({ type: "error", message: `No session ${sessionId} in this project` });
+    return false;
   }
 
   /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,

@@ -58,6 +58,13 @@
     }
 }
 
+/* An empty side in the split diff (3v3, the design's hatching): thin diagonal lines that say
+   "nothing here" without looking like content. */
+@utility bg-hatch {
+    background-image: repeating-linear-gradient(135deg,
+        transparent 0 6px, color-mix(in oklab, var(--color-secondary) 70%, transparent) 6px 7px);
+}
+
 /* Fonts and extra status colors from the owner's Kratos design (D38). */
 @theme inline {
     --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;

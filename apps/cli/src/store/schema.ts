@@ -71,7 +71,25 @@ export const snapshots = sqliteTable(
       .references(() => sessions.id),
     kind: text("kind", { enum: ["turn_start", "turn_end"] }).notNull(),
     tree: text("tree").notNull(),
+    /** Where in the session log it was taken: the `seq` the next message gets. Orders snapshots
+     * against turns exactly (timestamps can tie). Null for snapshots taken before it existed. */
+    logSeq: integer("log_seq"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("snapshots_by_session").on(t.sessionId, t.id)],
+);
+
+/** Files the owner marked viewed while reviewing a session's changes (3v3), one row per file:
+ * the version viewed (before..after git object ids). Another version = changed since. */
+export const viewedFiles = sqliteTable(
+  "viewed_files",
+  {
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id),
+    path: text("path").notNull(),
+    version: text("version").notNull(),
+    viewedAt: integer("viewed_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.path] })],
 );

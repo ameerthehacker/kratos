@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/bricolage-grotesque";
+
+/* The Kratos dark theme, copied from the app (apps/web/src/index.css `.dark`, D38) with the same
+   names, so classes read the same in both: bg-canvas, bg-background, text-muted-foreground… (D58).
+   The site is dark only, like the app today. Colors only through these, never hex in markup. */
+@theme {
+    --color-canvas: #070708; /* behind the islands */
+    --color-background: #111113; /* islands */
+    --color-card: #18181B;
+    --color-secondary: #1E1E22; /* chips, bubbles */
+    --color-accent: #1C1C20; /* hover */
+    --color-well: #0C0C0E; /* sunken blocks: diffs, terminal output */
+    --color-border: #232327;
+    --color-input: #34343A;
+    --color-foreground: #EDEDEF;
+    --color-secondary-foreground: #C8C8CD;
+    --color-muted-foreground: #9B9BA3;
+    --color-faint: #5E5E66;
+    --color-primary: #7CCFA6;
+    --color-primary-foreground: #06261A;
+    --color-add: #6FCF97;
+    --color-wait: #F2B54A;
+    --color-run: #6CA8FF;
+    --color-ring: #6CA8FF;
+    --color-destructive: #FF8A7C;
+    --color-vio: #C9A7FF; /* shell commands and flags */
+    --color-claude: #D97757; /* Claude's brand color (D43), the model chip's dot */
+
+    --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;
+    --font-sans: 'Geist Variable', system-ui, sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+
+    /* The design's radii (10px base): rows, tiles, bubbles, islands. */
+    --radius-lg: 0.625rem;
+    --radius-xl: 0.875rem;
+    --radius-2xl: 1.125rem;
+    --radius-3xl: 1.375rem;
+
+    /* Type the standard scale lacks (same as the app). */
+    --text-body: 0.9375rem; /* 15px: the app's base text, used inside the product replicas */
+    --text-body--line-height: 1.55;
+    --tracking-display: -0.035em; /* the design's display headings */
+
+    /* The working indicator, as in the app (D52): a light sweep across text, and the logo's
+       hammer striking with sparks. */
+    --animate-shimmer: shimmer 2.2s linear infinite;
+    @keyframes shimmer {
+        from { background-position: 100% 0; }
+        to { background-position: -100% 0; }
+    }
+    --animate-hammer: hammer 1.2s infinite;
+    @keyframes hammer {
+        0% { rotate: 12deg; animation-timing-function: ease-in-out; }
+        48% { rotate: -4deg; animation-timing-function: cubic-bezier(0.55, 0, 1, 0.6); }
+        62% { rotate: 90deg; animation-timing-function: ease-out; }
+        68% { rotate: 80deg; animation-timing-function: ease-in-out; }
+        100% { rotate: 12deg; }
+    }
+    --animate-spark: spark 1.2s infinite;
+    @keyframes spark {
+        0%, 61% { opacity: 0; translate: 0 0; scale: 0.4; }
+        62% { opacity: 1; translate: 0 0; scale: 1; animation-timing-function: ease-out; }
+        86%, 100% { opacity: 0; translate: var(--spark-x) var(--spark-y); scale: 0.5; }
+    }
+    /* Status dots that breathe (the app's `animate-pulse`). */
+    --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    @keyframes pulse {
+        50% { opacity: 0.5; }
+    }
+}
+
+/* Text that a lighter band sweeps across (with `animate-shimmer`), as in the app. */
+@utility text-shimmer {
+    color: transparent;
+    background-image: linear-gradient(90deg,
+        var(--color-muted-foreground) 35%, var(--color-foreground) 50%, var(--color-muted-foreground) 65%);
+    background-size: 200% 100%;
+    background-clip: text;
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+    }
+}
+
+/* Scrolls without showing a scrollbar (long commands in a pill). */
+@utility no-scrollbar {
+    scrollbar-width: none;
+}
+
+@layer base {
+    html {
+        color-scheme: dark;
+        @apply bg-canvas font-sans text-foreground antialiased;
+    }
+    * {
+        @apply border-border outline-ring;
+    }
+    ::selection {
+        @apply bg-primary/30;
+    }
+}

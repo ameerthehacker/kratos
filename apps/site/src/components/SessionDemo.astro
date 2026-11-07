@@ -1,0 +1,383 @@
+---
+import ArrowUp from "@lucide/astro/icons/arrow-up";
+import ChevronDown from "@lucide/astro/icons/chevron-down";
+import FileText from "@lucide/astro/icons/file-text";
+import Folder from "@lucide/astro/icons/folder";
+import Hand from "@lucide/astro/icons/hand";
+import Pencil from "@lucide/astro/icons/pencil";
+import Square from "@lucide/astro/icons/square";
+import Terminal from "@lucide/astro/icons/terminal";
+import ForgeHammer from "./ForgeHammer.astro";
+import Logo from "./Logo.astro";
+
+/**
+ * The hero's replica of a Kratos session (the app's Session screen, owner's design) playing one
+ * turn: prompt → steps → an ask with the diff → the visitor's Allow or Deny → tests → reply.
+ *
+ * Each piece that comes and goes carries the phase it appears at (`data-from`), optionally the
+ * phase it leaves at (`data-until`) and the answer it belongs to (`data-path`). The page is
+ * rendered at phase 3 — the ask — so it reads without JavaScript and doesn't flash on load; the
+ * script below answers from there and then replays the whole turn in a loop. With reduced motion
+ * nothing plays: the visitor's answer jumps to the end.
+ */
+const prompt = "Add a comment above the export in src/store.ts saying what it holds.";
+const FIRST_PHASE = 3;
+const at = (from: number, until?: number, path?: "allow" | "deny") => ({
+  "data-from": from,
+  "data-until": until,
+  "data-path": path,
+  hidden: !(FIRST_PHASE >= from && (until === undefined || FIRST_PHASE < until) && !path),
+});
+
+const chip = "inline-flex h-5 items-center rounded-full bg-secondary px-2 text-xs";
+const stepIcon = "flex size-6.5 flex-none items-center justify-center rounded-full bg-secondary";
+const kbd = "inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-secondary px-1 text-xs font-medium text-muted-foreground ring-1 ring-border";
+---
+
+<figure class="relative" data-demo data-prompt={prompt}>
+  <figcaption class="sr-only">
+    A replay of a Kratos session: you ask Claude Code for a change, it reads the file, then asks before editing it and
+    shows the exact diff. You choose Allow or Deny; on Allow it makes the edit, runs the tests and replies.
+  </figcaption>
+
+  <div class="rounded-3xl bg-canvas p-1.5 shadow-2xl ring-1 shadow-canvas ring-border sm:p-2.5">
+    <div class="flex h-148 flex-col overflow-hidden rounded-3xl bg-background sm:h-152">
+      <!-- Header: the wordmark and the project pill. -->
+      <div class="flex h-14 flex-none items-center gap-2.5 px-4 sm:px-5" aria-hidden="true">
+        <Logo class="size-6" />
+        <span class="font-heading text-lg font-bold tracking-tight">kratos</span>
+        <span class="flex-1"></span>
+        <span class="inline-flex h-8 items-center gap-2 rounded-full bg-secondary pr-2.5 pl-3 text-xs text-secondary-foreground">
+          <Folder class="size-3.5 text-muted-foreground" />
+          <span class="font-medium">my-app</span>
+          <span class="size-2 rounded-full bg-primary"></span>
+          <ChevronDown class="size-3.5 text-muted-foreground" />
+        </span>
+      </div>
+
+      <!-- Session title and status. -->
+      <div class="mx-auto flex w-full max-w-2xl flex-none items-center gap-3 px-4 pb-3 sm:px-5" aria-hidden="true">
+        <p class="min-w-0 flex-1 truncate text-sm font-medium sm:text-base" data-title>{prompt}</p>
+        <span class="group inline-flex flex-none items-center gap-1.5 text-xs" data-status data-approval>
+          <span
+            class="size-2 rounded-full bg-input group-data-approval:bg-wait group-data-working:size-1.5 group-data-working:animate-pulse group-data-working:bg-run"
+          ></span>
+          <span class="text-muted-foreground group-data-approval:text-wait" data-status-label>Needs approval</span>
+        </span>
+      </div>
+
+      <!-- Conversation, stuck to the bottom; older lines slide up under a fade. -->
+      <div class="relative min-h-0 flex-1 overflow-hidden mask-t-from-80%" aria-hidden="true">
+        <div class="absolute inset-x-0 bottom-0 mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 pb-5 text-sm sm:px-5 sm:text-body" data-convo>
+          <div {...at(1)} class="max-w-4/5 self-end rounded-2xl bg-secondary px-4 py-2.5">{prompt}</div>
+
+          <section {...at(2)} class="flex flex-col gap-3.5">
+            <div class="flex items-center gap-2 text-xs text-muted-foreground">
+              <span data-step-count>Claude Code · 2 steps</span>
+              <span class="h-px flex-1 bg-border"></span>
+              <span class="inline-flex h-6.5 items-center rounded-full bg-secondary px-2.5">Show raw</span>
+            </div>
+
+            <div {...at(2)} class="flex gap-3" data-step>
+              <span class:list={[stepIcon, "text-muted-foreground"]}><FileText class="size-3.5" /></span>
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+                <div class="text-sm leading-snug">Read store.ts</div>
+                <div class="flex flex-wrap gap-1.5"><span class:list={[chip, "font-mono text-secondary-foreground"]}>src</span></div>
+              </div>
+            </div>
+
+            <div {...at(3)} class="flex gap-3" data-step>
+              <span {...at(3, 4)} class:list={[stepIcon, "bg-wait/10 text-wait"]}><Hand class="size-3.5" /></span>
+              <span {...at(4, undefined, "allow")} class:list={[stepIcon, "text-run"]}><Pencil class="size-3.5" /></span>
+              <span {...at(4, undefined, "deny")} class:list={[stepIcon, "text-muted-foreground"]}><Pencil class="size-3.5" /></span>
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+                <div class="text-sm leading-snug">
+                  <span {...at(3, 4)}>Edit store.ts</span><span {...at(4, undefined, "allow")}>Edited store.ts</span><span
+                    {...at(4, undefined, "deny")}>Edit store.ts</span
+                  >
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  <span class:list={[chip, "font-mono text-secondary-foreground"]}>src</span>
+                  <span class:list={[chip, "font-mono text-muted-foreground"]}>+1 −0</span>
+                  <span {...at(3, 4)} class:list={[chip, "bg-wait/10 text-wait"]}>Waiting for you</span>
+                  <span {...at(4, undefined, "allow")} class:list={[chip, "text-add"]}>You allowed this</span>
+                  <span {...at(4, undefined, "deny")} class:list={[chip, "text-destructive"]}>You denied this</span>
+                </div>
+              </div>
+            </div>
+
+            <div {...at(6, undefined, "allow")} class="flex gap-3" data-step>
+              <span class:list={[stepIcon, "text-vio"]}><Terminal class="size-3.5" /></span>
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+                <div class="text-sm leading-snug">Ran the tests</div>
+                <div class="flex flex-wrap gap-1.5"><span class:list={[chip, "text-add"]}>✓ 18 passed</span></div>
+              </div>
+            </div>
+          </section>
+
+          <p {...at(6, undefined, "allow")}>
+            Added a one-line comment above the export in
+            <code class="rounded-sm bg-secondary px-1.5 py-0.5 font-mono text-xs sm:text-sm">src/store.ts</code>. Nothing else
+            changed, and all 18 tests pass.
+          </p>
+          <p {...at(4, undefined, "deny")}>
+            Okay, I left <code class="rounded-sm bg-secondary px-1.5 py-0.5 font-mono text-xs sm:text-sm">src/store.ts</code> as
+            it was. Tell me what the comment should say instead.
+          </p>
+
+          <!-- The working line: what the agent is doing now, with the striking hammer. -->
+          <div class="flex items-center gap-1.5 text-sm" data-working hidden>
+            <ForgeHammer class="h-5 w-4 flex-none" />
+            <span class="min-w-0 animate-shimmer truncate text-shimmer" data-working-text>Thinking…</span>
+            <span class="ml-auto text-xs text-muted-foreground tabular-nums" data-working-time>0s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- The ask (real buttons: the visitor answers it) and the composer. -->
+      <div class="mx-auto w-full max-w-2xl flex-none px-4 pb-4 sm:px-5 sm:pb-5">
+        <div {...at(3, 4)} role="group" aria-label="Claude Code needs your OK" class="mb-2 flex flex-col gap-2 rounded-2xl bg-card p-2.5 pl-3.5 ring-1 ring-border">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <span class="min-w-0 flex-1 basis-full text-sm text-secondary-foreground sm:basis-0 sm:text-body">
+              Claude Code wants to <span class="text-foreground">edit store.ts</span>
+            </span>
+            <button
+              type="button"
+              data-answer="deny"
+              class="ml-auto h-8 flex-none sm:ml-0 cursor-pointer rounded-full bg-secondary px-3.5 text-sm text-secondary-foreground transition-colors hover:bg-input focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Deny
+            </button>
+            <button
+              type="button"
+              data-answer="allow"
+              class="h-8 flex-none cursor-pointer rounded-full bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Allow
+            </button>
+          </div>
+          <div class="no-scrollbar overflow-x-auto rounded-lg bg-well px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">
+            <div class="text-faint">src/store.ts</div>
+            <div class="text-add">+ // In-memory key-value store: string values keyed by string.</div>
+            <div class="text-muted-foreground">  export const store = new Map&lt;string, string&gt;();</div>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-3.5 rounded-3xl bg-card p-3 pl-4.5 ring-1 ring-border" aria-hidden="true">
+          <p class="min-h-8 py-1 text-base">
+            <span data-typed></span><span class="ml-px inline-block h-5 w-px translate-y-1 animate-pulse bg-foreground" data-caret hidden
+            ></span><span class="text-faint" data-placeholder>Reply…</span>
+          </p>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs text-secondary-foreground">
+              <span class="size-2 rounded-full bg-claude"></span>Opus 5.5<ChevronDown class="size-3.5 text-muted-foreground" />
+            </span>
+            <span class="inline-flex h-9 items-center gap-1.5 rounded-full bg-secondary px-3 text-xs text-secondary-foreground">
+              <Hand class="size-3.5" />Ask<ChevronDown class="size-3.5 text-muted-foreground" />
+            </span>
+            <span class="flex-1"></span>
+            <span class="hidden items-center gap-3 text-xs text-faint md:flex">
+              <span class="flex items-center gap-1.5"><kbd class={kbd}>↵</kbd>send</span>
+              <span class="flex items-center gap-1.5"><span class="flex gap-1"><kbd class={kbd}>⇧</kbd><kbd class={kbd}>↵</kbd></span>new line</span>
+            </span>
+            <span
+              class="group flex size-9 flex-none items-center justify-center rounded-full bg-secondary text-faint transition-colors data-ready:bg-foreground data-ready:text-background data-stop:bg-foreground data-stop:text-background"
+              data-send
+              data-stop
+            >
+              <ArrowUp class="size-4 group-data-stop:hidden" />
+              <Square class="hidden size-3.5 fill-current group-data-stop:block" />
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<script>
+  type Answer = "allow" | "deny";
+
+  const root = document.querySelector<HTMLElement>("[data-demo]");
+  if (root) play(root);
+
+  function play(root: HTMLElement) {
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const one = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+    const items = [...root.querySelectorAll<HTMLElement>("[data-from]")];
+    const steps = [...root.querySelectorAll<HTMLElement>("[data-step]")];
+    const prompt = root.dataset.prompt ?? "";
+    const el = {
+      convo: one("[data-convo]"),
+      title: one("[data-title]"),
+      status: one("[data-status]"),
+      statusLabel: one("[data-status-label]"),
+      stepCount: one("[data-step-count]"),
+      working: one("[data-working]"),
+      workingText: one("[data-working-text]"),
+      workingTime: one("[data-working-time]"),
+      typed: one("[data-typed]"),
+      caret: one("[data-caret]"),
+      placeholder: one("[data-placeholder]"),
+      send: one("[data-send]"),
+      ask: one('[aria-label="Claude Code needs your OK"]'),
+      allow: one<HTMLButtonElement>('[data-answer="allow"]'),
+    };
+
+    let phase = 3; // the server-rendered frame: the ask is waiting
+    let answer: Answer | undefined;
+
+    // Show what belongs to this phase and answer; pieces that appear rise in.
+    function render(animate = !reduce) {
+      for (const item of items) {
+        const from = Number(item.dataset.from);
+        const until = item.dataset.until ? Number(item.dataset.until) : Infinity;
+        const path = item.dataset.path;
+        const show = phase >= from && phase < until && (!path || path === answer);
+        if (show !== item.hidden) continue;
+        item.hidden = !show;
+        if (show && animate) {
+          item.animate([{ opacity: 0, translate: "0 8px" }, { opacity: 1, translate: "0 0" }], { duration: 360, easing: "cubic-bezier(.2,.7,.2,1)" });
+        }
+      }
+      const n = steps.filter((s) => !s.hidden).length;
+      el.stepCount.textContent = `Claude Code · ${n} ${n === 1 ? "step" : "steps"}`;
+    }
+
+    const STATUS = { idle: "Idle", working: "Working", approval: "Needs approval" } as const;
+    function status(s: keyof typeof STATUS) {
+      el.status.toggleAttribute("data-working", s === "working");
+      el.status.toggleAttribute("data-approval", s === "approval");
+      el.statusLabel.textContent = STATUS[s];
+      el.send.toggleAttribute("data-stop", s !== "idle");
+    }
+
+    // The working line, with seconds since the turn started.
+    let turnStart = Date.now() - 4000;
+    let clock: number | undefined;
+    function working(text: string | null) {
+      el.working.hidden = text === null;
+      clearInterval(clock);
+      if (text === null) return;
+      el.workingText.textContent = text;
+      el.workingText.setAttribute("aria-label", text);
+      const tick = () => (el.workingTime.textContent = `${Math.round((Date.now() - turnStart) / 1000)}s`);
+      tick();
+      clock = window.setInterval(tick, 1000);
+    }
+
+    // Waits pause while the demo is scrolled out of view.
+    let onScreen = true;
+    let wake: (() => void) | undefined;
+    new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      if (onScreen) wake?.();
+    }).observe(root);
+    async function sleep(ms: number) {
+      await new Promise((r) => setTimeout(r, ms));
+      while (!onScreen) await new Promise<void>((r) => (wake = r));
+    }
+
+    // The visitor's answer, or Allow on their behalf after a while — but never while their pointer
+    // or keyboard focus is on the ask, and never with reduced motion.
+    let onAnswer: ((a: Answer) => void) | undefined;
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-answer]")) {
+      button.addEventListener("click", () => onAnswer?.(button.dataset.answer as Answer));
+    }
+    function ask(autoAllowAfter: number) {
+      return new Promise<Answer>((resolve) => {
+        let timer: number | undefined;
+        const autoAllow = async () => {
+          if (el.ask.matches(":hover") || el.ask.contains(document.activeElement)) {
+            timer = window.setTimeout(autoAllow, 1500); // they're about to choose: wait
+            return;
+          }
+          await el.allow.animate([{ scale: 1 }, { scale: 0.92 }, { scale: 1 }], { duration: 260 }).finished;
+          onAnswer?.("allow");
+        };
+        if (!reduce) timer = window.setTimeout(autoAllow, autoAllowAfter);
+        onAnswer = (a) => {
+          clearTimeout(timer);
+          onAnswer = undefined;
+          resolve(a);
+        };
+      });
+    }
+
+    async function typePrompt() {
+      el.placeholder.hidden = true;
+      el.caret.hidden = false;
+      el.send.toggleAttribute("data-ready", true);
+      for (let i = 1; i <= prompt.length; i++) {
+        el.typed.textContent = prompt.slice(0, i);
+        await sleep(22 + Math.random() * 38);
+      }
+      await sleep(450);
+      el.typed.textContent = "";
+      el.caret.hidden = true;
+      el.placeholder.hidden = false;
+      el.send.toggleAttribute("data-ready", false);
+    }
+
+    async function restart() {
+      const fade = el.convo.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 450, fill: "forwards" });
+      await fade.finished;
+      phase = 0;
+      answer = undefined;
+      el.title.textContent = "New session";
+      el.title.classList.add("text-muted-foreground");
+      status("idle");
+      render(false);
+      fade.cancel(); // back to full opacity, now empty
+      await sleep(700);
+      await typePrompt();
+      turnStart = Date.now();
+      phase = 1;
+      el.title.textContent = prompt;
+      el.title.classList.remove("text-muted-foreground");
+      status("working");
+      working("Thinking…");
+      render();
+      await sleep(1500);
+      phase = 2;
+      working("Reading store.ts…");
+      render();
+      await sleep(1700);
+      phase = 3;
+      working(null);
+      status("approval");
+      render();
+    }
+
+    async function turn(first: boolean) {
+      if (!first) await restart();
+      answer = await ask(first ? 7000 : 6000);
+      phase = 4;
+      if (answer === "deny" || reduce) {
+        if (answer === "allow") phase = 6; // reduced motion: straight to the end
+        status("idle");
+        render();
+        return;
+      }
+      status("working");
+      working("Editing store.ts…");
+      render();
+      await sleep(1100);
+      phase = 5;
+      working("Running the tests…");
+      await sleep(1900);
+      phase = 6;
+      working(null);
+      status("idle");
+      render();
+    }
+
+    (async () => {
+      for (let first = true; ; first = false) {
+        await turn(first);
+        if (reduce) return; // no replay loop
+        await sleep(answer === "deny" ? 4500 : 6000);
+      }
+    })();
+  }
+</script>

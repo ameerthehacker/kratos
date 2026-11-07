@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Kratos mark (owner's design, D38). Colors follow the theme when inlined; fallbacks = dark theme. -->
+  <rect width="64" height="64" rx="17" style="fill: var(--primary, #7CCFA6)"/>
+  <g transform="translate(27.16 36.84) scale(0.856) rotate(45) translate(-32 -34)">
+    <rect x="28" y="24" width="8" height="36" rx="4" style="fill: var(--primary-foreground, #06261A)"/>
+    <rect x="12" y="8" width="40" height="20" rx="3" style="fill: var(--primary-foreground, #06261A)"/>
+  </g>
+</svg>

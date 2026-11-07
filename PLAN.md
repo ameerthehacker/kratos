@@ -358,6 +358,36 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
 - [ ] **6. Decision ledger** — decisions captured as structured events, shown in UI, flippable.
 - [ ] **7. Dogfood** — build step 8+ of Kratos using Kratos.
 
+## Website (distribution) — owner, D58
+
+Kratos will ship as a CLI from Homebrew (`brew install ameerthehacker/kratos/kratos`, tap repo
+`ameerthehacker/homebrew-kratos`; releases and the formula are step 3u). The site sells it: ultra minimal, built for mindful vibe coding, gives you a handle
+on what's being built. Two gated slices (owner):
+
+- [x] **W1. Astro site + one-page landing** (owner OK'd the size by picking two slices) — new
+      `apps/site` (Astro, static, Tailwind v4, the app's design tokens and fonts). One page
+      (owner: ultra simple, no "works with Claude Code"; it flaunts Kratos and gives the install
+      command): logo + GitHub, headline, one line, the brew command (copy button), and a live
+      replica of a Kratos session that plays a turn (prompt → working hammer → ask with diff →
+      visitor clicks Allow or Deny, auto-allow if they don't → steps → reply, then loops).
+      Mirrored on the design canvas as the "Website · one-pager" artboard (owner iterates there).
+      Scope: `apps/site/**`, root `package.json` scripts, `pnpm-lock.yaml`, PLAN/DECISIONS.
+      Accept: `pnpm --filter @kratos/site build` and `typecheck` pass; page checked in the
+      browser at desktop and phone width; demo loops, Allow/Deny both work, copy button copies;
+      reduced motion shows the finished turn without animation.
+      Done (owner approved): build + `astro check` 0 errors; root typecheck 7/7, 83 tests pass;
+      browser at 1440, 1024 and 375 wide, no sideways scroll; demo looped, auto-allowed, and Deny
+      gave "You denied this" + the reply; copy → the copy event carried the exact command (the
+      pane refuses the Clipboard API, so copy-to-clipboard as in D47); reduced motion (matchMedia
+      overridden) → no auto-allow, Allow jumps to the end, no replay. First version also had
+      feature tiles, a roadmap and a second install section — cut at the owner's request
+      (`Features.astro` deleted). Also: `.claude/launch.json` (`site`) for the preview pane,
+      auto-allow waits while the pointer or focus is on the ask, commands wrap at "/" on phones.
+- [ ] **W2. Install page** — `/install`: requirements (macOS + Homebrew, Claude Code installed
+      and signed in), install, first run (`kratos [project-dir]`, the flags), update, uninstall,
+      where data lives (`~/.kratos`), troubleshooting. Open question (owner): still wanted now that
+      the one-pager carries the install command? If yes, the page gets one small link to it.
+
 ## Later ideas (not committed)
 
 - Autonomy dial per path / action type

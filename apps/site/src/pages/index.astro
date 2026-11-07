@@ -1,0 +1,32 @@
+---
+import InstallCommand from "../components/InstallCommand.astro";
+import SessionDemo from "../components/SessionDemo.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import Base from "../layouts/Base.astro";
+---
+
+<!-- One page (owner: ultra simple): the name, one line, the install command, and Kratos at work. -->
+<Base>
+  <div class="mx-auto flex min-h-dvh max-w-screen-2xl flex-col p-2.5">
+    <main class="relative isolate flex-1 overflow-hidden rounded-3xl bg-background">
+      <SiteHeader />
+
+      <div class="mx-auto flex max-w-4xl flex-col items-center px-4 pt-16 pb-14 text-center sm:px-8 sm:pt-24">
+        <h1 class="font-heading text-5xl leading-none font-semibold tracking-display text-balance sm:text-6xl lg:text-7xl">
+          Vibe coding,<br /><span class="text-muted-foreground">with a handle on it.</span>
+        </h1>
+        <p class="mt-6 max-w-xl text-lg text-pretty text-secondary-foreground sm:text-xl">
+          An ultra-minimal harness for mindful vibe coding. You approve every step and understand everything that ships.
+        </p>
+        <InstallCommand class="mt-10 w-full sm:w-auto" />
+      </div>
+
+      <div class="relative mx-auto max-w-4xl px-2 pb-6 sm:px-8 sm:pb-16">
+        <!-- Forge light behind the window. -->
+        <div class="pointer-events-none absolute inset-x-0 -top-16 bottom-0 -z-10 bg-radial from-primary/12 to-transparent to-70%" aria-hidden="true"></div>
+        <SessionDemo />
+        <p class="mt-5 text-center text-sm text-muted-foreground">A replay of a Kratos session. When it asks, you choose.</p>
+      </div>
+    </main>
+  </div>
+</Base>

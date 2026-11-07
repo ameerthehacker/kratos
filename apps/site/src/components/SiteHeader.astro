@@ -1,0 +1,19 @@
+---
+import GitHubMark from "./GitHubMark.astro";
+import Logo from "./Logo.astro";
+import { site } from "../site";
+---
+
+<header class="flex h-16 items-center px-4 sm:px-6">
+  <a href="/" class="mr-auto flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4" aria-label="Kratos home">
+    <Logo class="size-7" />
+    <span class="font-heading text-xl font-bold tracking-tight">kratos</span>
+  </a>
+  <a
+    href={site.repoUrl}
+    class="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-2"
+    aria-label="Kratos on GitHub"
+  >
+    <GitHubMark />
+  </a>
+</header>

@@ -1,0 +1,34 @@
+---
+/**
+ * The app's working indicator glyph (apps/web forge-hammer.tsx, D52): the logo's hammer striking
+ * in a loop with sparks. With reduced motion it rests and the sparks stay hidden.
+ */
+interface Props {
+  class?: string;
+}
+const { class: className = "h-5 w-4" } = Astro.props;
+
+const sparks = [
+  { cx: 38, cy: 58, x: "-11px", y: "-8px" },
+  { cx: 46, cy: 59, x: "4px", y: "-12px" },
+  { cx: 52, cy: 58, x: "11px", y: "-5px" },
+];
+---
+
+<svg viewBox="2 0 50 64" overflow="visible" class:list={["overflow-visible", className]} aria-hidden="true">
+  <g class="animate-hammer fill-primary motion-reduce:animate-none" style="transform-origin: 12px 40px">
+    <rect x="8" y="10" width="8" height="32" rx="4"></rect>
+    <rect x="-4" y="1" width="32" height="16" rx="3"></rect>
+  </g>
+  {
+    sparks.map((s) => (
+      <circle
+        cx={s.cx}
+        cy={s.cy}
+        r="3"
+        class="animate-spark fill-primary opacity-0 motion-reduce:hidden"
+        style={`--spark-x: ${s.x}; --spark-y: ${s.y}; transform-origin: ${s.cx}px ${s.cy}px`}
+      />
+    ))
+  }
+</svg>

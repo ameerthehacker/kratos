@@ -7,12 +7,13 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --filter=!@kratos/site",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "vitest run",
     "start": "node apps/cli/dist/index.js",
-    "dev:web": "pnpm --filter @kratos/web dev"
+    "dev:web": "pnpm --filter @kratos/web dev",
+    "dev:site": "pnpm --filter @kratos/site dev"
   },
   "devDependencies": {
     "turbo": "^2.11.10",

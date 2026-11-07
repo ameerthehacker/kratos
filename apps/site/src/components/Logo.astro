@@ -1,0 +1,23 @@
+---
+/** The Kratos mark (owner's design, D38): the hammer on a rounded mint tile. Same drawing as
+ * public/favicon.svg, inlined so its colors come from the theme. */
+interface Props {
+  class?: string;
+  label?: string;
+}
+const { class: className = "size-6", label } = Astro.props;
+---
+
+<svg
+  viewBox="0 0 64 64"
+  class={className}
+  role={label ? "img" : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : "true"}
+>
+  <rect width="64" height="64" rx="17" class="fill-primary"></rect>
+  <g transform="translate(27.16 36.84) scale(0.856) rotate(45) translate(-32 -34)" class="fill-primary-foreground">
+    <rect x="28" y="24" width="8" height="36" rx="4"></rect>
+    <rect x="12" y="8" width="40" height="20" rx="3"></rect>
+  </g>
+</svg>

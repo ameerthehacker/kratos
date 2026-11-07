@@ -1,0 +1,60 @@
+---
+import Copy from "@lucide/astro/icons/copy";
+import Check from "@lucide/astro/icons/check";
+import { site } from "../site";
+
+/** A shell command in a pill with a copy button; a check shows for a moment after copying.
+ * Defaults to the Homebrew install command. */
+interface Props {
+  command?: string;
+  class?: string;
+}
+const { command = site.installCommand, class: className } = Astro.props;
+// On phones the command wraps instead of hiding its end: allow breaks after each "/".
+const parts = command.split("/");
+---
+
+<div
+  class:list={[
+    "flex min-h-14 max-w-full items-center gap-3 rounded-3xl bg-card py-2 pr-2 pl-5 font-mono text-sm ring-1 ring-border transition-shadow hover:ring-input sm:rounded-full",
+    className,
+  ]}
+  data-install-command
+>
+  <span class="text-faint select-none" aria-hidden="true">$</span>
+  <code class="min-w-0 flex-1 text-left text-foreground no-scrollbar sm:overflow-x-auto sm:whitespace-nowrap">
+    {parts.map((part, i) => (i < parts.length - 1 ? <Fragment>{part}/<wbr /></Fragment> : part))}
+  </code>
+  <button
+    type="button"
+    class="relative flex size-10 flex-none cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-2"
+    aria-label={`Copy: ${command}`}
+    data-copy={command}
+  >
+    <Copy class="size-4 transition-all data-copied:scale-50 data-copied:opacity-0" data-icon="copy" />
+    <Check class="absolute size-4 scale-50 text-primary opacity-0 transition-all data-copied:scale-100 data-copied:opacity-100" data-icon="check" />
+    <span class="sr-only" aria-live="polite" data-copy-status></span>
+  </button>
+</div>
+
+<script>
+  import copyToClipboard from "copy-to-clipboard";
+
+  // One handler for every copy button on the page. copy-to-clipboard tries the Clipboard API and
+  // falls back to execCommand where it's refused (embedded browsers, plain http) — as in the app (D47).
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
+    let timer: number | undefined;
+    button.addEventListener("click", async () => {
+      if (!(await copyToClipboard(button.dataset.copy ?? ""))) return; // nothing was copied: no check
+      const icons = button.querySelectorAll("[data-icon]");
+      const status = button.querySelector("[data-copy-status]");
+      icons.forEach((icon) => icon.toggleAttribute("data-copied", true));
+      if (status) status.textContent = "Copied";
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        icons.forEach((icon) => icon.toggleAttribute("data-copied", false));
+        if (status) status.textContent = "";
+      }, 1600);
+    });
+  }
+</script>

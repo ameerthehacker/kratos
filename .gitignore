@@ -5,3 +5,5 @@ dist/
 .DS_Store
 # `pnpm dev`: the dev server's session history (kratos.db)
 .kratos/
+# Astro: generated types
+.astro/

@@ -156,6 +156,33 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D58. Website: Astro in `apps/site`, static, Tailwind with the app's tokens (step W1, owner)
+- Owner: a website built with Astro, then cut to an ultra-simple one-pager (name, one line, the
+  install command, a live session demo). Kratos ships via Homebrew from the owner's tap repo
+  `ameerthehacker/homebrew-kratos` (`brew install ameerthehacker/kratos/kratos`; the formula comes
+  with step 3u); source link `github.com/ameerthehacker/kratos`. Both live in
+  `apps/site/src/site.ts`, one place to change. (Numbered D58: D54–D56 were taken on main while
+  this was built, and the step-3u plan holds D57.)
+- Shape: `apps/site` in the monorepo (turbo builds it with the rest; `dist/` like the others).
+  Static output, zero JS by default; the only scripts are the copy button and the hero demo,
+  plain TypeScript in Astro `<script>` tags (bundled by Astro) — no React on the site.
+- Styling: Tailwind v4 through `@tailwindcss/vite` (Tailwind's documented Astro setup). Colors,
+  fonts and radii are the app's dark theme (`apps/web/src/index.css`, D38), copied into the
+  site's own `@theme` — same names (`bg-canvas`, `text-muted-foreground`, `bg-wait`…) and same
+  CLAUDE.md UI rules. Dark only: the app is dark only today. Fonts self-hosted from the same
+  `@fontsource-variable` packages (no Google Fonts request). Icons: `@lucide/astro` (the app uses
+  Lucide). Copy buttons use `copy-to-clipboard`, as the app does (D47: the Clipboard API alone
+  is refused in embedded browsers — the site check hit it too). The logo SVG is copied to `public/favicon.svg` (Astro can't import across packages
+  without a build step; it's one small file).
+- Typecheck: `astro check` (`@astrojs/check`) needs TypeScript 5 or 6, the repo is on 7 — the site
+  pins its own `typescript@^6` dev dependency (pnpm keeps it local to `apps/site`).
+- Dev: root `pnpm dev` skips the site (it's the dogfooding loop; a second dev server there is
+  noise); `pnpm dev:site` runs it alone at http://localhost:4321.
+- Alternatives: Next.js / plain Vite + React (heavier, JS by default for a static page);
+  Starlight (great for docs, too opinionated for a landing page — revisit for docs later);
+  plain CSS without Tailwind (would duplicate the token system the app already has).
+- Reverse: delete `apps/site` and the two root scripts; nothing else depends on it.
+
 ### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)
 - Owner: choose permission modes like the harnesses allow (auto, accept edits, …), including
   Bypass, but only after a consent dialog; Home remembers the pick like model and effort.

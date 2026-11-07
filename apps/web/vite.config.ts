@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       "/ws": { target: "ws://127.0.0.1:4317", ws: true },
       "/editor-icons": { target: "http://127.0.0.1:4317" }, // editors' app icons (3d3)
+      "/attachments": { target: "http://127.0.0.1:4317" }, // files sent with prompts (D55)
     },
   },
 });

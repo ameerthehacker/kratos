@@ -183,6 +183,149 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   plain CSS without Tailwind (would duplicate the token system the app already has).
 - Reverse: delete `apps/site` and the two root scripts; nothing else depends on it.
 
+### D56. Steering prompts: the agent holds them, Kratos follows each by id (step 3t, owner)
+- Owner: send prompts while the agent works and see clearly what happens to each; design
+  "Proposal · steering prompts (queue, send now, read)". Backend first.
+- Found on the real CLI (2.1.308, tiny Haiku turns): a user message sent mid-turn is held and
+  taken at the next step boundary *in the same turn* (the reply honoured it); sent during the
+  final reply, it runs as the next turn. A message with a `uuid` gets `command_lifecycle
+  {command_uuid, state}` lines — queued → started → completed | cancelled — with no flag needed
+  (`--replay-user-messages` echoes too, but adds nothing). `cancel_async_message {message_uuid}`
+  → `{cancelled}`; `interrupt {cancel_queued: true}` stops and cancels all waiting; a plain
+  interrupt lets waiting prompts run right after; `interrupt {send_now: true, message_uuid}`
+  stops the step and delivers *all* waiting prompts (3t2). The CLI also reports its own messages
+  (e.g. "[Request interrupted…]") — the adapter only follows ids it sent.
+- Risk: these requests are undocumented — found in the CLI's own strings (its SDK uses them, and
+  init advertises `interrupt_cancel_queued_v1` / `interrupt_send_now_v1`). If they change, the
+  fake claude's tests won't notice; the real-CLI check at each step will.
+- Shape: the agent owns the queue (it decides where a prompt lands); Kratos sends a prompt at once
+  and follows it. Core: `send(prompt, files, {id})`, AgentEvent `prompt_state`, `cancelPrompt`,
+  `interrupt({cancelQueued})`. Alternative: Kratos holds the queue and sends at turn end — but
+  then it can't steer mid-turn, which is the point.
+- Log: `prompt_queued {id, text, attachments?}` → `prompt_read {id, how: step | next_turn,
+  after?}` (after = the tool call that had just finished) or `prompt_removed {id, reason:
+  removed | stopped}`; `prompt_state` events themselves aren't logged. A prompt read after the
+  turn ended reopens the turn (the agent started it by itself). Replay: the timeline puts a read
+  prompt in the chat where it was read; queued ones stay out of it (the queue card is 3t3).
+- Stop (owner): with a queue, Stop stops everything (`cancel_queued`), and once every withdrawn
+  prompt is settled the tab that pressed Stop gets their text (`prompts_returned`, not logged)
+  for its composer. Files of returned prompts aren't returned. An agent that exits, a shutdown or
+  a restart drops a leftover queue (`prompt_removed stopped`).
+- `SessionSummary.queued` for "Working · 2 queued".
+- Send now (3t2, owner: only the chosen prompt goes; the CLI's own delivers everything it holds):
+  the runtime withdraws the *other* queued prompts from the agent (`cancelPrompt` — their
+  `cancelled` is swallowed, they stay queued for tabs), calls `sendNow` (`interrupt {send_now,
+  message_uuid}`), and once the withdrawals are done *and* the chosen prompt is read, sends the
+  others again under new agent ids — same Kratos ids, same order, same files. Waiting for both
+  avoids a race where a re-sent prompt joins the chosen one. Agent ids map back to Kratos ids, and
+  lifecycle lines for an old agent id are ignored. The chosen prompt is logged `prompt_read {how:
+  "now", stopped}` with the step (tool call) that was running. One Send now at a time.
+- UI (3t3, the design, fitted to today's composer): while the agent works the placeholder is "Add
+  to the queue…" and, with text, the send button becomes Queue (↵); ⌘↵ / Ctrl↵ sends now — the
+  hints live in the button's tooltip, not key caps (the composer dropped those in 3q2). The queue
+  card above the composer is built from the log (`openQueue`), so every tab and a reload show
+  it; Edit = remove + text back into the box, which is also where Stop's returned text goes
+  (`insert` prop). Read prompts join the chat where they were read, with "Read after <step>",
+  "⚡ Sent now · stopped <step>" or "Sent when the last turn ended" (a read with no step before it
+  says "Read while working"); the step Send now cut short reads "Stopped <doing>", and the
+  generic "Stopped" line it causes is dropped. "N queued" in the working line and status.
+- Reverse: additive — without ids nothing is followed, and prompts mid-turn behave as before.
+
+### D55. File attachments: inline with the prompt, stored by id, checked against the harness (step 3s, owner)
+- Owner: attach files to a prompt; backend first (the design has no attachments yet).
+- Found on the real CLI (2.1.308, tiny Haiku turns): the stream-json user message's `content` can
+  be a list of blocks — `image` (base64), `document` with a base64 PDF, `document` with
+  `source: {type: "text"}` and a `title` — and the agent read all three correctly. Nothing has
+  to be written into the project, and Claude keeps them in its own transcript for later turns.
+- Shape: each adapter declares an `AttachmentPolicy` (kinds image / pdf / text with media types
+  and max bytes; max count and total), sent to tabs in `Harness.attachments`; core's
+  `classifyAttachment` / `checkAttachmentSet` decide — pure, so the UI can check before sending.
+  Text is judged by content (UTF-8, no NUL), since browsers often don't know a `.ts` file's type;
+  anything else that isn't an accepted image/PDF type is refused (an SVG is text, never an image).
+  `AgentSession.send(prompt, attachments)` takes agent-neutral `{name, kind, mediaType, data}`;
+  the Claude adapter puts the files' blocks first, then the prompt text.
+- Claude's limits: images png/jpeg/gif/webp ≤ 5 MB and PDFs ≤ 30 MB (the Claude API's), text
+  ≤ 1 MB, ≤ 10 files and 30 MB per prompt (under the API's 32 MB request cap).
+- Transport: base64 inline in the `prompt` WebSocket message (`ws` accepts up to 100 MiB).
+  Alternative: upload each file over HTTP first (`@fastify/multipart`) and send ids — progress
+  bars and early errors, but half-uploaded leftovers to clean up and a second place to check.
+  Inline keeps one check, before anything starts; a refused prompt isn't sent and the tab is
+  told why. Revisit if files get big or uploads need progress.
+- Storage: bytes in a file named by Kratos's own random UUID in `attachments/` next to the
+  database (`.kratos/attachments/` for `pnpm dev`, git-ignored; ~/.kratos/attachments
+  otherwise); an `attachments` table (migration 0006) knows name, kind, type, size, session. The
+  session log's `user_prompt` carries only those refs, never bytes.
+- Serving: `GET /attachments/:id` — looked up by id, only this project's sessions, ids checked as
+  UUIDs before any disk access (no path from the browser). Never run in the page: text kinds are
+  served as `text/plain`, with `nosniff` and a `default-src 'none'` CSP.
+- UI (3s2, design "Proposal 3s2 · attachments", options 1 + B): "+" first in the composer row;
+  drop on the card (only the card is the target) or paste; files are checked in the tab with
+  core's `classifyAttachment` / `checkAttachmentSet` before sending, so the server's refusals
+  rarely happen. Images as 56px thumbnails from a local object URL (freed on remove, send and
+  unmount), other files as chips; a refused file stays red until removed and blocks send; over
+  the count/total, the extra files aren't added and an amber note names them. Files are read
+  with `FileReader` (data URL → base64), sizes shown with `pretty-bytes`. Dropping, pasting and
+  the "+" file picker are `react-dropzone`'s (`useDropzone`: the card is the drop root; `noClick`,
+  `noKeyboard`, plain file input) — owner: library over hand-rolled drag events (it handles the
+  drag-leave flicker over child elements and pasted files); it accepts everything, so our own
+  check marks refused files visibly instead of dropping them. Kept ours: renaming a pasted
+  "image.png" to "pasted-image.png". The composer's file logic lives in `useDraftFiles`; the card
+  only lays things out (owner: "prompt card is getting big"). Sent: thumbnails open a
+  shadcn Dialog lightbox; PDFs and text open `/attachments/<id>` in a new tab (never rendered in
+  the page). Vite's dev server proxies `/attachments` like `/ws`.
+- Reverse: additive — the table and folder can stay; drop `attachments` from the prompt.
+
+### D54. Agent questions: their own callback and messages, answers checked by the server (step 3r, owner)
+- Owner: support the agent asking questions (Claude's AskUserQuestion), per the design's question
+  card ("Proposal · question widget"); backend first.
+- Found on the real CLI (2.1.308, tiny Haiku turns): the question is a `can_use_tool` ask for
+  `AskUserQuestion` (`requires_user_interaction: true`), input `questions: [{question, header,
+  multiSelect, options: [{label, description}]}]`. Answer = allow with that input plus
+  `answers: {"<question>": "<labels and own text, joined with ', '>"}`; skip = deny with a
+  message, and the agent carries on; allow *without* answers = "the user did not answer" —
+  so Kratos never sends it. `annotations: {"<question>": {notes}}` also works (unused: the design
+  has no notes).
+- Shape: agent-neutral `AgentQuestion` / `QuestionRequest` / `QuestionReply` (answered: per
+  question `selected` labels + optional `other` text; or skipped) in core, and a second session
+  callback `askQuestions` beside `requestPermission` rather than squeezing questions into
+  PermissionDecision: they aren't allow/deny, and the UI shows them differently. The adapter
+  routes AskUserQuestion there; without a callback, or with input it can't read, it denies
+  ("make your own call"), never a bare allow.
+- Claude marks its pick by ending a label with "(Recommended)": the adapter turns that into
+  `recommended: true` (the design's tag) and maps answers back to the agent's own labels.
+- Protocol: `question_request` / `question_resolved {outcome: answered | skipped | cancelled,
+  answers?}` are in the session log, so a replay shows how questions ended (answers included);
+  `question_answer {id, reply}` is checked by the server with core's `checkQuestionReply` (one
+  answer per question, known labels, one choice for single-choice, nothing empty) and refused
+  with the reason otherwise. Late answers (another tab won, or withdrawn) are ignored quietly,
+  like late permission decisions. Status `needs_answer` ("Needs your answer", amber) wins over
+  `needs_approval`.
+- Withdrawn by the agent, or left open by a restart → `cancelled` ("Not answered"); shutdown →
+  cancelled, and the agent hears "skipped".
+- UI (3r2), per the design's question widget: a card above the composer (like the ask dock):
+  "Claude Code has 2 questions", Skip; tabs per question with a green check once answered;
+  radio/checkbox rows (≥44px) with the "Recommended" tag and number keys; an "Other" field
+  (typing picks it; single choice: instead of an option); Back / Next / Send answers, enabled by
+  core's `checkQuestionReply` — the same rule the server enforces. Keys 1–9 pick, ↵ next/send,
+  Esc skip; the card takes focus when it shows unless you're typing elsewhere. In the chat the
+  agent's AskUserQuestion call becomes a question step: "Asking 2 questions · Waiting for you" →
+  "Asked 2 questions" with chips per answer ("Docs · Hub, Readme, “Changelog”"), "You skipped ·
+  Claude Code decides", or "Not answered". A skip comes back to the CLI as an error result: the
+  timeline doesn't add "Failed" to question steps.
+- Getting your attention (3r3, the design): a hook in the layout. Tab title counts sessions
+  waiting on you — approvals too, they block the agent the same way ("(1) Question · Kratos",
+  "(2) Approvals · Kratos", mixed "Waiting for you"); the favicon is now the Kratos logo
+  (inlined from `kratos-logo.svg`, a data URL) with an amber dot in the theme's `--wait` while
+  anything waits. A favicon is drawn outside the page, so CSS variables don't resolve in it: the
+  logo's `var(--primary, …)` colours are replaced with the theme's current values (owner) — the
+  file's fallbacks only if the theme has none. A system notification (browser Notification API) when a session *starts*
+  waiting while the tab is hidden — not for ones already waiting at page load — titled "Claude
+  Code has a question" (body: the question, for the viewed session; else its title) or "… needs
+  your OK"; tagged by session so a newer one replaces it; click focuses and opens the session.
+  Permission is asked once, from a click (sending a prompt), as browsers require; never again
+  after you answer. Alternative: a settings toggle — later, with Settings.
+- Reverse: additive — drop the callback (questions are then refused) and the messages.
+
 ### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)
 - Owner: choose permission modes like the harnesses allow (auto, accept edits, …), including
   Bypass, but only after a consent dialog; Home remembers the pick like model and effort.

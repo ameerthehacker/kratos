@@ -12,9 +12,12 @@ import { currentActivity, type TimelineItem } from "@/lib/timeline";
 /**
  * A session's conversation, drawn like the owner's chat design (D45): your prompts as bubbles,
  * the agent's replies as markdown, its tool calls as plain-words steps. Scrolls itself and stays
- * pinned to the newest message unless you scroll up.
+ * pinned to the newest message unless you scroll up. Mount it once a session's history has
+ * fully arrived (`session_ready`), keyed by session: its first size is then the whole chat, so it
+ * opens at the bottom (`initial`, instant) and only later messages glide in (`resize`, smooth) —
+ * no scroll through the replay (owner, 3d9).
  */
-export function Conversation(props: { items: TimelineItem[]; agent: string; status?: SessionSummary["status"] }) {
+export function Conversation(props: { items: TimelineItem[]; agent: string; status?: SessionSummary["status"]; queued?: number }) {
   const { items } = props;
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
 
@@ -24,7 +27,7 @@ export function Conversation(props: { items: TimelineItem[]; agent: string; stat
         {items.map((item, i) => {
           switch (item.type) {
             case "prompt":
-              return <PromptBubble key={i} text={item.text} />;
+              return <PromptBubble key={i} text={item.text} attachments={item.attachments} read={item.read} />;
             case "reply":
               return (
                 <Streamdown key={i} mode="static" plugins={{ code: codePlugin }} className="min-w-0">
@@ -45,7 +48,11 @@ export function Conversation(props: { items: TimelineItem[]; agent: string; stat
         {/* Last in the scroll, so it follows the newest message (3d6). Mounted for the whole
             turn (its timer counts from the start); hidden while an ask waits for you. */}
         {props.status && props.status !== "idle" && (
-          <WorkingIndicator activity={currentActivity(items)} paused={props.status === "needs_approval"} />
+          <WorkingIndicator
+            activity={currentActivity(items)}
+            paused={props.status === "needs_approval" || props.status === "needs_answer"}
+            queued={props.queued}
+          />
         )}
       </StickToBottom.Content>
     </StickToBottom>

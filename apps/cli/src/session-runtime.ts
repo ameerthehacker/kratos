@@ -1,12 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentAdapter,
-  AgentSession,
-  PermissionDecision,
-  PermissionRequest,
-  ServerMessage,
-  SessionSummary,
+import {
+  checkQuestionReply,
+  type AgentAdapter,
+  type AgentAttachment,
+  type AttachmentRef,
+  type AgentSession,
+  type PermissionDecision,
+  type PermissionRequest,
+  type QuestionReply,
+  type QuestionRequest,
+  type ServerMessage,
+  type SessionSummary,
 } from "@kratos/core";
+import type { AttachmentFiles } from "./attachment-files.js";
 import type { Logger } from "./logger.js";
 import type { SessionStore } from "./store/store.js";
 
@@ -19,6 +25,27 @@ type Outcome = "allowed" | "denied" | "cancelled";
  */
 export class SessionRuntime {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
+  /** Prompts sent while the agent works that it hasn't read yet (D56), in the order sent: their
+   * files (to send again) and the id the agent knows them by (a new one after a re-queue). */
+  private readonly queue = new Map<string, { text: string; files: readonly AgentAttachment[]; agentId: string }>();
+  /** Agent id → Kratos prompt id, for prompts re-queued under a new agent id (Send now). */
+  private readonly agentIds = new Map<string, string>();
+  /** The last step (tool call) that finished in the running turn: a prompt read now follows it. */
+  private lastStep: string | undefined;
+  /** The step (tool call) running now, if any: what Send now stops. */
+  private runningStep: string | undefined;
+  /** The running turn was started by the agent itself with queued prompts (not by a prompt sent
+   * while idle): others it takes before any step finishes came with them, as the next turn. */
+  private turnFromQueue = false;
+  /** Send now in progress (owner: only that prompt goes, D56): the others are withdrawn from the
+   * agent (`holding`, still queued for us) and sent again once both the withdrawals are done and
+   * the chosen one has been read. */
+  private sendingNow: { id: string; stopped?: string; holding: Set<string>; withdrawn: boolean; read: boolean } | undefined;
+  /** Stop pressed with a queue (owner, D56): the prompts still out, and the text of the ones it
+   * dropped, handed back to the tab that pressed Stop once all are settled. */
+  private stopping: { ids: Set<string>; texts: string[]; returnText: (text: string) => void } | undefined;
+  /** The agent's open questions (D54): what was asked, and how to answer. */
+  private readonly questions = new Map<string, { request: QuestionRequest; resolve: (reply: QuestionReply) => void }>();
   private readonly log: ServerMessage[];
   /** Has the agent ever been started for this conversation? Then every start must resume (D36). */
   private agentStarted: boolean;
@@ -41,6 +68,7 @@ export class SessionRuntime {
       adapter: AgentAdapter;
       cwd: string;
       store: SessionStore;
+      files: AttachmentFiles;
       log: Logger;
       onMessage: (message: ServerMessage) => void;
       onChange: () => void;
@@ -58,6 +86,13 @@ export class SessionRuntime {
     for (const askId of unresolvedAsks(this.log)) {
       this.publish({ type: "permission_resolved", id: askId, outcome: "cancelled" }, { activity: false });
     }
+    for (const questionId of unresolvedQuestions(this.log)) {
+      this.publish({ type: "question_resolved", id: questionId, outcome: "cancelled" }, { activity: false });
+    }
+    // Same for queued prompts: the agent that held them is gone, they were never read.
+    for (const promptId of unreadPrompts(this.log)) {
+      this.publish({ type: "prompt_removed", id: promptId, reason: "stopped" }, { activity: false });
+    }
   }
 
   /** The log so far, for replaying to a tab that opens this session. */
@@ -70,6 +105,7 @@ export class SessionRuntime {
   }
 
   get status(): SessionSummary["status"] {
+    if (this.questions.size > 0) return "needs_answer";
     return this.pending.size > 0 ? "needs_approval" : this.turnOpen ? "working" : "idle";
   }
 
@@ -83,17 +119,75 @@ export class SessionRuntime {
     return this.mode;
   }
 
-  prompt(text: string): void {
+  /** Prompts waiting in the queue (D56), for "Working · 2 queued". */
+  get queuedCount(): number {
+    return this.queue.size;
+  }
+
+  /** Send a prompt, with files already checked by the hub (D55): their bytes are kept by id, the
+   * log gets only what they are. While a turn runs it's queued instead (steering, D56): the agent
+   * holds it and reads it at its next step, or as the next turn. */
+  prompt(text: string, files: readonly AgentAttachment[] = [], options: { sendNow?: boolean } = {}): void {
     this.deps.store.setTitle(this.id, text);
-    this.publish({ type: "user_prompt", text });
+    const refs = this.storeFiles(files);
+    const attachments = refs.length > 0 ? { attachments: refs } : {};
+    if (this.session && this.turnOpen) {
+      const id = randomUUID();
+      this.queue.set(id, { text, files, agentId: id });
+      this.publish({ type: "prompt_queued", id, text, ...attachments });
+      this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
+      this.session.send(text, files, { id });
+      if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
+      this.deps.onChange();
+      return;
+    }
+    this.publish({ type: "user_prompt", text, ...attachments });
+    this.turnFromQueue = false;
     this.turnOpen = true;
     // Start the agent on the first prompt, and again (resuming) after it has ended.
-    (this.session ??= this.start()).send(text);
+    (this.session ??= this.start()).send(text, files);
     this.deps.onChange();
   }
 
-  interrupt(): void {
-    this.session?.interrupt().catch(this.reportFailure("Interrupt"));
+  /** Stop the turn. With prompts queued, Stop stops everything (owner, D56): the queue is
+   * withdrawn too, and `returnText` gets the dropped prompts' text for the composer. */
+  interrupt(returnText?: (text: string) => void): void {
+    const cancelQueued = this.queue.size > 0;
+    if (cancelQueued && returnText) this.stopping = { ids: new Set(this.queue.keys()), texts: [], returnText };
+    this.session?.interrupt({ cancelQueued }).catch(this.reportFailure("Interrupt"));
+  }
+
+  /** Take a queued prompt back before the agent reads it (D56). False if it isn't queued here. */
+  removeQueued(promptId: string): boolean {
+    const queued = this.queue.get(promptId);
+    if (!queued) return false;
+    // Settled by the agent's `cancelled` (or, if it was just read, by its `started`).
+    this.session?.cancelPrompt(queued.agentId).catch(this.reportFailure("Removing a queued prompt"));
+    return true;
+  }
+
+  /**
+   * Send now (owner, D56): stop the running step and have the agent read this queued prompt right
+   * away; the others stay queued. The agent's own Send now delivers everything it holds, so the
+   * others are withdrawn first and sent again once this one is read. False if it isn't queued here.
+   */
+  sendNow(promptId: string): boolean {
+    const chosen = this.queue.get(promptId);
+    const session = this.session;
+    if (!chosen || !session || this.sendingNow) return false;
+    const others = [...this.queue.keys()].filter((id) => id !== promptId);
+    const now = { id: promptId, stopped: this.runningStep, holding: new Set(others), withdrawn: false, read: false };
+    this.sendingNow = now;
+    this.logger.info({ prompt: promptId, holding: others.length, stopped: now.stopped }, "send now");
+    void (async () => {
+      const withdrawn = await Promise.all(others.map((id) => session.cancelPrompt(this.queue.get(id)!.agentId).catch(() => false)));
+      // One the agent took meanwhile is simply read: its own `started` settles it.
+      others.forEach((id, i) => !withdrawn[i] && now.holding.delete(id));
+      now.withdrawn = true;
+      await session.sendNow(chosen.agentId);
+      this.requeueHeld();
+    })().catch(this.reportFailure("Sending now"));
+    return true;
   }
 
   /** Use another model from now on (null = the agent's default): switched live if the agent is
@@ -171,11 +265,31 @@ export class SessionRuntime {
     return this.settle(askId, decision.decision === "allow" ? "allowed" : "denied", decision);
   }
 
-  /** Server shutdown: withdraw open asks and stop the agent. */
+  /** Is this one of this session's open questions? */
+  hasQuestion(questionId: string): boolean {
+    return this.questions.has(questionId);
+  }
+
+  /** Answer one of this session's questions (D54); the first valid answer wins. Returns why the
+   * reply doesn't fit, or null once it's sent to the agent. */
+  answerQuestion(questionId: string, reply: QuestionReply): string | null {
+    const open = this.questions.get(questionId);
+    if (!open) return "This question is no longer open";
+    const problem = checkQuestionReply(open.request, reply);
+    if (problem) return problem;
+    this.settleQuestion(questionId, reply.outcome, reply);
+    return null;
+  }
+
+  /** Server shutdown: withdraw open asks and questions, and stop the agent. */
   async close(): Promise<void> {
     for (const askId of [...this.pending.keys()]) {
       this.settle(askId, "cancelled", { decision: "deny", message: "Kratos is shutting down" }, { activity: false });
     }
+    for (const questionId of [...this.questions.keys()]) {
+      this.settleQuestion(questionId, "cancelled", { outcome: "skipped" }, { activity: false });
+    }
+    this.dropQueue({ activity: false });
     await this.session?.stop();
   }
 
@@ -187,6 +301,7 @@ export class SessionRuntime {
       effort: this.effortChoice ?? undefined,
       permissionMode: this.mode ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
+      askQuestions: (request, { signal }) => this.askQuestions(request, signal),
     });
     this.logger.info(
       {
@@ -209,7 +324,17 @@ export class SessionRuntime {
   private async pump(session: AgentSession): Promise<void> {
     try {
       for await (const event of session.events) {
+        // What became of a queued prompt (D56): turned into prompt_read / prompt_removed, not logged.
+        if (event.kind === "prompt_state") {
+          this.promptState(event.id, event.state);
+          continue;
+        }
         this.publish({ type: "agent_event", event });
+        if (event.kind === "tool_call") this.runningStep = event.id;
+        if (event.kind === "tool_result") {
+          this.lastStep = event.id;
+          this.runningStep = undefined;
+        }
         // The agent changed mode — on our request or on its own (leaving plan mode): follow it.
         if (event.kind === "permission_mode") {
           this.logger.info({ mode: event.mode }, "permission mode changed");
@@ -218,6 +343,9 @@ export class SessionRuntime {
         if (event.kind === "turn_end") {
           this.logger.debug({ event }, "turn ended");
           this.turnOpen = false;
+          this.lastStep = undefined;
+          this.runningStep = undefined;
+          this.turnFromQueue = false;
           this.deps.onChange();
         }
       }
@@ -227,11 +355,101 @@ export class SessionRuntime {
       this.publish({ type: "error", message: `Agent session failed: ${String(err)}` });
     } finally {
       if (this.session === session) this.session = undefined;
+      this.dropQueue(); // the agent that held them is gone
       if (this.turnOpen) {
         this.turnOpen = false;
         this.deps.onChange();
       }
     }
+  }
+
+  /**
+   * A queued prompt's news from the agent (D56). `started`: read — mid-turn at a step boundary
+   * (after the step that just finished), or as a new turn once the last ended (the turn is then
+   * open again). `cancelled`: left the queue unread — removed, or dropped by Stop.
+   */
+  private promptState(agentId: string, state: "queued" | "started" | "completed" | "cancelled"): void {
+    const id = this.agentIds.get(agentId) ?? agentId;
+    const queued = this.queue.get(id);
+    if (!queued || queued.agentId !== agentId || (state !== "started" && state !== "cancelled")) return;
+    // Withdrawn by Send now to go again after it: still queued as far as anyone can see.
+    if (state === "cancelled" && this.sendingNow?.holding.has(id)) return;
+    this.queue.delete(id);
+    if (state === "started") {
+      const now = this.sendingNow?.id === id ? this.sendingNow : undefined;
+      // Read at a step boundary only if a step has finished in this turn; prompts the agent takes
+      // together to start a new turn are all `next_turn` (real CLI: B and D started at once).
+      const atStep = this.turnOpen && !(this.turnFromQueue && !this.lastStep);
+      const how = now ? "now" : atStep ? "step" : "next_turn";
+      if (!this.turnOpen) this.turnFromQueue = true;
+      this.publish({
+        type: "prompt_read",
+        id,
+        how,
+        ...(how === "step" && this.lastStep ? { after: this.lastStep } : {}),
+        ...(now?.stopped ? { stopped: now.stopped } : {}),
+      });
+      if (now) now.read = true;
+      this.logger.info({ prompt: id, how }, "queued prompt read");
+      this.turnOpen = true;
+      this.stopping?.ids.delete(id);
+    } else {
+      const stopped = this.stopping?.ids.delete(id) ?? false;
+      if (stopped) this.stopping!.texts.push(queued.text);
+      this.publish({ type: "prompt_removed", id, reason: stopped ? "stopped" : "removed" });
+      this.logger.info({ prompt: id, stopped }, "queued prompt removed");
+    }
+    this.returnStopped();
+    this.requeueHeld();
+    this.deps.onChange();
+  }
+
+  /** Send now's last step (D56): once the others are withdrawn and the chosen one is read, send
+   * the others again under new agent ids — same Kratos ids, same place in the queue. */
+  private requeueHeld(): void {
+    const now = this.sendingNow;
+    if (!now || !now.withdrawn || !now.read) return;
+    this.sendingNow = undefined;
+    for (const id of now.holding) {
+      const queued = this.queue.get(id);
+      if (!queued || !this.session) continue;
+      queued.agentId = randomUUID();
+      this.agentIds.set(queued.agentId, id);
+      this.session.send(queued.text, queued.files, { id: queued.agentId });
+    }
+    this.logger.info({ requeued: now.holding.size }, "send now: the rest queued again");
+  }
+
+  /** Once every prompt Stop withdrew is settled, hand their text back (owner, D56). */
+  private returnStopped(): void {
+    if (!this.stopping || this.stopping.ids.size > 0) return;
+    if (this.stopping.texts.length > 0) this.stopping.returnText(this.stopping.texts.join("\n\n"));
+    this.stopping = undefined;
+  }
+
+  /** The agent ended (or Kratos shuts down) with prompts still queued: they'll never be read. */
+  private dropQueue(options?: { activity: false }): void {
+    for (const [id, { text }] of this.queue) {
+      if (this.stopping?.ids.delete(id)) this.stopping.texts.push(text);
+      this.publish({ type: "prompt_removed", id, reason: "stopped" }, options);
+    }
+    if (this.queue.size === 0) return;
+    this.queue.clear();
+    this.returnStopped();
+    this.deps.onChange();
+  }
+
+  /** Keep a prompt's files (D55): bytes by id, the log gets only what they are. */
+  private storeFiles(files: readonly AgentAttachment[]): AttachmentRef[] {
+    const refs = files.map((file) => {
+      const id = randomUUID();
+      this.deps.files.write(id, file.data);
+      const { name, kind, mediaType } = file;
+      this.deps.store.addAttachment({ id, sessionId: this.id, name, kind, mediaType, size: file.data.byteLength });
+      return { id, name, kind, mediaType, size: file.data.byteLength };
+    });
+    if (refs.length > 0) this.logger.info({ count: refs.length, bytes: refs.reduce((n, r) => n + r.size, 0) }, "attachments stored");
+    return refs;
   }
 
   /** Called by the adapter before a tool runs: publish the ask, wait for a tab (or a withdrawal). */
@@ -247,6 +465,33 @@ export class SessionRuntime {
       { once: true },
     );
     return decision;
+  }
+
+  /** Called by the adapter when the agent asks the owner questions: publish them, wait for a tab
+   * to answer (or the agent to withdraw them — then the agent hears "skipped", unread). */
+  private askQuestions(request: QuestionRequest, signal: AbortSignal): Promise<QuestionReply> {
+    const questionId = randomUUID();
+    const reply = new Promise<QuestionReply>((resolve) => this.questions.set(questionId, { request, resolve }));
+    this.logger.debug({ question: questionId, count: request.questions.length }, "questions asked");
+    this.publish({ type: "question_request", id: questionId, request });
+    this.deps.onChange();
+    signal.addEventListener("abort", () => this.settleQuestion(questionId, "cancelled", { outcome: "skipped" }), { once: true });
+    return reply;
+  }
+
+  /** Settle questions once (first answer wins). The log keeps the answers, so a replay can show
+   * them; "cancelled" = withdrawn or never answered. */
+  private settleQuestion(questionId: string, outcome: "answered" | "skipped" | "cancelled", reply: QuestionReply, options?: { activity: false }): void {
+    const open = this.questions.get(questionId);
+    if (!open) return;
+    this.questions.delete(questionId);
+    this.logger.debug({ question: questionId, outcome }, "questions settled");
+    this.publish(
+      { type: "question_resolved", id: questionId, outcome, ...(reply.outcome === "answered" ? { answers: reply.answers } : {}) },
+      options,
+    );
+    open.resolve(reply);
+    this.deps.onChange();
   }
 
   /** Resolve an ask once; unknown or already-settled ids are ignored (first decision wins). */
@@ -277,6 +522,26 @@ export class SessionRuntime {
     this.deps.store.append(this.id, message, options);
     this.deps.onMessage(message);
   }
+}
+
+/** Ids of prompts queued in the log that were never read or removed (D56). */
+function unreadPrompts(log: ServerMessage[]): string[] {
+  const open = new Set<string>();
+  for (const message of log) {
+    if (message.type === "prompt_queued") open.add(message.id);
+    else if (message.type === "prompt_read" || message.type === "prompt_removed") open.delete(message.id);
+  }
+  return [...open];
+}
+
+/** Ids of question requests in the log that never got a question_resolved. */
+function unresolvedQuestions(log: ServerMessage[]): string[] {
+  const open = new Set<string>();
+  for (const message of log) {
+    if (message.type === "question_request") open.add(message.id);
+    else if (message.type === "question_resolved") open.delete(message.id);
+  }
+  return [...open];
 }
 
 /** Ids of permission requests in the log that never got a permission_resolved. */

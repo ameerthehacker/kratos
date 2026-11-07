@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentEvent, ServerMessage } from "@kratos/core";
-import { buildTimeline, currentActivity, openAsks } from "./timeline";
+import { buildTimeline, currentActivity, openAsks, openQuestions, openQueue } from "./timeline";
 
 const agent = (event: AgentEvent): Extract<ServerMessage, { type: "agent_event" }> => ({ type: "agent_event", event });
 
@@ -80,5 +80,103 @@ describe("currentActivity (3d6)", () => {
     expect(activity(prompt, agent({ kind: "thinking", text: "hmm" }))).toBeNull();
     expect(activity(prompt, read, agent({ kind: "text", text: "Here it is" }))).toBeNull();
     expect(activity(prompt, read, { type: "permission_request", id: "a", request: { tool: "Read", input: {}, toolCallId: "r" } })).toBeNull();
+  });
+});
+
+describe("buildTimeline: agent questions (D54, 3r2)", () => {
+  const request = {
+    toolCallId: "t1",
+    questions: [
+      { header: "Placement", question: "Where?", multiSelect: false, options: [{ label: "Above" }, { label: "Below" }] },
+      { header: "Mention", question: "Which?", multiSelect: true, options: [{ label: "Hub" }, { label: "Strings" }] },
+    ],
+  };
+  const asked = [
+    { type: "user_prompt", text: "go" },
+    agent({ kind: "tool_call", id: "t1", tool: "AskUserQuestion", input: {} }),
+    { type: "question_request", id: "q1", request },
+  ] as const;
+  const step = (items: ReturnType<typeof buildTimeline>) => {
+    const group = items.find((i) => i.type === "steps");
+    if (group?.type !== "steps") throw new Error("no steps");
+    return group.steps[0]!;
+  };
+
+  it("turns the agent's tool call into a waiting question step, open for the card", () => {
+    const items = buildTimeline([...asked], "", "Claude Code");
+    expect(step(items)).toMatchObject({ kind: "question", title: "Asking 2 questions", question: { id: "q1" } });
+    expect(openQuestions(items)).toEqual([{ id: "q1", request }]);
+    expect(currentActivity(items)).toBeNull(); // the indicator pauses: it waits for you
+  });
+
+  it("shows the outcome as chips: answers (own text quoted), a skip, or not answered", () => {
+    const answered = buildTimeline(
+      [...asked, { type: "question_resolved", id: "q1", outcome: "answered", answers: [{ selected: ["Above"] }, { selected: ["Hub", "Strings"], other: "Docs" }] }],
+      "",
+      "Claude Code",
+    );
+    expect(step(answered)).toMatchObject({ title: "Asked 2 questions", question: { outcome: "answered" } });
+    expect(step(answered).chips).toEqual([
+      { label: "Placement", text: "Above", tone: "plain" },
+      { label: "Mention", text: "Hub, Strings, “Docs”", tone: "plain" },
+    ]);
+    expect(openQuestions(answered)).toEqual([]);
+
+    const skipped = buildTimeline(
+      [...asked, { type: "question_resolved", id: "q1", outcome: "skipped" }, agent({ kind: "tool_result", id: "t1", output: "skipped", isError: true })],
+      "",
+      "Claude Code",
+    ); // the skip comes back as an error result: no "Failed" chip
+    expect(step(skipped).chips).toEqual([{ text: "You skipped · Claude Code decides", tone: "note" }]);
+    const cancelled = buildTimeline([...asked, { type: "question_resolved", id: "q1", outcome: "cancelled" }], "", "Claude Code");
+    expect(step(cancelled).chips).toEqual([{ text: "Not answered", tone: "note" }]);
+  });
+});
+
+describe("buildTimeline: steering prompts (D56)", () => {
+  it("a queued prompt joins the chat where the agent read it; a removed one never does", () => {
+    const items = buildTimeline([
+      { type: "user_prompt", text: "first" },
+      { type: "prompt_queued", id: "q1", text: "also this" },
+      { type: "prompt_queued", id: "q2", text: "never mind" },
+      agent({ kind: "text", text: "working on it" }),
+      { type: "prompt_read", id: "q1", how: "step" },
+      { type: "prompt_removed", id: "q2", reason: "removed" },
+      agent({ kind: "text", text: "done, with that too" }),
+    ]);
+    expect(items).toEqual([
+      { type: "prompt", text: "first" },
+      { type: "reply", text: "working on it" },
+      { type: "prompt", text: "also this", read: { how: "step" } },
+      { type: "reply", text: "done, with that too" },
+    ]);
+  });
+
+  it("marks where each was read; a step Send now cut short reads as stopped; the queue lists the rest", () => {
+    const run = (id: string, command: string) => agent({ kind: "tool_call", id, tool: "Bash", input: {}, action: { type: "run", command, description: undefined } });
+    const log = [
+      { type: "user_prompt", text: "first" },
+      run("t1", "pnpm test"),
+      agent({ kind: "tool_result", id: "t1", output: "ok", isError: false }),
+      { type: "prompt_queued", id: "q1", text: "after tests" },
+      { type: "prompt_queued", id: "q2", text: "urgent" },
+      { type: "prompt_queued", id: "q3", text: "later" },
+      { type: "prompt_read", id: "q1", how: "step", after: "t1" },
+      run("t2", "pnpm test"),
+      agent({ kind: "tool_result", id: "t2", output: "The user doesn't want to proceed", isError: true }),
+      agent({ kind: "turn_end", reason: "interrupted" }),
+      { type: "prompt_read", id: "q2", how: "now", stopped: "t2" },
+    ] as const;
+    const items = buildTimeline([...log]);
+    const prompts = items.filter((i) => i.type === "prompt");
+    expect(prompts.map((p) => p.type === "prompt" && p.read)).toEqual([
+      undefined,
+      { how: "step", after: "Ran the tests" },
+      { how: "now", stopped: "running the tests" },
+    ]);
+    const stoppedStep = items.flatMap((i) => (i.type === "steps" ? i.steps : [])).find((s) => s.id === "t2");
+    expect(stoppedStep).toMatchObject({ title: "Stopped running the tests", stopped: true, chips: [] });
+    expect(openQueue([...log]).map((q) => q.text)).toEqual(["later"]);
+    expect(items.some((i) => i.type === "event" && i.text === "Stopped")).toBe(false); // the step says it
   });
 });

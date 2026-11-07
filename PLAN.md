@@ -233,6 +233,142 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Bypass opens a consent dialog first (what it turns off, that it's this session only).
             Later, not in this step: a proper plan-approval card for `ExitPlanMode` (today it
             shows as a generic "Use ExitPlanMode" ask).
+    - [ ] **3r. Agent questions** (owner, D54) — when the agent asks you a multiple-choice
+          question mid-turn (Claude Code's `AskUserQuestion`), Kratos shows the design's question
+          card ("Proposal · question widget") and sends your answers back. Found on the real CLI
+          (2.1.308, tiny Haiku turns): it arrives as a `can_use_tool` ask for `AskUserQuestion`
+          (`requires_user_interaction: true`) with `questions: [{question, header, multiSelect,
+          options: [{label, description}]}]`. Answer = allow with the input plus
+          `answers: {"<question>": "<label>"}` — several picks joined with ", ", any typed text
+          accepted as-is ("Other"); several questions answered in one go. Skip = deny with a
+          message (the agent carries on). Allow without answers = "the user did not answer", so
+          Kratos never sends that. (Per-answer `annotations.notes` also works; the design has no
+          notes, so not used.)
+      - [x] **3r1. Backend** (~250 incl. tests) — done: end to end over WebSocket with real
+            `claude` (Haiku): two questions, "(Recommended)" → flag, status needs_answer, a
+            malformed answer refused with its reason, the answer (picks + own text) reached the
+            agent, which restated it.
+            - core: agent-neutral `AgentQuestion {header, question, multiSelect, options:
+              [{label, description?, recommended?}]}`; `QuestionReply` = answered (per question:
+              `selected` labels + optional `other` text) | skipped; `startSession({ askQuestions })`
+              — a second callback beside `requestPermission`, same abort signal semantics.
+            - Claude adapter: routes `AskUserQuestion` asks to `askQuestions` instead of the
+              permission gate; "(Recommended)" at the end of a label → `recommended: true` (answers
+              still use the agent's own labels); maps the reply to `answers` / a skip message
+              ("decide yourself"); fails closed (deny) if Kratos can't ask.
+            - protocol: server `question_request {id, request}` and `question_resolved {id,
+              outcome: answered | skipped | cancelled, answers?}` (in the session log, so replay
+              shows the outcome); client `question_answer {id, reply}`, checked by the server
+              (known labels, one pick for single choice, every question answered);
+              `SessionSummary.status` gains `needs_answer` ("Needs your answer").
+            - runtime: open questions like asks — first answer from any tab wins, withdrawn on
+              interrupt/stop → cancelled, left open by a restart → cancelled ("Not answered"),
+              skipped on shutdown.
+            - web: the timeline only skips the new messages for now (UI is 3r2).
+            - Tests: fake claude learns a question turn (single, multi + Other, skip); adapter +
+              hub tests incl. invalid answers, two tabs, interrupt, restart.
+      - [x] **3r3. Tab title + notification** (~90, owner, D54) — while sessions wait on you, the
+            tab reads "(1) Question · Kratos" (Approval(s) / Waiting for you when mixed) and the
+            favicon (now the Kratos logo) gets an amber dot; a session that starts waiting while
+            the tab is hidden shows a system notification ("Claude Code has a question" + the
+            question; "… needs your OK"), clicking opens it. Permission is asked once, when you
+            send a prompt. Checked with real `claude` (notification API recorded, tab hidden).
+      - [x] **3r2. UI** (~250) — done, checked with real `claude` (two questions answered by keys,
+            a multi-pick plus own text, then a single question skipped with Esc). Planned as: the design's question card in the ask dock (tabs per question,
+            radio/checkbox rows with Recommended, "Other" field, keys 1–4 / ↵ / Esc, Back / Next /
+            Send answers, Skip), the step "Asking 2 questions" → "Asked …" with answer chips,
+            "Needs your answer" in sidebar and header.
+    - [ ] **3s. File attachments** (owner, D55) — attach images, PDFs and text/code files to a
+          prompt. Found on the real CLI (2.1.308, tiny Haiku turns): the stream-json user message
+          takes a list of content blocks — `image` (base64), `document` with a base64 PDF, and
+          `document` with `source: {type: "text"}` + `title` for a text file — and the agent read
+          all three correctly (colour, a word in a PDF, a number in notes.md). Nothing needs to be
+          written into the project; Claude keeps them in its own transcript for later turns.
+      - [x] **3s1. Backend** (~250 incl. tests) — done: end to end over WebSocket with real
+            `claude` (Haiku): a zip refused before anything started; a PNG, a PDF and an untyped
+            notes.md stored by id next to the DB and read by the agent ("Red, PINEAPPLE, 4711");
+            all three served back from `/attachments/<id>` (the text as text/plain).
+            - core: each harness says what it accepts (`Harness.attachments`: kinds image / pdf /
+              text with media types and max bytes, plus a max count); `AgentSession.send(prompt,
+              attachments?)` with agent-neutral `{name, kind, mediaType, data}`.
+            - Claude adapter: maps them to the blocks above. Limits from the Claude API: images
+              png/jpeg/gif/webp ≤ 5 MB, PDF ≤ 30 MB; text = any UTF-8 file ≤ 1 MB (checked by
+              content: browsers often don't know a `.ts` file's type); ≤ 10 files, ≤ 30 MB total.
+            - protocol: `prompt.attachments?: [{name, mediaType, data (base64)}]` — sent inline over
+              the WebSocket with the prompt, not uploaded separately (no half-uploaded leftovers,
+              one place to check; fine at these sizes locally); `user_prompt` in the log gains
+              `attachments: [{id, name, kind, mediaType, size}]` — metadata only.
+            - store: `attachments` table (migration 0006); the bytes go to a file named by a random
+              id in an `attachments/` folder next to the database (`.kratos/` is git-ignored).
+              `GET /attachments/:id` serves one for thumbnails — looked up by id, only this
+              project's, never a path from the browser.
+            - server checks count, kind, size (and that "text" really is text) before anything
+              starts; a refused prompt isn't sent, and the tab is told why.
+            - Tests: fake claude reports the blocks it got; adapter, hub, store, server (serving
+              and refusing ids) tests.
+      - [x] **3s2. UI** (~330) — the design's "Proposal 3s2 · attachments", its pick: "+" first
+            in the composer row (option 1) and thumbnails for images + chips for other files (B).
+            Drop files on the card (it tints: "Drop to attach…"), paste a screenshot
+            ("pasted-image.png"); files are checked in the tab with core's rules — a file that can't
+            go stays red ("Can't attach"), the card's ring turns red, the reason sits under it, send
+            is off until it's removed; files over the count/total aren't added (amber note that
+            fades), "+" is off at 10. Sent prompts show images as thumbnails (lightbox: name, size,
+            Open original) and other files as chips that open in a new tab; a missing file shows
+            "Not available". Checked with real `claude` (PNG + PDF + untyped notes → "Red,
+            PINEAPPLE, 4711"; a zip refused; paste; 12 files → 10 + note; lightbox). Not built:
+            the red drag state for unsupported files (browsers often don't say the type until
+            the drop).
+    - [ ] **3t. Steering prompts** (owner, D56) — send more prompts while the agent works and see
+          what happens to each (design "Proposal · steering prompts (queue, send now, read)").
+          Found on the real CLI (2.1.308, tiny Haiku turns): a user message sent mid-turn is held
+          and taken at the next step boundary *in the same turn* (the agent's reply honoured it);
+          sent during the final reply, it runs as the next turn. Every message we tag with a
+          `uuid` gets `command_lifecycle {command_uuid, state}` lines: queued → started →
+          completed | cancelled (no flag needed). `cancel_async_message {message_uuid}` withdraws a
+          waiting one; `interrupt {cancel_queued: true}` stops and cancels all waiting;
+          `interrupt {send_now: true, message_uuid}` stops the step and delivers *all* waiting
+          ones at once. A plain interrupt lets waiting ones run right after. These requests are
+          undocumented (found in the CLI's strings; its own SDK uses them).
+          Owner: Send now sends only the chosen prompt (others stay queued); Stop stops
+          everything and puts the queued prompts' text back in the composer.
+      - [x] **3t1. Backend: queue, statuses, remove, Stop** (~250 incl. tests) — done: end to end
+            over WebSocket with real `claude` (Haiku): a prompt sent during a slow command was
+            queued, read at the step boundary (after the Bash call) and honoured in the same
+            reply; then two queued, one removed (`removed`), Stop dropped the other (`stopped`)
+            and gave its text back to the tab; "queued" counts 1 → 2 → 1 → 0.
+            - core: `send(prompt, attachments, {id})` tags the message; AgentEvent
+              `prompt_state {id, state: queued | started | completed | cancelled}` (only our ids;
+              the CLI's own "[Request interrupted…]" echo is ignored); `cancelPrompt(id)`;
+              `interrupt({cancelQueued})` → the cancelled ids.
+            - runtime: a prompt while a turn is open is *queued*: `prompt_queued {id, text,
+              attachments?}` in the log, sent to the agent at once (it holds it). On `started`:
+              `prompt_read {id, how: "step" | "next_turn", after?}` — mid-turn = read after the
+              last finished step; else it starts a new turn (the runtime then counts the turn as
+              open). `remove_queued {id}` → `cancelPrompt` → `prompt_removed {id}`. Stop with a
+              queue → `interrupt({cancelQueued: true})`, `prompt_removed` for each, and the
+              stopping tab gets their text back (`prompts_returned {text}`, not logged).
+            - protocol: `SessionSummary.queued` (count, for "Working · 2 queued").
+            - Tests: fake claude learns lifecycle lines, a held message taken at its next step
+              (or next turn), `cancel_async_message`, interrupt with `cancel_queued`; adapter +
+              hub tests incl. replay of a queue and two tabs.
+      - [x] **3t2. Backend: Send now** (~100) — done: real `claude`: B, C, D queued during a
+            slow command; Send now on C stopped the step, C was read "now" ("CHERRY"), B and D
+            stayed queued and were read together as the next turn ("BANANA DATE"). Fixed on the
+            way: prompts the agent takes together to start a turn are all `next_turn`. Planned as: `send_now {id}`: withdraw the *other* waiting
+            prompts (`cancel_async_message`), `interrupt {send_now, message_uuid}`, then queue the
+            others again (new agent ids, same Kratos ids — they stay in the card);
+            `prompt_read {how: "now", stopped?}` with the step it cut short.
+      - [x] **3t3. UI** (~330) — done, checked with real `claude`: three prompts queued during a
+            slow command (queue card "3 queued", header "Needs approval · 3 queued"), Edit put one
+            back in the box, Send now on another stopped the step ("Stopped …", "⚡ Sent now ·
+            stopped …", reply CHERRY), the last read as "Sent when the last turn ended"; Stop with
+            one queued gave its text back to the box. Fixed on the way: the generic "Stopped" line
+            before a Send now, and long path chips spilling over their step. Fitted to the current
+            composer: the key hints are the Queue button's tooltip (↵ queue · ⌘↵ send now) rather
+            than key caps. Planned as: the design: Enter queues while the agent works (send button → Queue),
+            ⌘↵ sends now; the queue card above the composer (Send now, Edit → back to the box,
+            Remove); prompts move into the chat when read, with "Read after …" / "Sent now ·
+            stopped …" / "Sent when the last turn ended"; "Working · N queued" in the sidebar.
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:
@@ -292,6 +428,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             restyled — status tile, title, "model · 5 minutes ago" (date-fns), hover highlight
             + chevron; capped at the 3 newest (owner: no long scroll; the sidebar has them all).
             Keyboard hints as real key caps (shadcn `Kbd`, owner).
+      - [x] **3d9. Two UX fixes** (~40, owner) — opening a session jumps to its bottom instead of
+            scrolling through the whole chat: the log replays message by message, so the server now
+            says when the replay is complete (`session_ready`, after the last replayed message) and
+            the conversation mounts only then — its first size is the whole chat (instant), later
+            messages glide in (owner rejected a first cut that guessed "done" from a 300 ms pause).
+            Marking the open session done takes you Home. Checked: done → Home in the browser
+            pane; opening at the bottom by the owner in `pnpm dev` (the pane got no animation
+            frames, so it can't show scrolling).
       - [x] **3d8. Done at the bottom** (~10, owner, D49) — the sidebar's Done section is pinned
             to the bottom of the island (it needs the least attention); Working scrolls above it,
             Done scrolls on its own within half the height.

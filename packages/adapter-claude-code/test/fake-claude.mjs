@@ -12,6 +12,7 @@ if (!REQUIRED.every((arg) => process.argv.includes(arg))) {
 
 const out = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 const waiting = new Map(); // request_id → resolve(response)
+let lastBlocks = []; // content blocks of the last prompt with files (D55)
 const cancelled = new Set();
 let responsesAfterCancel = 0;
 let onInterrupt = () => {};
@@ -56,7 +57,39 @@ const ask = (request) => {
 };
 const report = (content, is_error = false) =>
   out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content, is_error }] }, parent_tool_use_id: null });
-const finish = (subtype = "success") => out({ type: "result", subtype });
+// Steering (D56), like the real CLI: a message tagged with a `uuid` gets command_lifecycle lines;
+// one sent while a turn runs is held (queued), taken at the "steps" turn's step boundary (started,
+// in the same turn), else it starts the next turn; cancel_async_message withdraws a held one;
+// interrupt with cancel_queued withdraws them all.
+let busy = false;
+let turnPrompts = []; // uuids the running turn took
+const held = []; // { uuid, content } waiting for the running turn
+let deliverAll = false; // Send now: the next turn takes everything held at once
+const lifecycle = (uuid, state) => uuid && out({ type: "command_lifecycle", command_uuid: uuid, state, uuid: `life-${uuid}-${state}` });
+const finish = (subtype = "success") => {
+  out({ type: "result", subtype });
+  for (const uuid of turnPrompts) lifecycle(uuid, subtype === "success" ? "completed" : "cancelled");
+  busy = false;
+  turnPrompts = [];
+  const next = held.shift();
+  if (!next) return;
+  const rest = deliverAll ? held.splice(0) : [];
+  deliverAll = false;
+  startTurn(next);
+  for (const prompt of rest) {
+    lifecycle(prompt.uuid, "started");
+    turnPrompts.push(prompt.uuid);
+  }
+};
+const startTurn = ({ uuid, content }) => {
+  busy = true;
+  turnPrompts = uuid ? [uuid] : [];
+  lifecycle(uuid, "started");
+  out({ type: "system", subtype: "init", permissionMode: mode });
+  // A prompt with files is a list of content blocks (D55): the turn is named by its text block.
+  lastBlocks = Array.isArray(content) ? content : [];
+  void turns[Array.isArray(content) ? content.find((b) => b.type === "text")?.text : content]?.();
+};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const turns = {
@@ -114,6 +147,49 @@ const turns = {
     report(mode);
     finish();
   },
+  // Ask the owner questions like the real CLI (AskUserQuestion, D54); report what came back.
+  async question() {
+    const input = {
+      questions: [
+        { question: "Which model?", header: "Model", multiSelect: false, options: [{ label: "Opus (Recommended)", description: "Smartest" }, { label: "Haiku" }] },
+        { question: "Which colors?", header: "Colors", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }, { label: "Green" }] },
+      ],
+    };
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion", input }] }, parent_tool_use_id: null });
+    const response = await ask({ subtype: "can_use_tool", tool_name: "AskUserQuestion", input, tool_use_id: "t1", requires_user_interaction: true });
+    report(JSON.stringify(response.response), response.response?.behavior === "deny");
+    finish();
+  },
+  // A slow step, then a step boundary that takes every held prompt into this turn (D56); reports
+  // which it read. Interruptible while the step runs.
+  async steps() {
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "sleep" } }] }, parent_tool_use_id: null });
+    const stopped = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 300);
+      onInterrupt = () => (clearTimeout(timer), resolve(true));
+    });
+    onInterrupt = () => {};
+    if (stopped) return finish("error_during_execution");
+    report("step done");
+    const read = held.splice(0);
+    for (const prompt of read) {
+      lifecycle(prompt.uuid, "started");
+      turnPrompts.push(prompt.uuid);
+    }
+    out({ type: "assistant", message: { content: [{ type: "text", text: `read: ${read.map((p) => p.content).join(" | ") || "nothing"}` }] }, parent_tool_use_id: null });
+    finish();
+  },
+  // A slow reply with no step boundary: a prompt held meanwhile becomes the next turn (D56).
+  async slow() {
+    await sleep(200);
+    out({ type: "assistant", message: { content: [{ type: "text", text: "slow done" }] }, parent_tool_use_id: null });
+    finish();
+  },
+  // Report the content blocks of the last prompt, minus the bytes (D55).
+  async blocks() {
+    report(JSON.stringify(lastBlocks.map((b) => ({ type: b.type, title: b.title, source: b.source && { type: b.source.type, media_type: b.source.media_type, length: b.source.data.length, data: b.source.type === "text" ? b.source.data : undefined } }))));
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));
@@ -124,10 +200,25 @@ const turns = {
 for await (const line of createInterface({ input: process.stdin })) {
   const msg = JSON.parse(line);
   if (msg.type === "user") {
-    out({ type: "system", subtype: "init", permissionMode: mode });
-    void turns[msg.message.content]?.();
+    const prompt = { uuid: msg.uuid, content: msg.message.content };
+    lifecycle(prompt.uuid, "queued");
+    if (busy) held.push(prompt); // steering: the running turn takes it at its next boundary
+    else startTurn(prompt);
   }
-  else if (msg.type === "control_request" && msg.request.subtype === "interrupt") onInterrupt();
+  else if (msg.type === "control_request" && msg.request.subtype === "interrupt") {
+    if (msg.request.cancel_queued) for (const prompt of held.splice(0)) lifecycle(prompt.uuid, "cancelled");
+    if (msg.request.send_now) {
+      // Like the real CLI's Send now: stop the step, then deliver *everything* held at once.
+      deliverAll = held.length > 0;
+      success(msg.request_id, { still_queued: held.map((p) => p.uuid), send_now: held.length === 0 ? "nothing_waiting" : busy ? "stopped" : "delivering" });
+    } else success(msg.request_id, {});
+    onInterrupt();
+  }
+  else if (msg.type === "control_request" && msg.request.subtype === "cancel_async_message") {
+    const at = held.findIndex((p) => p.uuid === msg.request.message_uuid);
+    if (at >= 0) lifecycle(held.splice(at, 1)[0].uuid, "cancelled");
+    success(msg.request_id, { cancelled: at >= 0 });
+  }
   else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });
   else if (msg.type === "control_request" && msg.request.subtype === "set_model") {
     model = msg.request.model;

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentEvent, AgentSession, Conversation, PermissionRequest, RequestPermission } from "@kratos/core";
+import type { AgentEvent, AgentSession, AskQuestions, Conversation, PermissionRequest, QuestionRequest, RequestPermission } from "@kratos/core";
 import { createClaudeCodeAdapter } from "./index.js";
 
 /** A fake `claude` that speaks the real control protocol, scripted by prompt (see the file). */
@@ -325,6 +325,192 @@ describe("Claude Code adapter: permission modes (D53)", () => {
       await turn("plan");
       expect(reports()).toEqual(["default"]);
       expect(modes()).toEqual(["default"]);
+    } finally {
+      await done();
+    }
+  });
+});
+
+describe("Claude Code adapter: questions (D54)", () => {
+  /** Run the fake's question turn; what the CLI got back, and what Kratos was asked. */
+  async function questionTurn(askQuestions?: AskQuestions) {
+    const asked: QuestionRequest[] = [];
+    const permission = vi.fn<RequestPermission>();
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: permission,
+      askQuestions: askQuestions && (async (request, options) => (asked.push(request), askQuestions(request, options))),
+    });
+    session.send("question");
+    let response: { behavior: string; updatedInput?: { answers?: Record<string, string> }; message?: string } | undefined;
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") response = JSON.parse(event.output);
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    expect(permission).not.toHaveBeenCalled(); // questions never go to the permission gate
+    return { response, asked };
+  }
+
+  it("asks Kratos in agent-neutral terms and answers with the CLI's labels, joined picks and own text", async () => {
+    const { response, asked } = await questionTurn(async () => ({
+      outcome: "answered",
+      answers: [{ selected: ["Opus"] }, { selected: ["Red", "Blue"], other: "  teal  " }],
+    }));
+    expect(asked).toEqual([
+      {
+        toolCallId: "t1",
+        questions: [
+          {
+            header: "Model",
+            question: "Which model?",
+            multiSelect: false,
+            options: [{ label: "Opus", description: "Smartest", recommended: true }, { label: "Haiku" }],
+          },
+          { header: "Colors", question: "Which colors?", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }, { label: "Green" }] },
+        ],
+      },
+    ]);
+    expect(response?.behavior).toBe("allow");
+    expect(response?.updatedInput?.answers).toEqual({ "Which model?": "Opus (Recommended)", "Which colors?": "Red, Blue, teal" });
+  });
+
+  it("tells the agent to decide for itself when the owner skips", async () => {
+    const { response } = await questionTurn(async () => ({ outcome: "skipped" }));
+    expect(response).toMatchObject({ behavior: "deny", message: expect.stringContaining("Make your own call") });
+  });
+
+  it("refuses the questions (never a bare allow) when nobody can answer them", async () => {
+    const { response } = await questionTurn(undefined);
+    expect(response).toMatchObject({ behavior: "deny", message: expect.stringContaining("couldn't show these questions") });
+  });
+});
+
+describe("Claude Code adapter: attachments (D55)", () => {
+  it("says what it accepts: images, PDFs and text, with the API's limits", () => {
+    const { attachments } = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE });
+    expect(attachments.kinds.map((k) => k.kind)).toEqual(["image", "pdf", "text"]);
+    expect(attachments.maxCount).toBe(10);
+  });
+
+  it("sends files as content blocks before the prompt: images and PDFs base64, text as a titled document", async () => {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+    });
+    const bytes = (text: string) => new TextEncoder().encode(text);
+    session.send("blocks", [
+      { name: "red.png", kind: "image", mediaType: "image/png", data: new Uint8Array([137, 80, 78, 71]) },
+      { name: "spec.pdf", kind: "pdf", mediaType: "application/pdf", data: bytes("%PDF-1.4") },
+      { name: "notes.md", kind: "text", mediaType: "text/plain", data: bytes("# Notes\n4711") },
+    ]);
+    let blocks: unknown;
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") blocks = JSON.parse(event.output);
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    expect(blocks).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", length: 8 } }, // 4 bytes → 8 base64 chars
+      { type: "document", title: "spec.pdf", source: { type: "base64", media_type: "application/pdf", length: 12 } },
+      { type: "document", title: "notes.md", source: { type: "text", media_type: "text/plain", length: 12, data: "# Notes\n4711" } },
+      { type: "text" },
+    ]);
+  });
+});
+
+describe("Claude Code adapter: steering (D56)", () => {
+  /** A running session; `log` lists what Kratos saw, compactly. */
+  function running() {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+    });
+    const log: string[] = [];
+    const pump = (async () => {
+      for await (const e of session.events) {
+        if (e.kind === "prompt_state") log.push(`${e.id}:${e.state}`);
+        if (e.kind === "text") log.push(`text:${e.text}`);
+        if (e.kind === "turn_end") log.push(`end:${e.reason}`);
+      }
+    })();
+    const ends = () => log.filter((l) => l.startsWith("end:")).length;
+    return { session, log, waitForEnds: (n: number) => vi.waitFor(() => expect(ends()).toBe(n)), done: async () => (await session.stop(), await pump) };
+  }
+
+  it("holds a prompt sent mid-turn and reads it at the next step, in the same turn", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("steps", [], { id: "A" });
+      session.send("also B", [], { id: "B" });
+      await waitForEnds(1);
+      expect(log).toEqual(["A:queued", "A:started", "B:queued", "B:started", "text:read: also B", "end:completed", "A:completed", "B:completed"]);
+    } finally {
+      await done();
+    }
+  });
+
+  it("runs a prompt held through a reply with no step left as the next turn", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("slow", [], { id: "A" });
+      session.send("model", [], { id: "B" });
+      await waitForEnds(2);
+      expect(log.indexOf("B:started")).toBeGreaterThan(log.indexOf("end:completed")); // after A's turn
+    } finally {
+      await done();
+    }
+  });
+
+  it("withdraws one held prompt, or all of them with Stop", async () => {
+    const one = running();
+    try {
+      one.session.send("steps", [], { id: "A" });
+      one.session.send("also B", [], { id: "B" });
+      expect(await one.session.cancelPrompt("B")).toBe(true);
+      expect(await one.session.cancelPrompt("B")).toBe(false); // already gone
+      await one.waitForEnds(1);
+      expect(one.log).toContain("B:cancelled");
+      expect(one.log).toContain("text:read: nothing");
+    } finally {
+      await one.done();
+    }
+    const all = running();
+    try {
+      all.session.send("steps", [], { id: "A" });
+      all.session.send("also B", [], { id: "B" });
+      all.session.send("also C", [], { id: "C" });
+      await vi.waitFor(() => expect(all.log).toContain("C:queued"));
+      await all.session.interrupt({ cancelQueued: true });
+      await all.waitForEnds(1);
+      expect(all.log).toEqual(expect.arrayContaining(["B:cancelled", "C:cancelled", "end:interrupted"]));
+      expect(all.log.some((l) => l.endsWith(":started") && !l.startsWith("A"))).toBe(false);
+    } finally {
+      await all.done();
+    }
+  });
+
+  it("Send now stops the step and the held prompt runs right away", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("steps", [], { id: "A" });
+      session.send("model", [], { id: "B" });
+      await vi.waitFor(() => expect(log).toContain("B:queued"));
+      await session.sendNow("B");
+      await waitForEnds(2);
+      expect(log).toEqual(expect.arrayContaining(["end:interrupted", "A:cancelled", "B:started", "end:completed"]));
+      expect(log.indexOf("B:started")).toBeGreaterThan(log.indexOf("end:interrupted"));
+    } finally {
+      await done();
+    }
+  });
+
+  it("ignores lifecycle lines for prompts it didn't tag", async () => {
+    const { session, log, waitForEnds, done } = running();
+    try {
+      session.send("model"); // no id
+      await waitForEnds(1);
+      expect(log.filter((l) => !l.startsWith("end:") && !l.startsWith("text:"))).toEqual([]);
     } finally {
       await done();
     }

@@ -3,6 +3,8 @@ import which from "which";
 import {
   AgentEvent,
   type AgentAdapter,
+  type AgentAttachment,
+  type AttachmentPolicy,
   type AgentModel,
   type AgentPermissionMode,
   type AgentSession,
@@ -12,7 +14,15 @@ import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { CliMessage, GetSettingsResponse, InitializeResponse, SetPermissionModeResponse } from "./protocol.js";
+import {
+  AskUserQuestionInput,
+  CancelAsyncMessageResponse,
+  SendNowResponse,
+  CliMessage,
+  GetSettingsResponse,
+  InitializeResponse,
+  SetPermissionModeResponse,
+} from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -31,6 +41,7 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
     displayName: "Claude Code",
     listModels,
     permissionModes: PERMISSION_MODES,
+    attachments: ATTACHMENTS,
     startSession: (options) => startSession(claudePath, options, listModels),
   };
 }
@@ -85,6 +96,37 @@ const PERMISSION_MODES: AgentPermissionMode[] = [
 ];
 const CLAUDE_DEFAULT_MODE = "default";
 
+/** What Claude Code takes with a prompt (D55): the Claude API's limits for images and PDFs; text
+ * files up to 1 MB (judged by content); the API's 32 MB request cap leaves room for 30 MB. */
+const MB = 1024 * 1024;
+const ATTACHMENTS: AttachmentPolicy = {
+  kinds: [
+    { kind: "image", mediaTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"], maxBytes: 5 * MB },
+    { kind: "pdf", mediaTypes: ["application/pdf"], maxBytes: 30 * MB },
+    { kind: "text", mediaTypes: [], maxBytes: 1 * MB },
+  ],
+  maxCount: 10,
+  maxTotalBytes: 30 * MB,
+};
+
+/** A file as a content block of the stream-json user message (verified on the real CLI, D55):
+ * images and PDFs as base64, text as a text document titled with its file name. */
+function contentBlock(file: AgentAttachment): object {
+  const base64 = Buffer.from(file.data).toString("base64");
+  if (file.kind === "image") return { type: "image", source: { type: "base64", media_type: file.mediaType, data: base64 } };
+  if (file.kind === "pdf") return { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 }, title: file.name };
+  return { type: "document", source: { type: "text", media_type: "text/plain", data: Buffer.from(file.data).toString("utf8") }, title: file.name };
+}
+
+/** The prompt states Kratos follows (D56); the CLI may add others — they're ignored. */
+type PromptState = "queued" | "started" | "completed" | "cancelled";
+const PROMPT_STATES: PromptState[] = ["queued", "started", "completed", "cancelled"];
+
+/** Claude's question tool (D54), its "this one's my pick" label suffix, and what a skip tells it. */
+const ASK_TOOL = "AskUserQuestion";
+const RECOMMENDED = /\s*\(recommended\)\s*$/i;
+const SKIPPED = "The user skipped these questions. Make your own call and carry on.";
+
 /** Claude's own model id for "its default"; Kratos uses null for that and maps it here (3c4). */
 const CLAUDE_DEFAULT_MODEL = "default";
 
@@ -106,7 +148,7 @@ function startSession(
   options: Parameters<AgentAdapter["startSession"]>[0],
   listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
-  const { cwd, requestPermission, conversation, model, effort, permissionMode } = options;
+  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
   // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
@@ -122,12 +164,17 @@ function startSession(
   const proc = new JsonLinesProcess(claudePath, args, { cwd });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
   let currentMode = permissionMode ?? CLAUDE_DEFAULT_MODE; // to report only real changes
+  const ourPrompts = new Set<string>(); // ids we sent: lifecycle lines for others are the CLI's own
 
   const control = new ControlChannel(proc); // requests we send (set_model, effort, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
 
-  /** The gate: ask Kratos, then reply to the CLI. Fails closed (deny) if the callback throws. */
+  /**
+   * Answer one of the CLI's `can_use_tool` asks: questions go to `askQuestions` (D54), every other
+   * tool to the permission gate. Fails closed (deny) if Kratos's callback throws; sends nothing if
+   * the CLI withdrew the ask meanwhile (control_cancel_request).
+   */
   async function answer({ request_id, request }: ControlRequest) {
     if (request.subtype !== "can_use_tool" || !request.tool_name) {
       const error = `Kratos does not handle control request "${request.subtype}"`;
@@ -139,28 +186,66 @@ function startSession(
     const input = request.input ?? {};
     let response: object;
     try {
-      const d = await requestPermission(
-        {
-          tool: request.tool_name,
-          input,
-          reason: request.decision_reason,
-          toolCallId: request.tool_use_id,
-          action: toolAction(request.tool_name, input),
-        },
-        { signal: abort.signal },
-      );
-      response = d.decision === "allow"
-        ? { behavior: "allow", updatedInput: d.updatedInput ?? input }
-        : { behavior: "deny", message: d.message };
+      response = request.tool_name === ASK_TOOL
+        ? await askOwner(input, request.tool_use_id, abort.signal)
+        : await gate(request.tool_name, input, request, abort.signal);
     } catch (err) {
       response = { behavior: "deny", message: `Kratos permission check failed: ${String(err)}` };
     } finally {
       pending.delete(request_id);
     }
-    // If the CLI withdrew the ask (control_cancel_request), it no longer wants an answer.
     if (!abort.signal.aborted) {
       proc.send({ type: "control_response", response: { subtype: "success", request_id, response } });
     }
+  }
+
+  /** The permission gate: allow (maybe with edited input) or deny with the owner's message. */
+  async function gate(tool: string, input: Record<string, unknown>, request: ControlRequest["request"], signal: AbortSignal) {
+    const d = await requestPermission(
+      { tool, input, reason: request.decision_reason, toolCallId: request.tool_use_id, action: toolAction(tool, input) },
+      { signal },
+    );
+    return d.decision === "allow" ? { behavior: "allow", updatedInput: d.updatedInput ?? input } : { behavior: "deny", message: d.message };
+  }
+
+  /**
+   * The agent's questions (D54), verified on the real CLI: the answer is the tool's input plus
+   * `answers: {"<question>": "<label>"}` (several picks, and the owner's own text, joined with
+   * ", "); skipping is a deny the agent carries on from. Never allow without answers — the CLI
+   * reads that as "the user did not answer".
+   */
+  async function askOwner(input: Record<string, unknown>, toolCallId: string | undefined, signal: AbortSignal) {
+    const parsed = AskUserQuestionInput.safeParse(input);
+    if (!askQuestions || !parsed.success) {
+      return { behavior: "deny", message: "Kratos couldn't show these questions to the user. Make your own call and carry on." };
+    }
+    const asked = parsed.data.questions;
+    const reply = await askQuestions(
+      {
+        toolCallId,
+        questions: asked.map((q) => ({
+          header: q.header ?? "",
+          question: q.question,
+          multiSelect: q.multiSelect ?? false,
+          options: q.options.map((o) => ({
+            label: o.label.replace(RECOMMENDED, ""),
+            ...(o.description ? { description: o.description } : {}),
+            ...(RECOMMENDED.test(o.label) ? { recommended: true } : {}),
+          })),
+        })),
+      },
+      { signal },
+    );
+    if (reply.outcome === "skipped") return { behavior: "deny", message: SKIPPED };
+    const answers = Object.fromEntries(
+      asked.map((q, i) => {
+        const answer = reply.answers[i] ?? { selected: [] };
+        // Back to the agent's own labels ("Opus (Recommended)"), which it knows.
+        const picked = answer.selected.map((label) => q.options.find((o) => o.label.replace(RECOMMENDED, "") === label)?.label ?? label);
+        return [q.question, [...picked, ...(answer.other?.trim() ? [answer.other.trim()] : [])].join(", ")];
+      }),
+    );
+    return { behavior: "allow", updatedInput: { ...input, answers } };
   }
 
   async function* events(): AsyncGenerator<AgentEvent> {
@@ -169,6 +254,12 @@ function startSession(
       if (!parsed.success) continue; // a line kind Kratos doesn't use
       const msg = parsed.data;
       if (control.handle(msg)) continue; // an answer to one of our requests
+      if (msg.type === "command_lifecycle") {
+        if (ourPrompts.has(msg.command_uuid) && PROMPT_STATES.includes(msg.state as PromptState)) {
+          yield { kind: "prompt_state", id: msg.command_uuid, state: msg.state as PromptState };
+        }
+        continue;
+      }
       if (msg.type === "system") {
         // The CLI repeats the mode at every turn's start: only a change is an event (D53).
         if (msg.permissionMode && msg.permissionMode !== currentMode) {
@@ -195,13 +286,29 @@ function startSession(
 
   return {
     events: events(),
-    send(prompt) {
-      proc.send({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null });
+    send(prompt, attachments = [], options = {}) {
+      // With files: the files first, then the prompt that's about them (D55).
+      const content = attachments.length > 0 ? [...attachments.map(contentBlock), { type: "text", text: prompt }] : prompt;
+      // Tagged with our id, the CLI reports what becomes of it (command_lifecycle, D56).
+      if (options.id) ourPrompts.add(options.id);
+      proc.send({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(options.id ? { uuid: options.id } : {}) });
     },
-    async interrupt() {
+    async cancelPrompt(id) {
+      const answer = await control.request({ subtype: "cancel_async_message", message_uuid: id });
+      return CancelAsyncMessageResponse.parse(answer).cancelled;
+    },
+    async sendNow(id) {
+      // The CLI's own Send now (verified, D56): stops the step and delivers what it holds. The
+      // stopped turn ends like an interrupt.
       interrupted = true;
-      // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`.
-      control.request({ subtype: "interrupt" }).catch(() => {});
+      const answer = SendNowResponse.parse(await control.request({ subtype: "interrupt", send_now: true, message_uuid: id }));
+      if (answer.send_now === "nothing_waiting") interrupted = false; // nothing was stopped
+    },
+    async interrupt(options = {}) {
+      interrupted = true;
+      // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`; withdrawn
+      // prompts as `prompt_state` cancelled (D56).
+      control.request({ subtype: "interrupt", ...(options.cancelQueued ? { cancel_queued: true } : {}) }).catch(() => {});
     },
     // null = back to the agent's default, which Claude calls "default" (D43, 3c4).
     async setModel(model) {

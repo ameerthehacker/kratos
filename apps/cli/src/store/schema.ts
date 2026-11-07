@@ -32,6 +32,20 @@ export const sessions = sqliteTable(
   (t) => [index("sessions_by_project").on(t.projectDir, t.updatedAt)],
 );
 
+/** Files sent with prompts (D55): what they are; the bytes are a file named by `id` in the
+ * attachments folder next to the database. */
+export const attachments = sqliteTable("attachments", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id")
+    .notNull()
+    .references(() => sessions.id),
+  name: text("name").notNull(),
+  kind: text("kind", { enum: ["image", "pdf", "text"] }).notNull(),
+  mediaType: text("media_type").notNull(),
+  size: integer("size").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 /** The session log: every message the hub published to tabs, in order (`seq` from 0). */
 export const messages = sqliteTable(
   "messages",

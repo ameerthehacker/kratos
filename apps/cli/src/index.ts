@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import { createClaudeCodeAdapter } from "@kratos/adapter-claude-code";
 import { DEFAULT_PORT } from "@kratos/core";
+import { diskFiles } from "./attachment-files.js";
 import { DEFAULT_DB, DEFAULT_LOG_DIR, KRATOS_HOME } from "./data-home.js";
 import { detectEditors } from "./editors.js";
 import { createLogger } from "./logger.js";
@@ -39,7 +40,9 @@ const program = new Command()
 
     const dbPath = resolve(opts.db);
     const store = SessionStore.open(dbPath);
-    const hub = new SessionHub(adapter, cwd, store, log); // loads (or starts) this project's latest session
+    // Attachment bytes live next to the database (D55): .kratos/attachments/ for `pnpm dev`.
+    const files = diskFiles(join(dirname(dbPath), "attachments"));
+    const hub = new SessionHub(adapter, cwd, store, log, files); // loads (or starts) this project's latest session
     const editors = detectEditors(); // 3d3: what "Open in…" offers
     log.debug({ editors: editors.map((e) => e.id) }, "editors found");
     const iconCacheDir = join(KRATOS_HOME, "cache", "editor-icons");

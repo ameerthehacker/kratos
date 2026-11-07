@@ -1,4 +1,5 @@
 import { Check, RotateCcw } from "lucide-react";
+import { useLocation, useNavigate } from "react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SessionSummary } from "@kratos/core";
 import { useKratos } from "@/lib/kratos-store";
@@ -8,15 +9,19 @@ import { cn } from "@/lib/utils";
  * Mark a session done, or reopen it (3d2). `icon`: a small round button for list rows (shown on
  * hover/focus by the row); `header` (3d7, owner): a quiet check icon with a tooltip while the
  * session is open, and a green "✓ Done" chip once it's done ("↺ Reopen" on hover), which reopens it.
+ * Marking the session you're looking at done takes you Home: it's off your plate (owner).
  */
 export function DoneButton({ session, variant, className }: { session: SessionSummary; variant: "icon" | "header"; className?: string }) {
   const send = useKratos((s) => s.send);
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const label = session.done ? "Reopen" : "Mark as done";
   const Icon = session.done ? RotateCcw : Check;
   const toggle = (event: React.MouseEvent) => {
     event.preventDefault(); // rows sit inside links' hover areas: don't navigate
     event.stopPropagation();
     send({ type: "set_done", id: session.id, done: !session.done });
+    if (!session.done && pathname === `/s/${session.id}`) navigate("/");
   };
 
   if (variant === "icon") {

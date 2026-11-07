@@ -52,6 +52,9 @@ export const AgentEvent = z.discriminatedUnion("kind", [
   /** The agent's permission mode changed — by Kratos, or by the agent itself (e.g. leaving plan
    * mode once its plan is approved). D53. */
   z.object({ kind: z.literal("permission_mode"), mode: z.string() }),
+  /** What became of a prompt sent with an id (D56): waiting while the agent works (`queued`),
+   * taken (`started` — mid-turn at a step boundary, or as a new turn), done, or withdrawn. */
+  z.object({ kind: z.literal("prompt_state"), id: z.string(), state: z.enum(["queued", "started", "completed", "cancelled"]) }),
   /** The agent finished responding to a prompt. The session stays open for the next send(). */
   z.object({
     kind: z.literal("turn_end"),
@@ -91,6 +94,130 @@ export type RequestPermission = (
   request: PermissionRequest,
   options: { signal: AbortSignal },
 ) => Promise<PermissionDecision>;
+
+// ── Questions: the agent asks the owner to choose (D54) ─────────────────────────────────
+
+/** One multiple-choice question from the agent, in agent-neutral terms (e.g. Claude's
+ * AskUserQuestion). The owner may always type their own answer instead ("Other"). */
+export const AgentQuestion = z.object({
+  /** A short tab label ("Placement"). */
+  header: z.string(),
+  question: z.string(),
+  multiSelect: z.boolean(),
+  options: z.array(
+    z.object({
+      label: z.string(),
+      description: z.string().optional(),
+      /** The option the agent recommends (shown, never pre-picked). */
+      recommended: z.boolean().optional(),
+    }),
+  ),
+});
+export type AgentQuestion = z.infer<typeof AgentQuestion>;
+
+export const QuestionRequest = z.object({
+  questions: z.array(AgentQuestion).min(1),
+  /** The `tool_call` event that carries the questions, when the agent says. */
+  toolCallId: z.string().optional(),
+});
+export type QuestionRequest = z.infer<typeof QuestionRequest>;
+
+/** The owner's answer to one question: picked option labels and/or their own text. */
+export const QuestionAnswer = z.object({ selected: z.array(z.string()), other: z.string().optional() });
+export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
+
+export const QuestionReply = z.discriminatedUnion("outcome", [
+  /** One answer per question, in the same order. */
+  z.object({ outcome: z.literal("answered"), answers: z.array(QuestionAnswer) }),
+  /** The owner skipped: the agent decides for itself. */
+  z.object({ outcome: z.literal("skipped") }),
+]);
+export type QuestionReply = z.infer<typeof QuestionReply>;
+
+/**
+ * Called by the adapter when the agent asks the owner questions, and awaited. `signal` aborts
+ * if the agent withdraws them (e.g. the turn is interrupted). Like RequestPermission.
+ */
+export type AskQuestions = (request: QuestionRequest, options: { signal: AbortSignal }) => Promise<QuestionReply>;
+
+/**
+ * Why a reply doesn't fit its questions, or null if it does: one answer per question, only the
+ * question's own option labels, at most one choice for a single-choice question, and every
+ * question answered (an option or non-empty own text). Skipping always fits.
+ */
+export function checkQuestionReply(request: QuestionRequest, reply: QuestionReply): string | null {
+  if (reply.outcome === "skipped") return null;
+  if (reply.answers.length !== request.questions.length) {
+    return `Expected ${request.questions.length} answers, got ${reply.answers.length}`;
+  }
+  for (const [i, question] of request.questions.entries()) {
+    const answer = reply.answers[i]!;
+    const labels = new Set(question.options.map((o) => o.label));
+    const unknown = answer.selected.find((label) => !labels.has(label));
+    if (unknown !== undefined) return `"${unknown}" is not an option of "${question.header}"`;
+    if (new Set(answer.selected).size !== answer.selected.length) return `"${question.header}" lists an option twice`;
+    const choices = answer.selected.length + (answer.other?.trim() ? 1 : 0);
+    if (choices === 0) return `"${question.header}" has no answer`;
+    if (!question.multiSelect && choices > 1) return `"${question.header}" takes one answer`;
+  }
+  return null;
+}
+
+// ── Attachments: files sent with a prompt (D55) ─────────────────────────────────────────
+
+export const AttachmentKind = z.enum(["image", "pdf", "text"]);
+export type AttachmentKind = z.infer<typeof AttachmentKind>;
+
+/** What a harness accepts with a prompt (D55): per kind, its media types (none listed = any type,
+ * for text: judged by content) and size; and how many files / bytes in all. No kinds = none. */
+export const AttachmentPolicy = z.object({
+  kinds: z.array(z.object({ kind: AttachmentKind, mediaTypes: z.array(z.string()), maxBytes: z.number() })),
+  maxCount: z.number(),
+  maxTotalBytes: z.number(),
+});
+export type AttachmentPolicy = z.infer<typeof AttachmentPolicy>;
+
+/** A file going to the agent with a prompt, in agent-neutral terms (the adapter maps it). */
+export type AgentAttachment = { name: string; kind: AttachmentKind; mediaType: string; data: Uint8Array };
+
+/**
+ * Which kind a file is under a policy, or why it can't be attached. Images and PDFs by media
+ * type; anything else counts as text if its bytes are UTF-8 without NUL (browsers often don't know
+ * a `.ts` file's type, so the content decides). Pure: the server checks with it, the UI can too.
+ */
+export function classifyAttachment(
+  policy: AttachmentPolicy,
+  file: { name: string; mediaType: string; data: Uint8Array },
+): { kind: AttachmentKind; mediaType: string } | { error: string } {
+  const typed = policy.kinds.find((k) => k.mediaTypes.includes(file.mediaType));
+  const text = policy.kinds.find((k) => k.kind === "text");
+  const rule = typed ?? (text && isUtf8Text(file.data) ? text : undefined);
+  if (!rule) return { error: `${file.name}: ${file.mediaType || "this kind of"} file can't be attached` };
+  if (file.data.byteLength > rule.maxBytes) {
+    return { error: `${file.name} is too big (${megabytes(file.data.byteLength)}; ${rule.kind} files up to ${megabytes(rule.maxBytes)})` };
+  }
+  return { kind: rule.kind, mediaType: rule.kind === "text" ? "text/plain" : file.mediaType };
+}
+
+/** Why a set of files can't go together under a policy (count, total size), or null. */
+export function checkAttachmentSet(policy: AttachmentPolicy, sizes: readonly number[]): string | null {
+  if (sizes.length > policy.maxCount) return `Up to ${policy.maxCount} files per prompt (got ${sizes.length})`;
+  const total = sizes.reduce((sum, n) => sum + n, 0);
+  if (total > policy.maxTotalBytes) return `Up to ${megabytes(policy.maxTotalBytes)} per prompt (got ${megabytes(total)})`;
+  return null;
+}
+
+function isUtf8Text(data: Uint8Array): boolean {
+  if (data.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`;
 
 // ── Adapter + session: behaviour, so plain TS interfaces ────────────────────────────────
 
@@ -143,6 +270,8 @@ export interface AgentAdapter {
   listModels(): Promise<AgentModel[]>;
   /** The permission modes this agent has (D53); empty = it has no modes (always asks Kratos). */
   readonly permissionModes: readonly AgentPermissionMode[];
+  /** The files it accepts with a prompt (D55); no kinds = none. */
+  readonly attachments: AttachmentPolicy;
   /** Without `conversation`, a fresh, unnamed conversation; without `model` or `effort`, the
    * agent's default. An `effort` the model lacks is the agent's to handle (Claude clamps it; D51). */
   startSession(options: {
@@ -153,6 +282,8 @@ export interface AgentAdapter {
     effort?: string;
     /** One of `permissionModes`; without it, the agent's default mode (D53). */
     permissionMode?: string;
+    /** Where the agent's questions go (D54); without it, questions are refused. */
+    askQuestions?: AskQuestions;
   }): AgentSession;
 }
 
@@ -160,10 +291,20 @@ export interface AgentAdapter {
 export interface AgentSession {
   /** Every event for the whole conversation. Ends when the session stops. Iterate it once. */
   readonly events: AsyncIterable<AgentEvent>;
-  /** Send a prompt. Events arrive on `events`; the turn ends with a `turn_end` event. */
-  send(prompt: string): void;
-  /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. */
-  interrupt(): Promise<void>;
+  /** Send a prompt, with files if any (already checked against the adapter's policy, D55).
+   * Events arrive on `events`; the turn ends with a `turn_end` event. Sent while a turn runs, the
+   * agent holds it and takes it later (steering, D56); with an `id`, `prompt_state` events say
+   * what became of it. */
+  send(prompt: string, attachments?: readonly AgentAttachment[], options?: { id?: string }): void;
+  /** Withdraw a prompt the agent still holds (D56); false if it was already taken. */
+  cancelPrompt(id: string): Promise<boolean>;
+  /** Stop the current step and have the agent read a held prompt right away (D56). Claude's
+   * send-now delivers *every* held prompt: withdraw the others first to send just one. */
+  sendNow(id: string): Promise<void>;
+  /** Stop the current turn (emits turn_end "interrupted"); the session stays usable. With
+   * `cancelQueued`, prompts it holds are withdrawn too (`prompt_state` cancelled); without, they
+   * run right after (D56). */
+  interrupt(options?: { cancelQueued?: boolean }): Promise<void>;
   /** Switch the running conversation to another model (from listModels); `null` = back to the
    * agent's default (3c4). Resolves when the agent confirms — which it reports on its output, so
    * `events` must be being consumed (the hub always does). */

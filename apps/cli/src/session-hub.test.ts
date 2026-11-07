@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   AgentAdapter,
+  AgentAttachment,
   AgentEvent,
   AgentModel,
   AgentPermissionMode,
+  AttachmentPolicy,
   AgentSession,
   Harness,
   PermissionRequest,
+  QuestionAnswer,
+  QuestionRequest,
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
@@ -20,17 +24,32 @@ const WRITE: PermissionRequest = { tool: "Write", input: { file_path: "a.txt" } 
 /** In-memory agent session the test drives by hand: emit events, raise asks, end it. */
 class FakeSession implements AgentSession {
   readonly prompts: string[] = [];
+  readonly files: Array<readonly AgentAttachment[]> = [];
   interrupts = 0;
   stopped = false;
   private stream!: ReadableStreamDefaultController<AgentEvent>;
   readonly events = new ReadableStream<AgentEvent>({ start: (c) => void (this.stream = c) });
 
   constructor(readonly options: Parameters<AgentAdapter["startSession"]>[0]) {}
-  send(prompt: string) {
+  readonly promptIds: (string | undefined)[] = [];
+  send(prompt: string, attachments: readonly AgentAttachment[] = [], options: { id?: string } = {}) {
     this.prompts.push(prompt);
+    this.files.push(attachments);
+    this.promptIds.push(options.id);
   }
-  async interrupt() {
+  readonly cancelled: string[] = [];
+  async cancelPrompt(id: string) {
+    this.cancelled.push(id);
+    return true;
+  }
+  readonly sentNow: string[] = [];
+  async sendNow(id: string) {
+    this.sentNow.push(id);
+  }
+  readonly interruptOptions: Array<{ cancelQueued?: boolean } | undefined> = [];
+  async interrupt(options?: { cancelQueued?: boolean }) {
     this.interrupts++;
+    this.interruptOptions.push(options);
   }
   readonly modelSwitches: (string | null)[] = [];
   async setModel(model: string | null) {
@@ -59,6 +78,11 @@ class FakeSession implements AgentSession {
   emit(event: AgentEvent) {
     this.stream.enqueue(event);
   }
+  /** Ask questions the way an adapter would (D54); `withdraw` simulates the CLI cancelling them. */
+  question(request: QuestionRequest) {
+    const abort = new AbortController();
+    return { reply: this.options.askQuestions!(request, { signal: abort.signal }), withdraw: () => abort.abort() };
+  }
   /** Ask permission the way an adapter would; `withdraw` simulates the CLI cancelling it. */
   ask(request: PermissionRequest) {
     const abort = new AbortController();
@@ -75,6 +99,15 @@ const MODES: AgentPermissionMode[] = [
   { id: "bypassPermissions", label: "Bypass", shortLabel: "Bypass", kind: "bypass", description: "no checks", dangerous: true },
 ];
 
+const POLICY: AttachmentPolicy = {
+  kinds: [
+    { kind: "image", mediaTypes: ["image/png"], maxBytes: 100 },
+    { kind: "text", mediaTypes: [], maxBytes: 100 },
+  ],
+  maxCount: 2,
+  maxTotalBytes: 150,
+};
+
 const MODELS: AgentModel[] = [
   { id: "default", label: "Default", description: "recommended", group: "latest" },
   { id: "haiku", label: "Haiku", description: "fast", group: "latest" },
@@ -88,6 +121,7 @@ function setup() {
     displayName: "Fake",
     listModels: async () => MODELS,
     permissionModes: MODES,
+    attachments: POLICY,
     startSession: (options) => {
       const agent = new FakeSession(options);
       agents.push(agent);
@@ -97,14 +131,23 @@ function setup() {
   const store = SessionStore.open(":memory:");
   let hub = new SessionHub(adapter, "/projects/demo", store);
 
-  /** A browser tab on the current hub. Like the real UI: its log clears when it switches session. */
+  /** A browser tab on the current hub. Like the real UI: its log clears when it switches session,
+   * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then). */
   const tab = () => {
-    const state = { seen: [] as ServerMessage[], sessionIds: [] as string[], list: [] as SessionSummary[], harnesses: [] as Harness[] };
+    const state = {
+      seen: [] as ServerMessage[],
+      sessionIds: [] as string[],
+      list: [] as SessionSummary[],
+      harnesses: [] as Harness[],
+      seenWhenReady: undefined as number | undefined,
+    };
     const handle = hub.connect((m) => {
       if (m.type === "session") {
         state.sessionIds.push(m.id);
         state.seen = [];
-      } else if (m.type === "sessions") state.list = m.list;
+        state.seenWhenReady = undefined;
+      } else if (m.type === "session_ready") state.seenWhenReady = state.seen.length;
+      else if (m.type === "sessions") state.list = m.list;
       else if (m.type === "harnesses") state.harnesses = m.list;
       else state.seen.push(m);
     });
@@ -119,19 +162,26 @@ function setup() {
       get harnesses() {
         return state.harnesses;
       },
+      get seenWhenReady() {
+        return state.seenWhenReady;
+      },
       /** The session this tab views now. */
       get viewing() {
         return state.sessionIds.at(-1)!;
       },
+      lastQuestionId: () => state.seen.findLast((m): m is Extract<ServerMessage, { type: "question_request" }> => m.type === "question_request")!.id,
       lastAskId: () => state.seen.findLast((m): m is Extract<ServerMessage, { type: "permission_request" }> => m.type === "permission_request")!.id,
     };
   };
   /** Simulate a kratos restart: a new hub over the same database; old agent processes are gone. */
   const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store));
+  /** Another project's hub on the same database (its sessions aren't this project's). */
+  const otherProject = () => new SessionHub(adapter, "/projects/other", store);
   return {
     agents,
     tab,
     restart,
+    otherProject,
     get hub() {
       return hub;
     },
@@ -434,8 +484,8 @@ describe("SessionHub: harness & model (D43)", () => {
     const { tab } = setup();
     const early = tab(); // connected before the models are known
     await tick();
-    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
-    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
+    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES, attachments: POLICY }]);
+    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES, attachments: POLICY }]);
   });
 
   it("starts a session with the model picked on Home and shows it in the list", () => {
@@ -635,5 +685,310 @@ describe("SessionHub: permission modes (D53)", () => {
     await tick();
     expect(agents[0]!.modeSwitches).toEqual([]);
     expect(a.seen.at(-1)).toMatchObject({ type: "error", message: 'Fake has no permission mode "turbo"' });
+  });
+});
+
+describe("SessionHub: agent questions (D54)", () => {
+  const REQUEST: QuestionRequest = {
+    toolCallId: "t1",
+    questions: [
+      { header: "Model", question: "Which model?", multiSelect: false, options: [{ label: "Opus", recommended: true }, { label: "Haiku" }] },
+      { header: "Colors", question: "Which colors?", multiSelect: true, options: [{ label: "Red" }, { label: "Blue" }] },
+    ],
+  };
+  const status = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.status;
+  const resolved = (t: { seen: ServerMessage[] }) => t.seen.filter((m) => m.type === "question_resolved");
+
+  it("shows the questions to every tab, marks the session as needing an answer, and passes the answer on", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const { reply } = agents[0]!.question(REQUEST);
+    expect(a.seen.at(-1)).toEqual({ type: "question_request", id: a.lastQuestionId(), request: REQUEST });
+    expect(status(a)).toBe("needs_answer");
+
+    const answers = [{ selected: ["Opus"] }, { selected: ["Red"], other: "teal" }];
+    a.receive({ type: "question_answer", id: a.lastQuestionId(), reply: { outcome: "answered", answers } });
+    expect(await reply).toEqual({ outcome: "answered", answers });
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id: a.lastQuestionId(), outcome: "answered", answers }]);
+    expect(status(a)).toBe("working");
+  });
+
+  it("refuses answers that don't fit the questions, and keeps them open", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.question(REQUEST);
+    const id = a.lastQuestionId();
+    const tries: Array<[QuestionAnswer[], string]> = [
+      [[{ selected: ["Opus"] }], "Expected 2 answers, got 1"],
+      [[{ selected: ["Sonnet"] }, { selected: ["Red"] }], '"Sonnet" is not an option of "Model"'],
+      [[{ selected: ["Opus"], other: "mine" }, { selected: ["Red"] }], '"Model" takes one answer'],
+      [[{ selected: ["Opus"] }, { selected: [], other: "  " }], '"Colors" has no answer'],
+    ];
+    for (const [answers, problem] of tries) {
+      a.receive({ type: "question_answer", id, reply: { outcome: "answered", answers } });
+      expect(a.seen.at(-1)).toEqual({ type: "error", message: `Couldn't send your answer: ${problem}` });
+    }
+    expect(resolved(a)).toEqual([]);
+    expect(status(a)).toBe("needs_answer");
+  });
+
+  it("takes the first answer from any tab, skips included, and ignores a late one quietly", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const { reply } = agents[0]!.question(REQUEST);
+    const id = a.lastQuestionId();
+    b.receive({ type: "question_answer", id, reply: { outcome: "skipped" } });
+    a.receive({ type: "question_answer", id, reply: { outcome: "answered", answers: [{ selected: ["Opus"] }, { selected: ["Red"] }] } });
+    expect(await reply).toEqual({ outcome: "skipped" });
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id, outcome: "skipped" }]);
+    expect(a.seen.some((m) => m.type === "error")).toBe(false);
+  });
+
+  it("marks questions the agent withdrew, or a restart left open, as cancelled", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    const first = agents[0]!.question(REQUEST);
+    first.withdraw();
+    expect(await first.reply).toEqual({ outcome: "skipped" }); // the agent no longer reads it
+    expect(resolved(a)).toEqual([{ type: "question_resolved", id: a.lastQuestionId(), outcome: "cancelled" }]);
+
+    agents[0]!.question(REQUEST); // still open when Kratos restarts
+    const openId = a.lastQuestionId();
+    restart();
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "question_resolved").at(-1)).toEqual({ type: "question_resolved", id: openId, outcome: "cancelled" });
+    expect(status(late)).toBe("idle");
+  });
+});
+
+describe("SessionHub: attachments (D55)", () => {
+  const upload = (name: string, mediaType: string, bytes: Uint8Array | string) => ({
+    name,
+    mediaType,
+    data: Buffer.from(typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes).toString("base64"),
+  });
+
+  it("stores the files, logs only what they are, and passes them to the agent", () => {
+    const { agents, tab, hub, otherProject } = setup();
+    const a = tab();
+    a.receive({
+      type: "prompt",
+      text: "look",
+      newSession: true,
+      attachments: [upload("red.png", "image/png", new Uint8Array([137, 80, 78, 71])), upload("notes.ts", "", "export {}")],
+    });
+    const sent = a.seen.find((m) => m.type === "user_prompt");
+    expect(sent).toMatchObject({
+      type: "user_prompt",
+      text: "look",
+      attachments: [
+        { name: "red.png", kind: "image", mediaType: "image/png", size: 4 },
+        { name: "notes.ts", kind: "text", mediaType: "text/plain", size: 9 },
+      ],
+    });
+    expect(agents[0]!.files[0]!.map((f) => [f.name, f.kind, f.data.byteLength])).toEqual([
+      ["red.png", "image", 4],
+      ["notes.ts", "text", 9],
+    ]);
+    const refs = sent?.type === "user_prompt" ? sent.attachments! : [];
+    expect(Buffer.from(hub.readAttachment(refs[1]!.id)!.data).toString()).toBe("export {}");
+    expect(otherProject().readAttachment(refs[1]!.id)).toBeUndefined(); // only this project's
+    expect(hub.readAttachment("not-an-id")).toBeUndefined();
+  });
+
+  it("refuses the whole prompt — nothing starts — if any file doesn't fit", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const tries: Array<[ReturnType<typeof upload>[], string]> = [
+      [[upload("a.zip", "application/zip", new Uint8Array([80, 75, 0, 3]))], "a.zip: application/zip file can't be attached"],
+      [[upload("big.png", "image/png", new Uint8Array(101))], "big.png is too big"],
+      [[upload("1.txt", "", "a"), upload("2.txt", "", "b"), upload("3.txt", "", "c")], "Up to 2 files per prompt (got 3)"],
+    ];
+    for (const [attachments, problem] of tries) {
+      a.receive({ type: "prompt", text: "look", newSession: true, attachments });
+      expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining(`Couldn't send your prompt: ${problem}`) });
+    }
+    expect(agents).toHaveLength(0);
+    expect(a.seen.some((m) => m.type === "user_prompt")).toBe(false);
+  });
+});
+
+describe("SessionHub: replay complete (3d9)", () => {
+  it("tells a tab when a session's whole log has been replayed, so it can show it at once", () => {
+    const { tab } = setup();
+    const a = tab();
+    expect(a.seenWhenReady).toBe(0); // a new, empty session: ready straight away
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "second" });
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "user_prompt" || m.type === "prompt_queued")).toHaveLength(2); // the 2nd was queued (D56)
+    expect(late.seenWhenReady).toBe(late.seen.length); // after the last replayed message
+  });
+});
+
+describe("SessionHub: steering prompts (D56)", () => {
+  const queuedIds = (t: { seen: ServerMessage[] }) => t.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+  const count = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.queued;
+  const status = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.status;
+
+  it("queues a prompt sent while the agent works, and marks where the agent read it", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "also this" });
+    const [id] = queuedIds(a);
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_queued", id, text: "also this" });
+    expect(agents[0]!.promptIds.at(-1)).toBe(id); // sent at once, tagged: the agent holds it
+    expect(count(a)).toBe(1);
+
+    agents[0]!.emit({ kind: "tool_result", id: "t1", output: "ok", isError: false });
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "started" }); // taken at the step boundary
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_read", id, how: "step", after: "t1" });
+    expect(count(a)).toBe(0);
+    expect(a.seen.some((m) => m.type === "agent_event" && m.event.kind === "prompt_state")).toBe(false); // not logged
+  });
+
+  it("a prompt read after the turn ended starts a new turn", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "next" });
+    const [id] = queuedIds(a);
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(status(a)).toBe("idle");
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "started" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_read", id, how: "next_turn" });
+    expect(status(a)).toBe("working");
+  });
+
+  it("prompts the agent takes together to start a new turn are all next_turn", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "B" });
+    a.receive({ type: "prompt", text: "D" });
+    const [b, d] = queuedIds(a);
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "started" });
+    agents[0]!.emit({ kind: "prompt_state", id: d!, state: "started" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_read").map((m) => m.type === "prompt_read" && m.how)).toEqual(["next_turn", "next_turn"]);
+  });
+
+  it("takes a queued prompt back on request", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "never mind" });
+    const [id] = queuedIds(a);
+    a.receive({ type: "remove_queued", id: id! });
+    expect(agents[0]!.cancelled).toEqual([id]);
+    agents[0]!.emit({ kind: "prompt_state", id: id!, state: "cancelled" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_removed", id, reason: "removed" });
+    expect(count(a)).toBe(0);
+  });
+
+  it("Stop with a queue stops everything and gives the queued text back to that tab only", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "fix tests" });
+    a.receive({ type: "prompt", text: "rename file" });
+    const ids = queuedIds(a);
+    a.receive({ type: "interrupt" });
+    expect(agents[0]!.interruptOptions).toEqual([{ cancelQueued: true }]);
+    for (const id of ids) agents[0]!.emit({ kind: "prompt_state", id, state: "cancelled" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_removed")).toEqual(ids.map((id) => ({ type: "prompt_removed", id, reason: "stopped" })));
+    expect(a.seen.at(-1)).toEqual({ type: "prompts_returned", text: "fix tests\n\nrename file" });
+    expect(b.seen.some((m) => m.type === "prompts_returned")).toBe(false);
+  });
+
+  it("a plain Stop with nothing queued doesn't touch the queue", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "interrupt" });
+    expect(agents[0]!.interruptOptions).toEqual([{ cancelQueued: false }]);
+  });
+
+  it("drops a queue the agent can no longer read: it exited, or Kratos restarted", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "queued 1" });
+    await agents[0]!.stop(); // the agent's events end
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_removed")).toEqual([{ type: "prompt_removed", id: queuedIds(a)[0], reason: "stopped" }]);
+
+    a.receive({ type: "prompt", text: "again" }); // starts a new agent
+    a.receive({ type: "prompt", text: "queued 2" });
+    const second = queuedIds(a)[1];
+    restart();
+    const late = tab();
+    expect(late.seen.filter((m) => m.type === "prompt_removed").at(-1)).toEqual({ type: "prompt_removed", id: second, reason: "stopped" });
+    expect(count(late)).toBe(0);
+  });
+});
+
+describe("SessionHub: Send now (D56, 3t2)", () => {
+  const queuedIds = (t: { seen: ServerMessage[] }) => t.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+  const count = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.queued;
+
+  it("sends only the chosen prompt now; the others are withdrawn, then queued again unseen", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.emit({ kind: "tool_call", id: "t1", tool: "Bash", input: {} }); // a step is running
+    for (const text of ["B", "C", "D"]) a.receive({ type: "prompt", text });
+    const [b, c, d] = queuedIds(a);
+    await tick();
+
+    a.receive({ type: "send_now", id: c! });
+    await tick();
+    expect(agents[0]!.cancelled).toEqual([b, d]); // the others leave the agent's queue…
+    expect(agents[0]!.sentNow).toEqual([c]);
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "cancelled" });
+    agents[0]!.emit({ kind: "prompt_state", id: d!, state: "cancelled" });
+    agents[0]!.emit({ kind: "turn_end", reason: "interrupted" });
+    await tick();
+    expect(a.seen.some((m) => m.type === "prompt_removed")).toBe(false); // …but not ours
+    expect(count(a)).toBe(3);
+
+    agents[0]!.emit({ kind: "prompt_state", id: c!, state: "started" });
+    await tick();
+    expect(a.seen.find((m) => m.type === "prompt_read")).toEqual({ type: "prompt_read", id: c, how: "now", stopped: "t1" });
+    // Sent again under new agent ids, in order; still the same prompts in the queue.
+    const resent = agents[0]!.promptIds.slice(-2);
+    expect(agents[0]!.prompts.slice(-2)).toEqual(["B", "D"]);
+    expect(resent).not.toContain(b);
+    expect(count(a)).toBe(2);
+
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "cancelled" }); // a stale line for the old id
+    agents[0]!.emit({ kind: "prompt_state", id: resent[0]!, state: "started" });
+    await tick();
+    expect(a.seen.filter((m) => m.type === "prompt_read").at(-1)).toMatchObject({ type: "prompt_read", id: b });
+    expect(a.seen.some((m) => m.type === "prompt_removed")).toBe(false);
+    expect(count(a)).toBe(1);
+  });
+
+  it("⌘↵ sends a new prompt now instead of queueing it", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "urgent", sendNow: true });
+    await tick();
+    const [id] = queuedIds(a);
+    expect(agents[0]!.sentNow).toEqual([id]);
   });
 });

@@ -1,4 +1,4 @@
-import { Ellipsis, Eye, Globe, GitFork, Hand, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
+import { Ellipsis, Eye, Globe, GitFork, Hand, MessageCircleQuestion, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
 import { Preview } from "@/components/conversation/preview";
 import type { Chip, Step } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ const LOOK: Record<Step["kind"], { icon: LucideIcon; tint: string }> = {
   web: { icon: Globe, tint: "text-run" },
   task: { icon: GitFork, tint: "text-primary" },
   think: { icon: Ellipsis, tint: "text-faint" },
+  question: { icon: MessageCircleQuestion, tint: "text-muted-foreground" },
   other: { icon: Wrench, tint: "text-muted-foreground" },
 };
 
@@ -21,6 +22,8 @@ const CHIP: Record<Chip["tone"], string> = {
   ok: "text-add",
   bad: "text-destructive",
   wait: "bg-wait/10 text-wait",
+  note: "text-muted-foreground",
+  plain: "text-secondary-foreground",
 };
 
 /** A run of consecutive agent steps: "Claude Code · 4 steps", a line, and the raw toggle. */
@@ -51,14 +54,20 @@ export function StepGroup(props: { agent: string; steps: Step[]; raw: boolean; o
 
 function StepRow({ step, raw }: { step: Step; raw: boolean }) {
   const { icon: Icon, tint } = LOOK[step.kind];
-  // The question itself is docked above the composer (3c3); here the step just says it waits.
-  const chips: Chip[] = step.ask ? [...step.chips, { text: "Waiting for you", tone: "wait" }] : step.chips;
+  // The ask (3c3) and the agent's questions (D54) are docked above the composer; here the step
+  // just says it waits. Questions: amber while open, green once answered, muted otherwise.
+  const waiting = Boolean(step.ask) || (step.question !== undefined && !step.question.outcome);
+  const chips: Chip[] = waiting ? [...step.chips, { text: "Waiting for you", tone: "wait" }] : step.chips;
+  const answered = step.question?.outcome === "answered";
   const hasRaw = Boolean(step.edit ?? step.raw.command ?? step.raw.call);
   return (
     <div className="flex gap-3">
       <span
         aria-hidden="true"
-        className={cn("flex size-6.5 shrink-0 items-center justify-center rounded-full", step.ask ? "bg-wait/10 text-wait" : cn("bg-secondary", tint))}
+        className={cn(
+          "flex size-6.5 shrink-0 items-center justify-center rounded-full",
+          waiting ? "bg-wait/10 text-wait" : answered ? "bg-add/10 text-add" : cn("bg-secondary", tint),
+        )}
       >
         {step.ask ? <Hand className="size-3.5" /> : <Icon className="size-3.5" strokeWidth={2.2} />}
       </span>
@@ -68,8 +77,10 @@ function StepRow({ step, raw }: { step: Step; raw: boolean }) {
         {chips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {chips.map((chip, i) => (
-              <span key={i} className={cn("inline-flex h-5 items-center rounded-full bg-secondary px-2 text-xs", CHIP[chip.tone])}>
-                {chip.text}
+              // max-w-full + truncate: a long path stays on its one line instead of spilling over.
+              <span key={i} title={chip.text} className={cn("inline-flex h-5 max-w-full items-center gap-1 rounded-full bg-secondary px-2 text-xs", CHIP[chip.tone])}>
+                {chip.label && <span className="shrink-0 text-muted-foreground">{chip.label} ·</span>}
+                <span className="truncate">{chip.text}</span>
               </span>
             ))}
           </div>

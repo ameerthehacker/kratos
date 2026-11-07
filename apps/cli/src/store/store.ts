@@ -72,6 +72,11 @@ export class SessionStore {
     this.db.update(sessions).set({ effort }).where(eq(sessions.id, sessionId)).run();
   }
 
+  /** Remember the permission mode a session runs in (D53). */
+  setPermissionMode(sessionId: string, permissionMode: string): void {
+    this.db.update(sessions).set({ permissionMode }).where(eq(sessions.id, sessionId)).run();
+  }
+
   /** Mark a session done, or reopen it (3d2). Housekeeping: it doesn't change its place in Recent. */
   setDone(sessionId: string, done: boolean): void {
     this.db

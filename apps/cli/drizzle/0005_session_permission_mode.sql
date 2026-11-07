@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `permission_mode` text;

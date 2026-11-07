@@ -4,6 +4,7 @@ import {
   AgentEvent,
   type AgentAdapter,
   type AgentModel,
+  type AgentPermissionMode,
   type AgentSession,
   type Conversation,
 } from "@kratos/core";
@@ -11,7 +12,7 @@ import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { toEvents } from "./map.js";
-import { CliMessage, GetSettingsResponse, InitializeResponse } from "./protocol.js";
+import { CliMessage, GetSettingsResponse, InitializeResponse, SetPermissionModeResponse } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
@@ -29,6 +30,7 @@ export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): 
     id: "claude-code",
     displayName: "Claude Code",
     listModels,
+    permissionModes: PERMISSION_MODES,
     startSession: (options) => startSession(claudePath, options, listModels),
   };
 }
@@ -62,6 +64,25 @@ async function fetchModels(claudePath: string): Promise<AgentModel[]> {
   }
 }
 
+/**
+ * Claude Code's permission modes (D53), from `claude --help` and checked on the real CLI. The CLI
+ * has no request that lists them, so the adapter knows them; the CLI still refuses unknown ones.
+ */
+const PERMISSION_MODES: AgentPermissionMode[] = [
+  { id: "default", label: "Ask before acting", description: "Asks before editing files or running commands.", isDefault: true },
+  { id: "acceptEdits", label: "Accept edits", description: "Edits files without asking; asks before other commands." },
+  { id: "plan", label: "Plan first", description: "Only reads and plans; asks you to approve the plan before changing anything." },
+  { id: "auto", label: "Auto", description: "Claude Code's own checker decides what needs your approval." },
+  { id: "dontAsk", label: "Don't ask", description: "Never asks: anything not already allowed is refused." },
+  {
+    id: "bypassPermissions",
+    label: "Bypass permissions",
+    description: "No checks at all: every edit and command runs without asking.",
+    dangerous: true,
+  },
+];
+const CLAUDE_DEFAULT_MODE = "default";
+
 /** Claude's own model id for "its default"; Kratos uses null for that and maps it here (3c4). */
 const CLAUDE_DEFAULT_MODEL = "default";
 
@@ -83,7 +104,7 @@ function startSession(
   options: Parameters<AgentAdapter["startSession"]>[0],
   listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
-  const { cwd, requestPermission, conversation, model, effort } = options;
+  const { cwd, requestPermission, conversation, model, effort, permissionMode } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
   // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
@@ -92,9 +113,13 @@ function startSession(
     ...conversationArgs(conversation),
     ...(model ? ["--model", model] : []),
     ...(effort ? ["--effort", effort] : []),
+    ...(permissionMode ? ["--permission-mode", permissionMode] : []),
+    // Makes Bypass reachable by set_permission_mode later; it doesn't turn it on (D53).
+    "--allow-dangerously-skip-permissions",
   ];
   const proc = new JsonLinesProcess(claudePath, args, { cwd });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
+  let currentMode = permissionMode ?? CLAUDE_DEFAULT_MODE; // to report only real changes
 
   const control = new ControlChannel(proc); // requests we send (set_model, effort, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
@@ -142,6 +167,14 @@ function startSession(
       if (!parsed.success) continue; // a line kind Kratos doesn't use
       const msg = parsed.data;
       if (control.handle(msg)) continue; // an answer to one of our requests
+      if (msg.type === "system") {
+        // The CLI repeats the mode at every turn's start: only a change is an event (D53).
+        if (msg.permissionMode && msg.permissionMode !== currentMode) {
+          currentMode = msg.permissionMode;
+          yield { kind: "permission_mode", mode: currentMode };
+        }
+        continue;
+      }
       if (msg.type === "control_request") void answer(msg);
       else if (msg.type === "control_cancel_request") pending.get(msg.request_id)?.abort();
       else {
@@ -180,6 +213,11 @@ function startSession(
         throw new Error(`${currentModel} has no effort level "${level}" (it has: ${levels.join(", ") || "none"})`);
       }
       await control.request({ subtype: "apply_flag_settings", settings: { effortLevel: level } });
+    },
+    async setPermissionMode(mode) {
+      // The CLI refuses unknown modes itself, and Bypass unless started with the allow flag.
+      const answer = await control.request({ subtype: "set_permission_mode", mode });
+      return SetPermissionModeResponse.parse(answer).mode;
     },
     async effort() {
       const answer = GetSettingsResponse.parse(await control.request({ subtype: "get_settings" }, { timeoutMs: 30_000 }));

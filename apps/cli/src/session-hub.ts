@@ -64,6 +64,8 @@ export class SessionHub {
           send({ type: "error", message: `Unknown harness ${message.harness}` });
           return;
         }
+        // Checked before anything starts: a refused mode must not start a session in another one.
+        if (message.permissionMode && !this.modeAllowed(send, message.permissionMode, message.confirmDangerous)) return;
         // From Home: new work gets a new session, unless the viewed one is still empty anyway.
         // Whatever this tab was viewing keeps running (D41).
         let target = viewing;
@@ -75,6 +77,7 @@ export class SessionHub {
         // The model chosen on Home applies to the session this prompt starts (D43).
         if (!target.hasPrompts && message.model) target.setModel(message.model);
         if (!target.hasPrompts && message.effort) target.setEffort(message.effort);
+        if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
         // New work on a done session means it isn't done (owner, 3d2).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
         target.prompt(message.text);
@@ -85,6 +88,9 @@ export class SessionHub {
         return;
       case "set_effort":
         viewing.setEffort(message.effort);
+        return;
+      case "set_permission_mode":
+        if (this.modeAllowed(send, message.mode, message.confirmDangerous)) viewing.setPermissionMode(message.mode);
         return;
       case "open_session":
         if (this.store.get(message.id)?.projectDir === this.cwd) this.view(send, message.id);
@@ -111,6 +117,22 @@ export class SessionHub {
       case "open_in":
         return; // handled by the server itself
     }
+  }
+
+  /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,
+   * which only the consent dialog sends (D53). Tells the tab why when not. */
+  private modeAllowed(send: Send, id: string, confirmDangerous = false): boolean {
+    const mode = this.adapter.permissionModes.find((m) => m.id === id);
+    if (!mode) {
+      send({ type: "error", message: `${this.adapter.displayName} has no permission mode "${id}"` });
+      return false;
+    }
+    if (mode.dangerous && !confirmDangerous) {
+      send({ type: "error", message: `"${mode.label}" turns off permission checks: it needs your explicit consent` });
+      this.log.warn({ mode: id }, "dangerous permission mode refused without consent");
+      return false;
+    }
+    return true;
   }
 
   /** Point a tab at a session: announce it, then replay its log. */
@@ -154,6 +176,7 @@ export class SessionHub {
         harness: s.agent,
         model: s.model,
         effort: this.runtimes.get(s.id)?.effort ?? s.effort,
+        permissionMode: this.runtimes.get(s.id)?.permissionMode ?? s.permissionMode,
         done: s.doneAt !== null,
       })),
     };
@@ -172,7 +195,7 @@ export class SessionHub {
   private loadHarnesses(): void {
     const publish = (models: Harness["models"]) => {
       if (models.length > 0) this.log.info({ harness: this.adapter.id, count: models.length }, "models loaded");
-      this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models }];
+      this.harnesses = [{ id: this.adapter.id, name: this.adapter.displayName, models, permissionModes: [...this.adapter.permissionModes] }];
       this.broadcast({ type: "harnesses", list: this.harnesses });
     };
     this.adapter.listModels().then(publish, (err) => {

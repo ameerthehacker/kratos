@@ -30,6 +30,9 @@ export const CliMessage = z.discriminatedUnion("type", [
     ...parent,
   }),
   z.object({ type: z.literal("result"), subtype: z.string() }),
+  /** Status lines: `init` at each turn's start and `status` on a change both carry the permission
+   * mode in use (verified on the real CLI, D53). */
+  z.object({ type: z.literal("system"), subtype: z.string(), permissionMode: z.string().optional() }),
   z.object({
     type: z.literal("control_request"),
     request_id: z.string(),
@@ -68,6 +71,9 @@ export const InitializeResponse = z.object({
     }),
   ),
 });
+
+/** The answer to `set_permission_mode`: the mode the CLI applied ("manual" comes back as "default"). */
+export const SetPermissionModeResponse = z.object({ mode: z.string() });
 
 /** The part of the `get_settings` answer Kratos uses: what the CLI is really applying (D51).
  * (`effective` only merges settings files; `applied` is what the running model gets.) */

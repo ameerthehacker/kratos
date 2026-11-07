@@ -189,6 +189,45 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Done: both checked with real `claude` (Haiku 5.5 low → high, CLI reported high;
             xhigh → Opus 4.6, chip shows High as the CLI reports). The chip hides a level the
             model doesn't list; unknown level ids are capitalized with lodash-es (owner).
+    - [ ] **3q. Permission modes** (owner, D53) — choose how much the agent may do without
+          asking, from what each harness offers. Found on the real CLI (2.1.308, tiny Haiku turns
+          in a scratch folder): modes `default` (asks for edits and commands), `acceptEdits`
+          (edits and file commands like `touch` go through; other commands ask), `auto` (the
+          CLI's own checker decides; nothing reached Kratos), `dontAsk` (anything not pre-allowed
+          is refused, no card), `plan` (read-only; the agent asks to leave with `ExitPlanMode`
+          carrying the plan, and on approval the CLI switches itself to `default`),
+          `bypassPermissions` (no checks; only switchable if the CLI was started with
+          `--allow-dangerously-skip-permissions`). `--permission-mode` sets it at start;
+          `set_permission_mode {mode}` switches live and answers with the mode applied ("manual"
+          → "default"; unknown modes are refused by the CLI); every change, the agent's own
+          included, is announced as a `system`/`status` line with `permissionMode`.
+      - [x] **3q1. Backend** (~250 incl. tests) — done: real CLI through the built adapter
+            (plan, manual→default, Bypass via the allow flag, turbo refused; one event per real
+            change) and over WebSocket (Bypass refused without consent, allowed with it, stored).
+            - core: `AgentPermissionMode {id, label, description, isDefault?, dangerous?}`;
+              `AgentAdapter.permissionModes` (Claude's six; the CLI doesn't list them, so the
+              adapter knows them); `startSession({ permissionMode })`;
+              `AgentSession.setPermissionMode(mode)` (resolves with the mode applied); new
+              AgentEvent `permission_mode {mode}` for every change the agent reports, so
+              agent-made switches (leaving plan mode) are followed too.
+            - Claude adapter: `--permission-mode` at start; always start with
+              `--allow-dangerously-skip-permissions` so Bypass can be switched on live (it only
+              makes it reachable; sessions still start in the chosen mode); map `system`/`status`
+              → `permission_mode`.
+            - store: `sessions.permission_mode` (migration 0005; null = the agent's default).
+            - protocol: `Harness.permissionModes`; `prompt.permissionMode?` (Home's pick);
+              client `set_permission_mode {mode, confirmDangerous?}` — the server refuses a
+              `dangerous` mode without `confirmDangerous: true`, so only the consent dialog can
+              turn Bypass on; `SessionSummary.permissionMode` = the mode in use.
+            - Tests: fake claude learns `--permission-mode`, `set_permission_mode` (Bypass refused
+              without the allow flag), `status` lines, and a plan turn (ExitPlanMode ask → status
+              default); adapter + hub tests incl. the refused-without-consent case.
+      - [ ] **3q2. UI** (~150) — a mode chip next to the agent chip ("◎ Ask ▾") listing the
+            harness's modes with one-line descriptions; Home remembers the pick (with model and
+            effort), a session switches live and shows agent-made changes (plan → Ask). Picking
+            Bypass opens a consent dialog first (what it turns off, that it's this session only).
+            Later, not in this step: a proper plan-approval card for `ExitPlanMode` (today it
+            shows as a generic "Use ExitPlanMode" ask).
     - [x] **3c2. Conversation** (owner: render chat messages + tool calls like the "Kelpie"
           design's chat — only that part, not its agent pane/workbench). Two vertical slices:
       - [x] **3c2a. Messages + tool steps** (~200, D45) — `components/conversation/`:

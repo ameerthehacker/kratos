@@ -153,11 +153,11 @@ describe("Claude Code adapter: conversations", () => {
     expect(fresh).not.toContain("--resume");
 
     const named = await argsFor({ id: ID, resume: false });
-    expect(named.slice(named.indexOf("--session-id"))).toEqual(["--session-id", ID]);
+    expect(named.slice(named.indexOf("--session-id"), named.indexOf("--session-id") + 2)).toEqual(["--session-id", ID]);
     expect(named).not.toContain("--resume");
 
     const resumed = await argsFor({ id: ID, resume: true });
-    expect(resumed.slice(resumed.indexOf("--resume"))).toEqual(["--resume", ID]);
+    expect(resumed.slice(resumed.indexOf("--resume"), resumed.indexOf("--resume") + 2)).toEqual(["--resume", ID]);
     expect(resumed).not.toContain("--session-id");
   });
 });
@@ -263,6 +263,68 @@ describe("Claude Code adapter: effort (D51)", () => {
       expect(await session.effort()).toBe("high");
       await session.setModel(null);
       expect(await session.effort()).toBe("xhigh");
+    } finally {
+      await done();
+    }
+  });
+});
+
+describe("Claude Code adapter: permission modes (D53)", () => {
+  /** A session kept running like the hub does; collects every event. */
+  function running(options: { permissionMode?: string } = {}, requestPermission: RequestPermission = async () => ({ decision: "allow" })) {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({ cwd: process.cwd(), requestPermission, ...options });
+    const seen: AgentEvent[] = [];
+    const pump = (async () => {
+      for await (const event of session.events) seen.push(event);
+    })();
+    const reports = () => seen.flatMap((e) => (e.kind === "tool_result" ? [e.output] : []));
+    const modes = () => seen.flatMap((e) => (e.kind === "permission_mode" ? [e.mode] : []));
+    const turn = async (prompt: string) => {
+      const before = seen.filter((e) => e.kind === "turn_end").length;
+      session.send(prompt);
+      await vi.waitFor(() => expect(seen.filter((e) => e.kind === "turn_end").length).toBe(before + 1));
+    };
+    return { session, turn, reports, modes, done: async () => (await session.stop(), await pump) };
+  }
+
+  it("lists Claude's six modes, Bypass marked dangerous and Ask as the default", () => {
+    const { permissionModes } = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE });
+    expect(permissionModes.map((m) => m.id)).toEqual(["default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"]);
+    expect(permissionModes.filter((m) => m.dangerous).map((m) => m.id)).toEqual(["bypassPermissions"]);
+    expect(permissionModes.find((m) => m.isDefault)?.id).toBe("default");
+  });
+
+  it("starts in the chosen mode, switches live (also to Bypass), and reports each change once", async () => {
+    const { session, turn, reports, modes, done } = running({ permissionMode: "acceptEdits" });
+    try {
+      await turn("mode");
+      expect(reports()).toEqual(["acceptEdits"]);
+      expect(modes()).toEqual([]); // the turn's init line repeats the start mode: not a change
+      expect(await session.setPermissionMode("manual")).toBe("default"); // the CLI's applied mode
+      expect(await session.setPermissionMode("bypassPermissions")).toBe("bypassPermissions"); // allow flag passed
+      await turn("mode");
+      expect(reports()).toEqual(["acceptEdits", "bypassPermissions"]);
+      expect(modes()).toEqual(["default", "bypassPermissions"]);
+    } finally {
+      await done();
+    }
+  });
+
+  it("passes the CLI's refusal of an unknown mode through", async () => {
+    const { session, done } = running();
+    try {
+      await expect(session.setPermissionMode("turbo")).rejects.toThrow(/must be one of/);
+    } finally {
+      await done();
+    }
+  });
+
+  it("follows the agent's own switch: approving a plan leaves plan mode", async () => {
+    const { turn, reports, modes, done } = running({ permissionMode: "plan" });
+    try {
+      await turn("plan");
+      expect(reports()).toEqual(["default"]);
+      expect(modes()).toEqual(["default"]);
     } finally {
       await done();
     }

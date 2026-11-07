@@ -49,6 +49,9 @@ export const AgentEvent = z.discriminatedUnion("kind", [
     action: ToolAction.optional(),
   }),
   z.object({ kind: z.literal("tool_result"), id: z.string(), output: z.string(), isError: z.boolean() }),
+  /** The agent's permission mode changed — by Kratos, or by the agent itself (e.g. leaving plan
+   * mode once its plan is approved). D53. */
+  z.object({ kind: z.literal("permission_mode"), mode: z.string() }),
   /** The agent finished responding to a prompt. The session stays open for the next send(). */
   z.object({
     kind: z.literal("turn_end"),
@@ -112,12 +115,29 @@ export const AgentModel = z.object({
 });
 export type AgentModel = z.infer<typeof AgentModel>;
 
+/**
+ * How much the agent may do without asking (D53), as the agent defines it: e.g. ask first, accept
+ * edits, plan only. `dangerous` = it turns the checks off; Kratos only switches to it with the
+ * owner's explicit consent.
+ */
+export const AgentPermissionMode = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  /** The agent's own default: choosing it means "no mode chosen" (null). */
+  isDefault: z.boolean().optional(),
+  dangerous: z.boolean().optional(),
+});
+export type AgentPermissionMode = z.infer<typeof AgentPermissionMode>;
+
 /** A coding agent Kratos knows how to drive (a "harness"). One adapter per agent (e.g. "claude-code"). */
 export interface AgentAdapter {
   readonly id: string;
   readonly displayName: string;
   /** The models this agent offers, as the agent itself reports them (never hardcoded). */
   listModels(): Promise<AgentModel[]>;
+  /** The permission modes this agent has (D53); empty = it has no modes (always asks Kratos). */
+  readonly permissionModes: readonly AgentPermissionMode[];
   /** Without `conversation`, a fresh, unnamed conversation; without `model` or `effort`, the
    * agent's default. An `effort` the model lacks is the agent's to handle (Claude clamps it; D51). */
   startSession(options: {
@@ -126,6 +146,8 @@ export interface AgentAdapter {
     conversation?: Conversation;
     model?: string;
     effort?: string;
+    /** One of `permissionModes`; without it, the agent's default mode (D53). */
+    permissionMode?: string;
   }): AgentSession;
 }
 
@@ -147,6 +169,10 @@ export interface AgentSession {
   /** The effort level the agent is really using now (it may differ from what was asked, e.g.
    * after a model switch); null = none (the model has no effort control, or the agent won't say). */
   effort(): Promise<string | null>;
+  /** Switch the permission mode (one of the adapter's `permissionModes`). Resolves with the mode
+   * the agent applied once it confirms; like setModel, needs `events` consumed (D53). Changes
+   * also arrive as `permission_mode` events — including ones the agent makes itself. */
+  setPermissionMode(mode: string): Promise<string>;
   /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }

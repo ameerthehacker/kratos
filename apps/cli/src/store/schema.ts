@@ -19,6 +19,9 @@ export const sessions = sqliteTable(
     model: text("model"),
     /** The effort level chosen for it (D51); null = never chosen (the agent's default). */
     effort: text("effort"),
+    /** The permission mode it runs in, as last chosen or reported by the agent (D53); null = the
+     * agent's default, never chosen. */
+    permissionMode: text("permission_mode"),
     /** When the owner marked the session done (3d2); null = still being worked on. */
     doneAt: integer("done_at", { mode: "timestamp_ms" }),
     /** Set the first time the agent process starts; from then on, starts must resume. */

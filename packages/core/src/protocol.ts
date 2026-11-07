@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentEvent, AgentModel, PermissionDecision, PermissionRequest } from "./agent.js";
+import { AgentEvent, AgentModel, AgentPermissionMode, PermissionDecision, PermissionRequest } from "./agent.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -21,6 +21,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
     harness: z.string().optional(),
     model: z.string().optional(),
     effort: z.string().optional(),
+    /** The mode to start in (D53); a `dangerous` one also needs `confirmDangerous: true`. */
+    permissionMode: z.string().optional(),
+    confirmDangerous: z.boolean().optional(),
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
@@ -30,6 +33,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Switch the viewed session's effort level, also while its agent is running (D51). There is
    * no "back to default": the agent's reset isn't reliable, so Kratos only sets real levels. */
   z.object({ type: z.literal("set_effort"), effort: z.string().min(1) }),
+  /** Switch the viewed session's permission mode, also while its agent runs (D53). A `dangerous`
+   * mode (Bypass) is refused unless `confirmDangerous` is true — set only by the consent dialog. */
+  z.object({ type: z.literal("set_permission_mode"), mode: z.string().min(1), confirmDangerous: z.boolean().optional() }),
   z.object({ type: z.literal("interrupt") }),
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
@@ -61,6 +67,9 @@ export const SessionSummary = z.object({
   /** The effort level in use, as the agent last reported it (else the one chosen); null = not
    * known yet (agent never ran, nothing chosen) or the model has none (D51). */
   effort: z.string().nullable(),
+  /** The permission mode in use, as the agent last reported it (else the one chosen); null = the
+   * agent's default (D53). */
+  permissionMode: z.string().nullable(),
   /** The owner marked it done (3d2): listed under "Done", hidden from Recent. */
   done: z.boolean(),
 });
@@ -76,7 +85,13 @@ export const Editor = z.object({
 export type Editor = z.infer<typeof Editor>;
 
 /** A harness the server can run, with the models it reports (D43). */
-export const Harness = z.object({ id: z.string(), name: z.string(), models: z.array(AgentModel) });
+export const Harness = z.object({
+  id: z.string(),
+  name: z.string(),
+  models: z.array(AgentModel),
+  /** Its permission modes (D53); empty = it has none. */
+  permissionModes: z.array(AgentPermissionMode),
+});
 export type Harness = z.infer<typeof Harness>;
 
 /** Server → browser. Everything except pong/error/session/sessions/harnesses is in a session's log. */

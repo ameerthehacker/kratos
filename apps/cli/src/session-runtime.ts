@@ -28,6 +28,8 @@ export class SessionRuntime {
   private effortChoice: string | null;
   /** The level the agent last said it really uses; undefined = not asked since the last change. */
   private effortInUse: string | null | undefined;
+  /** The permission mode: chosen, or as the agent last reported it; null = the agent's default (D53). */
+  private mode: string | null;
   private session: AgentSession | undefined;
   /** A prompt was sent and its turn hasn't ended yet. */
   private turnOpen = false;
@@ -50,6 +52,7 @@ export class SessionRuntime {
     this.agentStarted = stored.agentStartedAt !== null;
     this.model = stored.model;
     this.effortChoice = stored.effort;
+    this.mode = stored.permissionMode;
     this.log = deps.store.load(id);
     // Asks left open by a previous run can't be answered: the agent process that asked is gone.
     for (const askId of unresolvedAsks(this.log)) {
@@ -74,6 +77,10 @@ export class SessionRuntime {
    * one chosen; null = not known (or the model has none). D51. */
   get effort(): string | null {
     return this.effortInUse !== undefined ? this.effortInUse : this.effortChoice;
+  }
+
+  get permissionMode(): string | null {
+    return this.mode;
   }
 
   prompt(text: string): void {
@@ -118,6 +125,26 @@ export class SessionRuntime {
     }, this.reportFailure("Switching effort"));
   }
 
+  /** Use another permission mode (D53): switched live if the agent runs — kept as the mode the
+   * agent says it applied — else stored and passed at its next start. Checks (known mode, consent
+   * for dangerous ones) are the hub's. */
+  setPermissionMode(mode: string): void {
+    const session = this.session;
+    this.logger.info({ mode, live: session !== undefined }, "permission mode set");
+    if (!session) {
+      this.keepMode(mode);
+      return;
+    }
+    session.setPermissionMode(mode).then((applied) => this.keepMode(applied), this.reportFailure("Switching permission mode"));
+  }
+
+  private keepMode(mode: string): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.deps.store.setPermissionMode(this.id, mode);
+    this.deps.onChange();
+  }
+
   private keepEffort(effort: string): void {
     this.effortChoice = effort;
     this.effortInUse = undefined;
@@ -158,10 +185,16 @@ export class SessionRuntime {
       conversation: { id: this.id, resume: this.agentStarted },
       model: this.model ?? undefined,
       effort: this.effortChoice ?? undefined,
+      permissionMode: this.mode ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
     });
     this.logger.info(
-      { model: this.model ?? "(agent default)", effort: this.effortChoice ?? "(agent default)", resume: this.agentStarted },
+      {
+        model: this.model ?? "(agent default)",
+        effort: this.effortChoice ?? "(agent default)",
+        permissionMode: this.mode ?? "(agent default)",
+        resume: this.agentStarted,
+      },
       "agent started",
     );
     this.deps.store.markAgentStarted(this.id);
@@ -177,6 +210,11 @@ export class SessionRuntime {
     try {
       for await (const event of session.events) {
         this.publish({ type: "agent_event", event });
+        // The agent changed mode — on our request or on its own (leaving plan mode): follow it.
+        if (event.kind === "permission_mode") {
+          this.logger.info({ mode: event.mode }, "permission mode changed");
+          this.keepMode(event.mode);
+        }
         if (event.kind === "turn_end") {
           this.logger.debug({ event }, "turn ended");
           this.turnOpen = false;

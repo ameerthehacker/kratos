@@ -3,6 +3,7 @@ import type {
   AgentAdapter,
   AgentEvent,
   AgentModel,
+  AgentPermissionMode,
   AgentSession,
   Harness,
   PermissionRequest,
@@ -46,6 +47,11 @@ class FakeSession implements AgentSession {
   async effort() {
     return this.applied !== undefined ? this.applied : (this.options.effort ?? "high");
   }
+  readonly modeSwitches: string[] = [];
+  async setPermissionMode(mode: string) {
+    this.modeSwitches.push(mode);
+    return mode;
+  }
   async stop() {
     this.stopped = true;
     this.stream.close();
@@ -63,6 +69,12 @@ class FakeSession implements AgentSession {
   }
 }
 
+const MODES: AgentPermissionMode[] = [
+  { id: "default", label: "Ask", description: "asks", isDefault: true },
+  { id: "acceptEdits", label: "Accept edits", description: "edits freely" },
+  { id: "bypassPermissions", label: "Bypass", description: "no checks", dangerous: true },
+];
+
 const MODELS: AgentModel[] = [
   { id: "default", label: "Default", description: "recommended", group: "latest" },
   { id: "haiku", label: "Haiku", description: "fast", group: "latest" },
@@ -75,6 +87,7 @@ function setup() {
     id: "fake",
     displayName: "Fake",
     listModels: async () => MODELS,
+    permissionModes: MODES,
     startSession: (options) => {
       const agent = new FakeSession(options);
       agents.push(agent);
@@ -421,8 +434,8 @@ describe("SessionHub: harness & model (D43)", () => {
     const { tab } = setup();
     const early = tab(); // connected before the models are known
     await tick();
-    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS }]);
-    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS }]);
+    expect(early.harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
+    expect(tab().harnesses).toEqual([{ id: "fake", name: "Fake", models: MODELS, permissionModes: MODES }]);
   });
 
   it("starts a session with the model picked on Home and shows it in the list", () => {
@@ -474,6 +487,7 @@ describe("SessionHub: harness & model (D43)", () => {
       listModels: async () => {
         throw new Error("claude not logged in");
       },
+      permissionModes: [],
       startSession: () => {
         throw new Error("unused");
       },
@@ -483,7 +497,7 @@ describe("SessionHub: harness & model (D43)", () => {
     await tick();
     const got: ServerMessage[] = [];
     hub.connect((m) => got.push(m));
-    expect(got.find((m) => m.type === "harnesses")).toEqual({ type: "harnesses", list: [{ id: "fake", name: "Fake", models: [] }] });
+    expect(got.find((m) => m.type === "harnesses")).toEqual({ type: "harnesses", list: [{ id: "fake", name: "Fake", models: [], permissionModes: [] }] });
     expect(lines).toContainEqual(
       expect.objectContaining({ level: 40, component: "hub", err: expect.objectContaining({ message: "claude not logged in" }) }),
     );
@@ -558,5 +572,68 @@ describe("SessionHub: effort (D51)", () => {
     expect(listed(a)).toBe("medium");
     a.receive({ type: "prompt", text: "first" });
     expect(agents[0]!.options.effort).toBe("medium");
+  });
+});
+
+describe("SessionHub: permission modes (D53)", () => {
+  const listed = (t: { list: SessionSummary[]; viewing: string }) => t.list.find((s) => s.id === t.viewing)?.permissionMode;
+
+  it("tells tabs the harness's modes, and starts a session in the mode picked on Home", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    await tick();
+    expect(a.harnesses[0]?.permissionModes).toEqual(MODES);
+    expect(listed(a)).toBeNull(); // never chosen: the agent's default
+    a.receive({ type: "prompt", text: "first", newSession: true, permissionMode: "acceptEdits" });
+    expect(agents[0]!.options.permissionMode).toBe("acceptEdits");
+    expect(listed(a)).toBe("acceptEdits");
+  });
+
+  it("switches a running session live, follows the agent's own switches, and resumes in the mode", async () => {
+    const { agents, tab, restart } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "set_permission_mode", mode: "acceptEdits" });
+    await tick();
+    expect(agents[0]!.modeSwitches).toEqual(["acceptEdits"]);
+    expect(listed(a)).toBe("acceptEdits");
+
+    agents[0]!.emit({ kind: "permission_mode", mode: "default" }); // e.g. the agent left plan mode
+    await tick();
+    expect(listed(a)).toBe("default");
+
+    restart();
+    const late = tab();
+    late.receive({ type: "prompt", text: "after restart" });
+    expect(agents.at(-1)!.options).toMatchObject({ permissionMode: "default", conversation: { resume: true } });
+  });
+
+  it("refuses Bypass without explicit consent — live or from Home — and allows it with consent", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first", newSession: true, permissionMode: "bypassPermissions" });
+    expect(agents).toHaveLength(0); // nothing started in some other mode instead
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining("needs your explicit consent") });
+
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "set_permission_mode", mode: "bypassPermissions" });
+    await tick();
+    expect(agents[0]!.modeSwitches).toEqual([]);
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringContaining("needs your explicit consent") });
+
+    a.receive({ type: "set_permission_mode", mode: "bypassPermissions", confirmDangerous: true });
+    await tick();
+    expect(agents[0]!.modeSwitches).toEqual(["bypassPermissions"]);
+    expect(listed(a)).toBe("bypassPermissions");
+  });
+
+  it("refuses a mode the harness doesn't have", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "set_permission_mode", mode: "turbo" });
+    await tick();
+    expect(agents[0]!.modeSwitches).toEqual([]);
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: 'Fake has no permission mode "turbo"' });
   });
 });

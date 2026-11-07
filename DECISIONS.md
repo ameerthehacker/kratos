@@ -156,6 +156,37 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D53. Permission modes: the harness's own, switched live, Bypass only with consent (step 3q, owner)
+- Owner: choose permission modes like the harnesses allow (auto, accept edits, …), including
+  Bypass, but only after a consent dialog; Home remembers the pick like model and effort.
+- Found on the real CLI (2.1.308; tiny Haiku turns in a scratch folder under $HOME — a /tmp
+  folder skews it: macOS's /tmp symlink makes every write "outside allowed working directories"):
+  - default asks for edits and commands; acceptEdits lets edits and file commands (`touch`)
+    through; auto asked Kratos nothing (its own checker); dontAsk refused both without asking;
+    plan writes its plan to `~/.claude/plans/`, asks via `ExitPlanMode {plan}`, and on approval
+    switches itself to default; bypassPermissions needs the CLI started with
+    `--allow-dangerously-skip-permissions` to be switchable (it isn't turned on by it).
+  - `set_permission_mode {mode}` → `{mode}` applied ("manual" → "default"); unknown modes are
+    refused by the CLI. Every change, the agent's own included, comes as `system`/`status` with
+    `permissionMode`; each turn's `system`/`init` repeats the current one.
+- Shape: `AgentPermissionMode {id, label, description, isDefault?, dangerous?}` on the adapter
+  (Claude's six are known to the adapter: the CLI has no request that lists them);
+  `startSession({ permissionMode })`, `setPermissionMode()` → applied mode; AgentEvent
+  `permission_mode` only on a real change (the adapter drops the per-turn repeats), so Kratos
+  follows switches the agent makes itself. It goes into the session log like any agent event.
+- Consent is enforced by the server, not just the UI: a `dangerous` mode in `set_permission_mode`
+  or a Home `prompt` is refused unless `confirmDangerous: true` (only the consent dialog sends it),
+  and a refused Home prompt starts nothing. Unknown modes are refused before reaching the agent.
+- Every Claude process starts with `--allow-dangerously-skip-permissions`, so Bypass can be
+  switched on mid-session without restarting the agent. Alternative: restart (resume) the agent
+  with `--permission-mode bypassPermissions` when chosen — no flag on other sessions, but it
+  can't happen mid-turn. Only Kratos sends control requests, and the server gates the switch.
+- Store: `sessions.permission_mode` (migration 0005) = chosen or last reported; null = never
+  chosen. Resume passes it, so a session keeps its mode across restarts (Bypass included —
+  consent is per session, given once).
+- Later: a plan-approval card for `ExitPlanMode` (today a generic ask).
+- Reverse: additive — drop `set_permission_mode`/`permissionMode` and the allow flag.
+
 ### D52. Working indicator: the real step, or a word, shimmering (step 3d6, owner)
 - Owner: no "thinking…" loader like other agent IDEs; add one with a nice animation, not just
   "Thinking". Owner's picks from options: say the real step + playful words between steps;

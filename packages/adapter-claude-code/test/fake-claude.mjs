@@ -29,6 +29,17 @@ const MODELS = [
 // live (says success even to unknown values, which change nothing); get_settings reports the level
 // applied — the choice if the model has it, else the model's own default; null if it has none.
 let effortChoice = LEVELS.includes(flag("--effort")) ? flag("--effort") : undefined;
+// Permission modes (D53), like the real CLI: --permission-mode at start; set_permission_mode
+// answers {mode} ("manual" → "default"), refuses unknown modes, and refuses Bypass unless started
+// with --allow-dangerously-skip-permissions; every change is announced as a system/status line,
+// and every turn starts with a system/init line carrying the mode.
+const MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"];
+let mode = flag("--permission-mode") ?? "default";
+const setMode = (next) => {
+  if (next === mode) return;
+  mode = next;
+  out({ type: "system", subtype: "status", permissionMode: mode });
+};
 const appliedEffort = () => {
   const levels = MODELS.find((m) => m.value === model)?.supportedEffortLevels;
   if (!levels) return null;
@@ -90,6 +101,19 @@ const turns = {
     report(model);
     finish();
   },
+  // Report the permission mode we're in.
+  async mode() {
+    report(mode);
+    finish();
+  },
+  // Plan mode's way out: ask to leave with the plan; on approval, switch to default (like the CLI).
+  async plan() {
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "ExitPlanMode", input: { plan: "1. do it" } }] }, parent_tool_use_id: null });
+    const response = await ask({ subtype: "can_use_tool", tool_name: "ExitPlanMode", input: { plan: "1. do it" }, tool_use_id: "t1" });
+    if (response.response?.behavior === "allow") setMode("default");
+    report(mode);
+    finish();
+  },
   // Report the command-line arguments the adapter started us with.
   async args() {
     report(JSON.stringify(process.argv.slice(2)));
@@ -99,7 +123,10 @@ const turns = {
 
 for await (const line of createInterface({ input: process.stdin })) {
   const msg = JSON.parse(line);
-  if (msg.type === "user") void turns[msg.message.content]?.();
+  if (msg.type === "user") {
+    out({ type: "system", subtype: "init", permissionMode: mode });
+    void turns[msg.message.content]?.();
+  }
   else if (msg.type === "control_request" && msg.request.subtype === "interrupt") onInterrupt();
   else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });
   else if (msg.type === "control_request" && msg.request.subtype === "set_model") {
@@ -110,6 +137,17 @@ for await (const line of createInterface({ input: process.stdin })) {
     const level = msg.request.settings?.effortLevel;
     if (LEVELS.includes(level)) effortChoice = level;
     success(msg.request_id, {});
+  }
+  else if (msg.type === "control_request" && msg.request.subtype === "set_permission_mode") {
+    const wanted = msg.request.mode === "manual" ? "default" : msg.request.mode;
+    const error = (text) => out({ type: "control_response", response: { subtype: "error", request_id: msg.request_id, error: text } });
+    if (!MODES.includes(wanted)) error(`Cannot set permission mode: must be one of ${MODES.join(", ")}`);
+    else if (wanted === "bypassPermissions" && !process.argv.includes("--allow-dangerously-skip-permissions")) {
+      error("Cannot set permission mode to bypassPermissions because the session was not launched with --dangerously-skip-permissions");
+    } else {
+      setMode(wanted);
+      success(msg.request_id, { mode });
+    }
   }
   else if (msg.type === "control_request" && msg.request.subtype === "get_settings") {
     success(msg.request_id, { effective: {}, sources: [], applied: { model, effort: appliedEffort() } });

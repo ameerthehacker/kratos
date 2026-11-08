@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileCode, LoaderCircle } from "lucide-react";
+import { ChevronDown, FileCode, LoaderCircle, Pencil, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
@@ -15,6 +15,9 @@ import { Counts } from "@/components/review/counts";
 import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { FeaturePill } from "@/components/feature-pill";
+import { NameField } from "@/components/name-field";
+import { SessionTitle } from "@/components/session-title";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
 import { clientLog } from "@/lib/log";
@@ -199,13 +202,53 @@ export function SessionPage() {
   );
 }
 
-/** The open session's title bar (3d2): what it is, its status, and Mark as done / Reopen. */
+/** The open session's title bar (3d2): what it is, its status, and Mark as done / Reopen. Its
+ * title has a small menu (3z4): have the agent name it again, or rename it yourself. */
 function SessionHeader({ session }: { session: SessionSummary }) {
+  const send = useKratos((s) => s.send);
+  const [renaming, setRenaming] = useState(false);
   return (
     <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 pb-3">
-      <h1 className="min-w-0 flex-1 truncate text-base font-medium" title={sessionTitle(session)}>
-        {sessionTitle(session)}
-      </h1>
+      {renaming ? (
+        <NameField
+          icon={Pencil}
+          label="Session name"
+          placeholder="Name this session"
+          initial={sessionTitle(session)}
+          keepOnBlur
+          onDone={(title) => {
+            setRenaming(false);
+            if (title && title !== session.title) send({ type: "rename_session", sessionId: session.id, title });
+          }}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-secondary px-2.5 py-1"
+          iconClassName="size-3.5 text-muted-foreground"
+          inputClassName="h-7 text-base font-medium"
+        />
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <h1 className="min-w-0 truncate text-base font-medium" title={sessionTitle(session)}>
+            <SessionTitle session={session} />
+          </h1>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Session title"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronDown className="size-3.5" strokeWidth={2.2} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuItem disabled={session.titling || session.title === null} onClick={() => send({ type: "regenerate_title", sessionId: session.id })}>
+                <Sparkles className="size-4" />
+                {session.titling ? "Naming…" : "Regenerate title"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setRenaming(true)}>
+                <Pencil className="size-4" />
+                Rename…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
       <ChangesButton sessionId={session.id} />
       {/* Open: live status + a quiet check icon; done: the green "Done" chip, which reopens (3d7). */}
       {!session.done && <SessionStatus status={session.status} queued={session.queued} />}

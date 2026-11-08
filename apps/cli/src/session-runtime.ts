@@ -62,6 +62,8 @@ export class SessionRuntime {
   private readonly log: ServerMessage[];
   /** Has the agent ever been started for this conversation? Then every start must resume (D36). */
   private agentStarted: boolean;
+  /** The agent is naming the session (3z4). */
+  private naming = false;
   /** The model this session runs with; null = the agent's default (D43). */
   private model: string | null;
   /** The effort level chosen for this session; null = never chosen (D51). */
@@ -119,6 +121,11 @@ export class SessionRuntime {
     return this.log.some((m) => m.type === "user_prompt");
   }
 
+  /** The agent is naming the session right now (3z4): the title shown may change soon. */
+  get titling(): boolean {
+    return this.naming;
+  }
+
   get status(): SessionSummary["status"] {
     if (this.questions.size > 0) return "needs_answer";
     return this.pending.size > 0 ? "needs_approval" : this.turn.state === "running" ? "working" : "idle";
@@ -143,7 +150,8 @@ export class SessionRuntime {
    * log gets only what they are. While a turn runs it's queued instead (steering, D56): the agent
    * holds it and reads it at its next step, or as the next turn. */
   prompt(text: string, files: readonly AgentAttachment[] = [], options: { sendNow?: boolean } = {}): void {
-    this.deps.store.setTitle(this.id, text);
+    const first = !this.hasPrompts;
+    this.deps.store.setTitle(this.id, text); // the first prompt, until the agent names it (3z4)
     const refs = this.storeFiles(files);
     const attachments = refs.length > 0 ? { attachments: refs } : {};
     if (this.session && this.turn.state === "running") {
@@ -166,6 +174,41 @@ export class SessionRuntime {
     const session = (this.session ??= this.start());
     this.toAgent(() => session.send(text, files));
     this.deps.onChange();
+    if (first) void this.name(text);
+  }
+
+  /** Name the session again, from the conversation so far (3z4: the owner's Regenerate). */
+  regenerateTitle(): void {
+    const prompts = this.log.flatMap((m) => (m.type === "user_prompt" ? [`User: ${m.text}`] : []));
+    if (prompts.length === 0) return;
+    const reply = [...this.log].reverse().find((m) => m.type === "agent_event" && m.event.kind === "text");
+    const last = reply?.type === "agent_event" && reply.event.kind === "text" ? [`Agent: ${reply.event.text}`] : [];
+    // The first prompt says what it set out to do, the latest ones where it went; trimmed, it's for a title.
+    const about = [...prompts.slice(0, 1), ...prompts.slice(1).slice(-3), ...last].join("\n").slice(0, 2000);
+    void this.name(about);
+  }
+
+  /**
+   * Have the agent's fast model name the session (3z4), given what it's about. Starts (resumes)
+   * the agent if none runs; one that can't name sessions leaves the title as it is, and so does a
+   * failure (logged). One at a time.
+   */
+  private async name(about: string): Promise<void> {
+    if (this.naming) return;
+    const session = (this.session ??= this.start());
+    if (!session.title) return;
+    this.naming = true;
+    this.deps.onChange();
+    try {
+      const title = (await session.title(about)).trim().slice(0, 80);
+      if (title) this.deps.store.renameSession(this.id, title);
+      this.logger.info({ title }, "session named");
+    } catch (err) {
+      this.logger.warn({ err }, "could not name the session");
+    } finally {
+      this.naming = false;
+      this.deps.onChange();
+    }
   }
 
   /** Stop the turn. With prompts queued, Stop stops everything (owner, D56): the queue is

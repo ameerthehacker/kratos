@@ -113,6 +113,9 @@ export const SetPermissionModeResponse = z.object({ mode: z.string() });
 
 /** The part of the `get_settings` answer Kratos uses: what the CLI is really applying (D51).
  * (`effective` only merges settings files; `applied` is what the running model gets.) */
+/** Answer to `generate_session_title` (3z4): Claude Code's own small model names the session. */
+export const GenerateTitleResponse = z.object({ title: z.string() });
+
 export const GetSettingsResponse = z.object({
   applied: z.object({ effort: z.string().nullable().optional() }).optional(),
 });

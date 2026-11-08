@@ -73,6 +73,11 @@ class FakeSession implements AgentSession {
     this.modeSwitches.push(mode);
     return mode;
   }
+  /** Naming the session (3z4): each call waits here until the test answers it. */
+  readonly titleCalls: Array<{ about: string; answer: (title: string) => void; fail: (err: Error) => void }> = [];
+  title(about: string) {
+    return new Promise<string>((answer, fail) => this.titleCalls.push({ about, answer, fail }));
+  }
   async stop() {
     this.stopped = true;
     this.stream.close();
@@ -702,6 +707,61 @@ describe("SessionHub: features (D73)", () => {
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
     a.receive({ type: "set_session_feature", sessionId: "nope", featureId: null });
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+});
+
+describe("SessionHub: sessions name themselves (3z4)", () => {
+  const titleOf = (list: SessionSummary[], id: string) => list.find((s) => s.id === id);
+
+  it("the agent names a session from its first prompt; meanwhile it's marked as being named", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "users want the reports page as a CSV" });
+    await tick();
+    expect(titleOf(b.list, a.viewing)).toMatchObject({ title: "users want the reports page as a CSV", titling: true });
+    expect(agents[0]!.titleCalls.map((c) => c.about)).toEqual(["users want the reports page as a CSV"]);
+
+    agents[0]!.titleCalls[0]!.answer("  Reports page CSV export ");
+    await tick();
+    expect(titleOf(b.list, a.viewing)).toMatchObject({ title: "Reports page CSV export", titling: false });
+
+    a.receive({ type: "prompt", text: "and add a date filter" }); // later prompts don't rename it
+    await tick();
+    expect(agents[0]!.titleCalls).toHaveLength(1);
+  });
+
+  it("Regenerate names it from the conversation so far; a failure keeps the title", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first ask" });
+    await tick();
+    agents[0]!.titleCalls[0]!.answer("First title");
+    agents[0]!.emit({ kind: "text", text: "Done: the CSV button is in." });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+
+    a.receive({ type: "regenerate_title", sessionId: a.viewing });
+    await tick();
+    expect(agents[0]!.titleCalls[1]!.about).toBe("User: first ask\nAgent: Done: the CSV button is in.");
+    agents[0]!.titleCalls[1]!.fail(new Error("no answer"));
+    await tick();
+    expect(titleOf(a.list, a.viewing)).toMatchObject({ title: "First title", titling: false });
+
+    a.receive({ type: "regenerate_title", sessionId: "nope" });
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("renames a session by hand, for every tab, without moving it in the list", async () => {
+    const { tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "one" });
+    a.receive({ type: "prompt", text: "two", newSession: true });
+    const order = b.list.map((s) => s.id);
+    a.receive({ type: "rename_session", sessionId: order[1]!, title: "My own name" });
+    expect(titleOf(b.list, order[1]!)?.title).toBe("My own name");
+    expect(b.list.map((s) => s.id)).toEqual(order);
   });
 });
 

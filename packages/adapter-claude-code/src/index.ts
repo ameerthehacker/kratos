@@ -19,6 +19,7 @@ import {
   CancelAsyncMessageResponse,
   SendNowResponse,
   CliMessage,
+  GenerateTitleResponse,
   GetSettingsResponse,
   InitializeResponse,
   SetPermissionModeResponse,
@@ -345,6 +346,11 @@ function startSession(
     async effort() {
       const answer = GetSettingsResponse.parse(await control.request({ subtype: "get_settings" }, { timeoutMs: 30_000 }));
       return answer.applied?.effort ?? null;
+    },
+    async title(description) {
+      // persist: false — Kratos keeps the session's title, not the CLI's own session list.
+      const answer = await control.request({ subtype: "generate_session_title", description, persist: false }, { timeoutMs: 30_000 });
+      return GenerateTitleResponse.parse(answer).title;
     },
     async stop() {
       for (const abort of pending.values()) abort.abort();

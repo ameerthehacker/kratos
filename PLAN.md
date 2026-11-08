@@ -999,6 +999,30 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       content is measured). Its default spring glide trailed by ~850 px for ~1 s: `resize:
       "instant"`. Wheel up mid-turn: the view stays (gap 574 → 929 px as the turn went on), ↓
       shown; ↓ → bottom at the end, following again. Typecheck 7/7, 217 tests, build 5/5. D76.
+- [x] **3z4. Sessions name themselves** (~180; owner, 2026-11-08) — like other agents: right
+      after the first prompt the session gets a short title from the agent's fast model, which
+      animates in (header, sidebar, Recent); while one is being made the old title pulses. A
+      small menu by the header's title: Regenerate title (from the conversation so far: the
+      prompts and the latest reply) and Rename…. Mechanism (spiked on the real CLI, 2.1.308):
+      Claude Code's own `generate_session_title` control request on the session's process —
+      "Reports page CSV export" in 1.8 s, also mid-turn without disturbing it; it picks its own
+      small model. Core: an optional `title()` on the agent session (no support: the first prompt
+      stays the title). Regenerate starts (resumes) the agent if none runs. Scope: core
+      `agent.ts`, `protocol.ts` (`regenerate_title`, `rename_session`, `SessionSummary.titling`),
+      adapter `index.ts` + fake `claude` + test, `session-runtime.ts`, `session-hub.ts`, store +
+      tests; web `session-status.tsx` (animated title), `pages/session.tsx` (the menu), sidebar,
+      Recent. Accept: adapter test (fake), hub tests (first prompt titles; regenerate from the
+      conversation; rename; titling flag; an agent without titles keeps the prompt); live with
+      the real CLI: a title replaces the first prompt and animates; regenerate and rename work;
+      typecheck, test, build.
+      **Proof:** 225 tests (adapter: `title()` over the fake CLI; hub: the first prompt names it
+      and `titling` is on meanwhile, later prompts don't; Regenerate's description from the
+      conversation, a failure keeps the title; rename for every tab without moving it). Live
+      with the real `claude` (Haiku, a throwaway repo, cents): the header showed the first prompt,
+      pulsing, then "Reports page spreadsheet export" at 2.3 s; Regenerate → "Filtered reports
+      spreadsheet download" in 1.8 s; Rename… → "CSV download for reports" in the header and the
+      sidebar. Typecheck 7/7, build 5/5. D78. The in-place name field is now general
+      (`name-field.tsx`).
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

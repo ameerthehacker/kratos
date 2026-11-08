@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D78. Sessions are named by the agent's own fast model (step 3z4, owner)
+- Owner: like other agents, a session gets a short name after its first message, animating in,
+  with a quick menu to regenerate it, using a less powerful model.
+- Decision: Claude Code's own `generate_session_title` control request on the session's process
+  (`{description, persist: false}` → `{title}`; it picks its small model itself). Spiked on the
+  real CLI (2.1.308): "Reports page CSV export" in 1.8 s, also mid-turn without disturbing it.
+  Core: an optional `title(description)` on `AgentSession`; an agent without it keeps the first
+  prompt as the title. The first prompt names it; Regenerate names it from the conversation so
+  far (the first prompt, the last 3, the latest reply; 2000 characters at most), starting
+  (resuming) the agent if none runs; Rename… sets one by hand. `persist: false`: Kratos keeps
+  titles, not the CLI's session list. A rename, the agent's or yours, isn't activity: the session
+  keeps its place. `SessionSummary.titling` drives a gentle pulse while it's being named; the new
+  title fades and slides in where it's shown (header, sidebar, Recent), not on first draw.
+- Alternatives: our own one-shot `claude -p --model haiku` (another process per title, and a
+  prompt of ours to maintain); the agent naming itself with a Kratos tool (D77: spends the
+  session's model and needs the tool path first).
+- Reverse: drop `title()` from the adapter; sessions keep their first prompt as the title.
+
 ### D77. Kratos serves the agent its own tools in-process, over the control protocol (step 4m, owner)
 - Owner: the agent should be able to manage features and sessions — create a feature, move its
   session into one, mark its session or feature done — always asking first. Owner's calls: every

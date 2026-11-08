@@ -225,6 +225,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     success(msg.request_id, { cancelled: at >= 0 });
   }
   else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });
+  // Like the real CLI's (3z4): a short title for what it's told the session is about.
+  else if (msg.type === "control_request" && msg.request.subtype === "generate_session_title") {
+    success(msg.request_id, { title: `Title: ${msg.request.description.split("\n")[0].slice(0, 30)}` });
+  }
   else if (msg.type === "control_request" && msg.request.subtype === "set_model") {
     model = msg.request.model;
     success(msg.request_id, {});

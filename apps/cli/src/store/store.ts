@@ -148,6 +148,12 @@ export class SessionStore {
       .run();
   }
 
+  /** Give a session another title (3z4: the agent's, or the owner's). Not activity: it keeps its
+   * place in the list. */
+  renameSession(sessionId: string, title: string): void {
+    this.db.update(sessions).set({ title }).where(eq(sessions.id, sessionId)).run();
+  }
+
   /** A session's log, in the order it was published. */
   load(sessionId: string): ServerMessage[] {
     return this.db

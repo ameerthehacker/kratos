@@ -3,15 +3,17 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Naming a new feature in place (D73): the sidebar's folder button and the shelf's "New feature…".
- * Enter keeps the name; Esc, or an empty name, cancels; clicking away keeps it only with
- * `keepOnBlur` (Home's shelf: you'll often click into the prompt next, and nothing is made until
- * you send). Its Esc and Enter are its own: not also the session's Esc (stop the agent) or the
- * composer's Enter (send).
+ * Naming something in place: a new feature (D73: the sidebar's folder button, the shelf's "New
+ * feature…") or a session (3z4: Rename…). Enter keeps the name; Esc, or an empty name, cancels;
+ * clicking away keeps it only with `keepOnBlur` (Home's shelf: you'll often click into the prompt
+ * next, and nothing is made until you send). `initial`: the name it starts with, selected. Its
+ * Esc and Enter are its own: not also the session's Esc (stop the agent) or the composer's Enter.
  */
-export function FeatureNameField(props: {
+export function NameField(props: {
   icon: LucideIcon;
   placeholder: string;
+  label?: string;
+  initial?: string;
   keepOnBlur?: boolean;
   onDone: (name: string | null) => void;
   className?: string;
@@ -19,7 +21,7 @@ export function FeatureNameField(props: {
   inputClassName?: string;
 }) {
   const { icon: Icon, onDone } = props;
-  const [name, setName] = useState("");
+  const [name, setName] = useState(props.initial ?? "");
   // Settles once: Esc closes the field, and a blur as it goes must not then keep the name.
   const settled = useRef(false);
   const settle = (result: string | null) => {
@@ -32,6 +34,7 @@ export function FeatureNameField(props: {
       <Icon className={cn("shrink-0", props.iconClassName)} aria-hidden="true" />
       <input
         autoFocus
+        onFocus={(e) => e.currentTarget.select()}
         value={name}
         maxLength={80}
         onChange={(e) => setName(e.target.value)}
@@ -45,7 +48,7 @@ export function FeatureNameField(props: {
           e.preventDefault();
           settle(name.trim() || null);
         }}
-        aria-label="New feature name"
+        aria-label={props.label ?? "New feature name"}
         placeholder={props.placeholder}
         className={cn("min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint", props.inputClassName)}
       />

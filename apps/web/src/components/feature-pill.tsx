@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FeatureNameField } from "@/components/feature-name-field";
+import { NameField } from "@/components/name-field";
 import { cn } from "@/lib/utils";
 
 /**
@@ -51,7 +51,7 @@ export function FeaturePill({ features, value, newTitle, purpose, onChange, onCr
     return (
       // Clicking away keeps the name only on Home, where nothing is made until you send; here
       // the feature would be made at once, and features can't be deleted yet.
-      <FeatureNameField
+      <NameField
         icon={PackagePlus}
         placeholder="Name the new feature"
         keepOnBlur={purpose === "choose"}

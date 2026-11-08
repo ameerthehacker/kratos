@@ -171,6 +171,14 @@ export class SessionHub {
         if (!message.done) this.reopenFeatureOf(message.id);
         this.broadcastSessionList();
         return;
+      case "regenerate_title":
+        if (this.inProject(send, message.sessionId)) this.runtime(message.sessionId).regenerateTitle();
+        return;
+      case "rename_session":
+        if (!this.inProject(send, message.sessionId)) return;
+        this.store.renameSession(message.sessionId, message.title);
+        this.broadcastSessionList();
+        return;
       case "create_feature":
         this.newFeature(message.title);
         this.broadcast(this.featureList());
@@ -461,6 +469,7 @@ export class SessionHub {
         queued: this.runtimes.get(s.id)?.queuedCount ?? 0,
         done: s.doneAt !== null,
         featureId: s.featureId,
+        titling: this.runtimes.get(s.id)?.titling ?? false,
       })),
     };
   }

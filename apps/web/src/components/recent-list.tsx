@@ -4,7 +4,7 @@ import { ChevronRight, Hand, MessageCircleQuestion, MessageSquare } from "lucide
 import type { Harness, SessionSummary } from "@kratos/core";
 import { modelLabel } from "@/components/agent-picker";
 import { DoneButton } from "@/components/done-button";
-import { sessionTitle } from "@/components/session-status";
+import { SessionTitle } from "@/components/session-title";
 import { cn } from "@/lib/utils";
 
 /** Home stays short (owner): the 3 newest; every session is in the sidebar. */
@@ -45,7 +45,7 @@ function RecentRow({ session, harnesses }: { session: SessionSummary; harnesses:
       >
         <StatusTile status={session.status} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate">{sessionTitle(session)}</span>
+          <SessionTitle session={session} className="truncate" />
           <span className="truncate text-xs text-muted-foreground">
             {session.status === "needs_approval" && <span className="text-wait">Needs your OK · </span>}
             {session.status === "needs_answer" && <span className="text-wait">Needs your answer · </span>}

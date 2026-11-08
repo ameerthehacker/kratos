@@ -334,6 +334,10 @@ export interface AgentSession {
    * the agent applied once it confirms; like setModel, needs `events` consumed (D53). Changes
    * also arrive as `permission_mode` events — including ones the agent makes itself. */
   setPermissionMode(mode: string): Promise<string>;
+  /** A short title for the conversation, from the agent's own fast model (3z4), given what it's
+   * about: the first prompt, or the conversation so far. Optional: without it a session keeps
+   * its first prompt as its title. Works while a turn runs, without disturbing it. */
+  title?(description: string): Promise<string>;
   /** End the conversation and clean up the agent's process; `events` then completes. */
   stop(): Promise<void>;
 }

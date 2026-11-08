@@ -232,6 +232,15 @@ describe("Claude Code adapter: effort (D51)", () => {
     return { session, done: async () => (await session.stop(), await pump) };
   }
 
+  it("asks the CLI to name the session (generate_session_title, 3z4)", async () => {
+    const { session, done } = running();
+    try {
+      expect(await session.title!("Reports page needs a CSV export\nwith filters")).toBe("Title: Reports page needs a CSV expor"); // the fake keeps 30 characters
+    } finally {
+      await done();
+    }
+  });
+
   it("starts at the chosen level (--effort), switches it live, and reads back the level in use", async () => {
     const { session, done } = running({ effort: "low" });
     try {

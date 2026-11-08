@@ -68,8 +68,8 @@ export const ChangedFile = z.object({
 });
 export type ChangedFile = z.infer<typeof ChangedFile>;
 
-/** A feature's name (D73): as the owner typed it, trimmed, 1–80 characters. */
-const FeatureTitle = z.string().trim().min(1).max(80);
+/** A feature's or a session's name (D73, 3z4): as typed, trimmed, 1–80 characters. */
+const Title = z.string().trim().min(1).max(80);
 
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
@@ -94,7 +94,7 @@ export const ClientMessage = z.discriminatedUnion("type", [
     featureId: z.string().optional(),
     /** Or a new feature, named on the shelf: made when the prompt starts its session, so a name
      * typed and then abandoned leaves no empty folder (D73). Wins over `featureId`. */
-    newFeatureTitle: FeatureTitle.optional(),
+    newFeatureTitle: Title.optional(),
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
@@ -117,10 +117,14 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * while its agent is busy (working, waiting on you, prompts queued) only with `stop: true`, the
    * owner's consent: the agent is stopped and its queue dropped first (4c5). */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
+  /** Name a session again with the agent's fast model, from the conversation so far (3z4). */
+  z.object({ type: z.literal("regenerate_title"), sessionId: z.string() }),
+  /** Give a session a title of the owner's own (3z4). Answered with `sessions`. */
+  z.object({ type: z.literal("rename_session"), sessionId: z.string(), title: Title }),
   /** Start a feature in this project (D73). Answered with `features`. */
-  z.object({ type: z.literal("create_feature"), title: FeatureTitle }),
+  z.object({ type: z.literal("create_feature"), title: Title }),
   /** Rename a feature (D73). Answered with `features`. */
-  z.object({ type: z.literal("rename_feature"), id: z.string(), title: FeatureTitle }),
+  z.object({ type: z.literal("rename_feature"), id: z.string(), title: Title }),
   /** Mark a feature done with its sessions, or reopen it (D73). Like `set_done`, a busy session
    * in it needs `stop: true` (4c5). */
   z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
@@ -130,7 +134,7 @@ export const ClientMessage = z.discriminatedUnion("type", [
     type: z.literal("set_session_feature"),
     sessionId: z.string(),
     featureId: z.string().nullable().optional(),
-    newFeatureTitle: FeatureTitle.optional(),
+    newFeatureTitle: Title.optional(),
   }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
@@ -184,6 +188,8 @@ export const SessionSummary = z.object({
   done: z.boolean(),
   /** The feature it belongs to (D73); null = a one-off. */
   featureId: z.string().nullable(),
+  /** The agent is naming it (3z4): its title may change in a moment. */
+  titling: z.boolean(),
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 

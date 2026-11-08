@@ -12,7 +12,8 @@ import { useTree } from "@headless-tree/react";
 import { Check, ChevronRight, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
 import type { FeatureSummary, SessionSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
-import { FeatureNameField } from "@/components/feature-name-field";
+import { NameField } from "@/components/name-field";
+import { SessionTitle } from "@/components/session-title";
 import { StopAndDoneDialog, isBusy } from "@/components/stop-and-done-dialog";
 import { SessionStatus, StatusDot, sessionTitle, statusLabel } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
@@ -93,7 +94,7 @@ export function SessionsSidebar() {
             }
           >
             {naming && (
-              <FeatureNameField
+              <NameField
                 icon={Package}
                 placeholder="Name the feature"
                 onDone={(title) => {
@@ -335,7 +336,7 @@ function Row({ item, onDragOver }: { item: ItemInstance<TreeNode>; onDragOver: (
             }}
             className={({ isActive }) => cn(box, "flex flex-col gap-0.5 py-2 pr-10 pl-2.5 hover:bg-accent", isActive && "bg-secondary")}
           >
-            <span className={cn("truncate text-sm", (node.session.done || node.quiet) && "text-muted-foreground")}>{sessionTitle(node.session)}</span>
+            <SessionTitle session={node.session} className={cn("truncate text-sm", (node.session.done || node.quiet) && "text-muted-foreground")} />
             {!node.session.done && !(node.quiet && node.session.status === "idle") && (
               <SessionStatus status={node.session.status} queued={node.session.queued} />
             )}

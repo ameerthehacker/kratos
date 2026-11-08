@@ -14,6 +14,7 @@ const session = (id: string, updatedAt: number, more: Partial<SessionSummary> = 
   queued: 0,
   done: false,
   featureId: null,
+  titling: false,
   ...more,
 });
 const feature = (id: string, updatedAt: number, done = false): FeatureSummary => ({ id, title: id, done, updatedAt });

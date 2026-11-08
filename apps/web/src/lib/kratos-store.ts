@@ -37,6 +37,11 @@ type KratosState = {
   receive: (message: ServerMessage) => void;
 };
 
+/** A session's replay as it arrives (D69): held here until `session_ready`, then put in the store in
+ * one update. One update per message rebuilt the whole chat once per message: 1.3 s of blank
+ * screen for a 957-message session (3y6a). */
+let replay: LogMessage[] = [];
+
 /** Kratos UI state (D39): written by useKratosConnection, read by any component. */
 export const useKratos = create<KratosState>((set, get) => ({
   connected: false,
@@ -67,9 +72,20 @@ export const useKratos = create<KratosState>((set, get) => ({
         return set({ info: message });
       }
       case "session": // a session's replay follows from scratch
+        replay = [];
+        performance.clearMarks("kratos:open");
+        performance.clearMeasures("kratos:replay");
+        performance.clearMeasures("kratos:drawn");
+        performance.mark("kratos:open"); // `session drawn` in pages/session.tsx measures from here
         return set({ viewing: message.id, log: [], ready: false });
-      case "session_ready":
-        return set((state) => (state.viewing === message.id ? { ready: true } : {}));
+      case "session_ready": {
+        if (get().viewing !== message.id) return;
+        const { duration } = performance.measure("kratos:replay", "kratos:open");
+        clientLog("debug", "session replayed", { messages: replay.length, ms: Math.round(duration) });
+        set({ log: replay, ready: true });
+        replay = [];
+        return;
+      }
       case "sessions":
         return set({ sessions: message.list });
       case "harnesses":
@@ -87,6 +103,7 @@ export const useKratos = create<KratosState>((set, get) => ({
       case "error":
         return clientLog("warn", `server error: ${message.message}`);
       default:
+        if (!get().ready) return void replay.push(message); // part of a replay: in at `session_ready`
         return set((state) => ({ log: [...state.log, message] }));
     }
   },

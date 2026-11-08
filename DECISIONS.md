@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D69. A replay reaches the web store in one update (step 3y6a, owner)
+- Found by measuring (2026-11-08): each replayed WebSocket message was its own store update, so
+  `SessionPage` re-rendered and `buildTimeline` re-ran over the whole log once per message.
+  957 messages → 1.3 s of blank screen; the server's part (SQLite + JSON) was under 10 ms.
+- Decision: `kratos-store.ts` holds a replay in a module variable (not store state, so nothing
+  re-renders) from `session` until `session_ready`, then sets the log once. Live messages after
+  it append as before. While a session loads, the chat area shows a spinner that fades in after
+  300 ms, so a quick open doesn't flash it.
+- Timing: `performance` marks (`kratos:open` → `kratos:replay`, `kratos:drawn`), also visible in
+  DevTools' Performance panel, sent as `client_log` at the new `debug` level (file log only).
+- Alternatives: the server sends a replay as one message (a protocol change for the same effect,
+  and the browser would still get one big frame to parse); batch per animation frame (several
+  updates instead of one, and more code).
+- Also: the root `vitest.config.ts` gets the web app's `@/` alias, so web modules that import
+  through it can be tested.
+- Reverse: drop `replay` and append in `default` again; the spinner is the `ready ? … : …` in
+  `pages/session.tsx`.
+
 ### D68. The session runtime's states are explicit discriminated unions (step 3y4, owner)
 - Found by the architecture review (2026-11-07): `SessionRuntime` tracked its turn with four flags
   that only made sense together (`turnOpen`, `turnFromQueue`, `lastStep`, `runningStep`), reset

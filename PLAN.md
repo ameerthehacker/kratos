@@ -886,18 +886,43 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         handles half the types and the hub the rest. Scope: `apps/cli/src/session-hub.ts`,
         `changes/**`, `store.ts`, tests. Accept: a test where the start snapshot lands first;
         all tests pass.
-  - [ ] **3y6. Long sessions stay fast** (~150; numbers first) — the work grows with the square
-        of a session's length: the web store copies the whole log per message and
-        `buildTimeline` re-runs over all of it per message; connecting replays the latest session,
-        then the tab's own on `open_session` (two replays off the latest); runtimes are never
-        evicted (every session opened keeps its log in memory); every prompt waits on a whole-repo
-        `git add --all`. First measure: a synthetic 5,000-message session (replay time, a live
-        message's render time, server memory) and the snapshot time on a big repo. Then fix what
-        the numbers say: append a replay in one store update; connect straight to the tab's
-        session (e.g. `/ws?session=<id>`); evict runtimes with no tab, no agent and nothing open;
-        warn when a snapshot is slow. Owner: what's "fast enough" (e.g. replay under 200 ms)?
-        Scope: `apps/web/src/lib/**`, `hooks/use-kratos-connection.ts`, `session-hub.ts`,
-        protocol if the connect URL changes. Accept: before / after numbers.
+  - [ ] **3y6. Long sessions stay fast** — the work grows with the square of a session's length:
+        the web store copies the whole log per message and `buildTimeline` re-runs over all of it
+        per message; connecting replays the latest session, then the tab's own on `open_session`
+        (two replays off the latest); runtimes are never evicted (every session opened keeps its
+        log in memory); every prompt waits on a whole-repo `git add --all`.
+        **Numbers (2026-11-08, Node, the owner's biggest real session: 957 messages, 1.2 MB, 334
+        chat items):** server side is cheap: SQLite load 5 ms, stringify 2 ms. Client: parse + zod
+        8 ms, `buildTimeline` once 4 ms, **but once per replayed message 1,350 ms** (each WebSocket
+        message is its own store update → `SessionPage` re-renders → timeline rebuilt; this is the
+        blank screen). Rendering the chat (SSR as a proxy, no layout or Shiki) 120–230 ms, ~6,000
+        elements. Server runtimes are already cached (`SessionHub.runtimes`); a client-side cache
+        of the *data* would save ~15 ms, since the cost is building and drawing it, not fetching it.
+    - [x] **3y6a. One update per replay + a spinner** (~40) — the web store collects a replay
+          until `session_ready`, then sets the log once (live messages still append one at a
+          time). While a session loads, the conversation area shows a spinner instead of nothing.
+          Timing in the browser: open → `session_ready` → first paint, logged at debug. Scope:
+          `lib/kratos-store.ts`, `pages/session.tsx`, a test. Accept: before / after browser
+          numbers on the 957-message session; spinner seen on a slow open.
+          **Proof (headless Chrome, deep link, warm runs):** chat drawn 1,530 → 260 ms after
+          navigation; the replay itself 1,280 → 74 ms. D69.
+    - [ ] **3y6b. Connect straight to the tab's session** (~50) — e.g. `/ws?session=<id>`, so a
+          deep link replays once, not the latest session first. Found in 3y6a: a deep link
+          replays the latest session, then the tab's own **twice**. `SessionPage` sends
+          `open_session` on connect (`viewing` still unset) and again when the connect's replay
+          of the latest session arrives, so the chat is drawn, cleared and drawn again. Scope:
+          `use-kratos-connection.ts`, `server.ts`, `session-hub.ts`, `pages/session.tsx`.
+          Accept: one replay in the debug log on a deep link; `session drawn` measures the
+          whole open.
+    - [ ] **3y6c. Draw only what's near** (~120; after 3y6a's numbers) — draw the newest ~40
+          items and more as you scroll up (keeping your place), or full virtualization
+          (react-virtuoso, which handles variable heights and sticking to the bottom; it would
+          replace use-stick-to-bottom). Windowing first: simpler, keeps find-in-page for what's
+          drawn. Owner: is draw time still a problem after 3y6a? What's "fast enough" (e.g. a
+          session opens in under 200 ms)?
+    - [ ] **3y6d. Server memory and snapshots** (~60) — evict runtimes with no tab, no agent and
+          nothing open; warn when a turn's snapshot is slow (synthetic 5,000-message session, big
+          repo). Accept: before / after memory and snapshot numbers.
   - [ ] **3y7. Know which `claude` Kratos is driving** (~80 + a script) — the adapter relies on
         undocumented CLI internals (`cancel_async_message`, `interrupt {send_now}`,
         `apply_flag_settings`, `get_settings.applied`, two env vars read from claude 2.1.308), and

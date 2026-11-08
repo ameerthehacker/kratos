@@ -136,7 +136,7 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Something the browser wants in the server's log file (D44), logged as component "web". */
   z.object({
     type: z.literal("client_log"),
-    level: z.enum(["info", "warn", "error"]),
+    level: z.enum(["debug", "info", "warn", "error"]),
     message: z.string().max(2000),
     data: z.unknown().optional(),
   }),

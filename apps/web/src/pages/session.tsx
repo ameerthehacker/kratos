@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileCode } from "lucide-react";
+import { FileCode, LoaderCircle } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
@@ -16,6 +16,7 @@ import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
+import { clientLog } from "@/lib/log";
 import { SCOPES } from "@/lib/shortcuts";
 import { buildTimeline, openAsks, openQuestions, openQueue } from "@/lib/timeline";
 import { QueueCard } from "@/components/conversation/queue-card";
@@ -47,6 +48,20 @@ export function SessionPage() {
     putBack(returned);
     useKratos.setState({ returned: undefined });
   }, [returned]);
+
+  // How long opening took, to the first frame that shows the chat (3y6a): in the debug log. Once
+  // per open: coming back to the page of a session still viewed opens nothing.
+  useEffect(() => {
+    if (!ready) return;
+    const frame = requestAnimationFrame(() =>
+      setTimeout(() => {
+        if (performance.getEntriesByName("kratos:drawn").length > 0) return;
+        const { duration } = performance.measure("kratos:drawn", "kratos:open");
+        clientLog("debug", "session drawn", { ms: Math.round(duration) });
+      }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [ready, sessionId]);
 
   // Ask the server to show this session in this tab (connecting shows the latest one).
   useEffect(() => {
@@ -82,7 +97,17 @@ export function SessionPage() {
         {session && <SessionHeader session={session} />}
         {/* Only once the whole history is here (the server says so), keyed by session: it then opens
             at its bottom instead of scrolling through the replay (owner, 3d9). */}
-        {ready ? <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} queued={queue.length} /> : <div className="min-h-0 flex-1" />}
+        {ready ? (
+          <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} queued={queue.length} />
+        ) : (
+          // Faded in late, so a quick open doesn't flash it (3y6a). The fade is on the box: one
+          // element can't run both animations.
+          <div role="status" aria-label="Loading the session" className="flex min-h-0 flex-1 items-center justify-center">
+            <span className="animate-in fade-in fill-mode-both delay-300">
+              <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
+            </span>
+          </div>
+        )}
         {/* Below the scroll area, so it's always in view (the design's sticky composer). */}
         <div className="mx-auto w-full max-w-3xl px-6 pb-5">
           <QuestionDock questions={questions} agent={agentName} onAnswer={(id, reply) => send({ type: "question_answer", id, reply })} />

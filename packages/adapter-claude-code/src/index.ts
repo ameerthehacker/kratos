@@ -208,6 +208,19 @@ function startSession(
         })
     : Promise.resolve();
   const sendPrompt = (message: object) => (held ? held.push(message) : proc.send(message));
+  // A call to one of our tools says what it does in words (4m3): its step, and its ask, read so.
+  const byName = new Map(tools.map((t) => [hostToolName(t.name), t]));
+  const describeHostCall = <E extends { kind: string }>(event: E): E => {
+    if (event.kind !== "tool_call") return event;
+    const call = event as E & { tool: string; input: unknown };
+    let described: string | undefined;
+    try {
+      described = byName.get(call.tool)?.describe?.(call.input);
+    } catch {
+      return event; // a describe that fails on odd input mustn't end the session: the step says the tool's name
+    }
+    return described ? { ...event, action: { type: "other", description: described } } : event;
+  };
 
   /**
    * Answer one of the CLI's `can_use_tool` asks: questions go to `askQuestions` (D54), every other
@@ -325,7 +338,7 @@ function startSession(
       if (msg.type === "control_request") void answer(msg);
       else if (msg.type === "control_cancel_request") pending.get(msg.request_id)?.abort();
       else {
-        for (const event of toEvents(msg, interrupted)) yield AgentEvent.parse(event);
+        for (const event of toEvents(msg, interrupted)) yield AgentEvent.parse(describeHostCall(event));
         if (msg.type === "result") interrupted = false;
       }
     }

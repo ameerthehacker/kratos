@@ -80,6 +80,16 @@ describe("buildTimeline (D45)", () => {
       ["c2", "ask-for-c2"],
     ]);
   });
+
+  it("a step of Kratos's own tools reads in words, and so does its ask (4m3)", () => {
+    const description = "Create the feature “Reports” and move this session into it";
+    const items = buildTimeline([
+      agent({ kind: "tool_call", id: "k1", tool: "mcp__kratos__file_session", input: {}, action: { type: "other", description } }),
+      { type: "permission_request", id: "ask-k1", request: { tool: "file_session", input: {}, toolCallId: "k1", reason: "It's the CSV work" } },
+    ]);
+    const [step] = openAsks(items);
+    expect(step).toMatchObject({ intent: description, title: description, ask: { id: "ask-k1", reason: "It's the CSV work" } });
+  });
 });
 
 describe("buildTimeline: images a tool returned (3z)", () => {

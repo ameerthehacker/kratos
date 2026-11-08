@@ -780,6 +780,138 @@ describe("SessionHub: sessions name themselves (3z4)", () => {
   });
 });
 
+describe("SessionHub: the agent's Kratos tools (4m3, D77)", () => {
+  type Result = { text: string; isError?: boolean };
+  /** Call one of the tools Kratos gave this agent, as the agent would (its input already checked). */
+  const call = (agent: FakeSession, name: string, input: object): Promise<Result> =>
+    agent.options.tools!.find((t) => t.name === name)!.call(input as never, { toolCallId: "call-1", signal: new AbortController().signal });
+  const lastAsk = (t: ReturnType<ReturnType<typeof setup>["tab"]>) =>
+    t.seen.findLast((m): m is Extract<ServerMessage, { type: "permission_request" }> => m.type === "permission_request");
+
+  it("lists the features and which one this session is in, without asking", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    a.receive({ type: "prompt", text: "work", featureId: a.features[0]!.id });
+    const listed = JSON.parse((await call(agents[0]!, "list_features", {})).text);
+    expect(listed).toEqual({ thisSession: { featureId: a.features[0]!.id, feature: "Plans" }, features: [{ id: a.features[0]!.id, title: "Plans", done: false }] });
+    expect(lastAsk(a)).toBeUndefined();
+  });
+
+  it("files its session in a new feature once the owner allows, the ask saying so in words", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "csv export" });
+    const result = call(agents[0]!, "file_session", { newFeatureTitle: "Reports", reason: "This is the CSV export work" });
+    await tick();
+    const ask = lastAsk(a)!;
+    expect(ask.request).toMatchObject({
+      toolCallId: "call-1",
+      action: { type: "other", description: "Create the feature “Reports” and move this session into it" },
+      reason: "This is the CSV export work",
+    });
+    expect(a.list.find((s) => s.id === a.viewing)?.status).toBe("needs_approval"); // the owner is asked, as for any tool
+    expect(a.features).toEqual([]); // nothing yet
+
+    a.receive({ type: "permission_decision", id: ask.id, decision: { decision: "allow" } });
+    expect(await result).toEqual({ text: "Done: the session is filed." });
+    expect(a.features.map((f) => f.title)).toEqual(["Reports"]);
+    expect(a.list.find((s) => s.id === a.viewing)?.featureId).toBe(a.features[0]!.id);
+  });
+
+  it("a Deny reaches the agent as an error and changes nothing; an impossible change isn't even asked", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Finished" });
+    const finished = a.features[0]!.id;
+    a.receive({ type: "set_feature_done", id: finished, done: true });
+    a.receive({ type: "prompt", text: "work" });
+
+    const denied = call(agents[0]!, "file_session", { oneOff: true });
+    await tick();
+    a.receive({ type: "permission_decision", id: lastAsk(a)!.id, decision: { decision: "deny", message: "not now" } });
+    expect(await denied).toMatchObject({ isError: true, text: expect.stringMatching(/The owner said no \(not now\)/) });
+
+    const asks = a.seen.filter((m) => m.type === "permission_request").length;
+    expect(await call(agents[0]!, "file_session", { featureId: finished })).toMatchObject({ isError: true, text: expect.stringMatching(/done/) });
+    expect(await call(agents[0]!, "file_session", { featureId: finished, oneOff: true })).toMatchObject({ isError: true, text: expect.stringMatching(/exactly one/) });
+    expect(await call(agents[0]!, "mark_feature_done", {})).toMatchObject({ isError: true, text: "This session isn't in a feature." });
+    expect(a.seen.filter((m) => m.type === "permission_request").length).toBe(asks); // none of those asked
+  });
+
+  it("marks its session done, and its feature done unless another session in it still works", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "mine", featureId: feature });
+    const mine = a.viewing;
+    a.receive({ type: "prompt", text: "another", newSession: true, featureId: feature }); // still working
+
+    expect(await call(agents[0]!, "mark_feature_done", {})).toMatchObject({ isError: true, text: expect.stringMatching(/1 other session is in this feature still working/) });
+    agents[1]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+
+    a.receive({ type: "open_session", id: mine });
+    const finishing = call(agents[0]!, "mark_feature_done", {});
+    await tick();
+    expect(lastAsk(a)!.request.action?.description).toBe("Mark the feature “Plans” done");
+    a.receive({ type: "permission_decision", id: lastAsk(a)!.id, decision: { decision: "allow" } });
+    expect(await finishing).toMatchObject({ text: expect.stringMatching(/^Allowed: .* as soon as this turn ends/) });
+    expect(a.features[0]?.done).toBe(false); // not while its own turn still runs: an ask would hide in Done
+    expect(agents[0]!.interrupts).toBe(0); // its own turn isn't stopped
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(a.features[0]?.done).toBe(true);
+    expect(a.list.filter((s) => s.featureId === a.features[0]!.id).every((s) => s.done)).toBe(true);
+  });
+
+  it("marks only the feature the owner was asked about: moved meanwhile, nothing is marked", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    a.receive({ type: "create_feature", title: "Reports" });
+    const plans = a.features.find((f) => f.title === "Plans")!.id;
+    const reports = a.features.find((f) => f.title === "Reports")!.id;
+    a.receive({ type: "prompt", text: "work", featureId: plans });
+    const finishing = call(agents[0]!, "mark_feature_done", {});
+    await tick();
+    expect(lastAsk(a)!.request.action?.description).toBe("Mark the feature “Plans” done");
+    a.receive({ type: "set_session_feature", sessionId: a.viewing!, featureId: reports });
+    a.receive({ type: "permission_decision", id: lastAsk(a)!.id, decision: { decision: "allow" } });
+    expect(await finishing).toMatchObject({ isError: true, text: expect.stringMatching(/moved to another feature/) });
+    expect(a.features.every((f) => !f.done)).toBe(true);
+  });
+
+  it("asks under the name the agent calls the tool by, and labels only a call it will take", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "work" });
+    const fileSession = agents[0]!.options.tools!.find((t) => t.name === "file_session")!;
+    expect(fileSession.describe!({ newFeatureTitle: "X", oneOff: true })).toBe("File this session in a feature"); // two targets
+    expect(fileSession.describe!({ newFeatureTitle: "Reports" })).toBe("Create the feature “Reports” and move this session into it");
+    void fileSession.call({ oneOff: true } as never, { toolCallId: "c9", toolName: "mcp__kratos__file_session", signal: new AbortController().signal });
+    await tick();
+    expect(lastAsk(a)!.request).toMatchObject({ tool: "mcp__kratos__file_session", toolCallId: "c9" });
+  });
+
+  it("marks its own session done on the owner's Allow, without stopping its turn", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "all finished" });
+    const finishing = call(agents[0]!, "mark_session_done", { reason: "The fix is in and tested" });
+    await tick();
+    expect(lastAsk(a)!.request).toMatchObject({ action: { description: "Mark this session done" }, reason: "The fix is in and tested" });
+    a.receive({ type: "permission_decision", id: lastAsk(a)!.id, decision: { decision: "allow" } });
+    expect(await finishing).toMatchObject({ text: expect.stringMatching(/^Allowed: .* as soon as this turn ends/) });
+    expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(false); // still in its turn
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(true);
+    expect(agents[0]!.interrupts).toBe(0);
+  });
+});
+
 describe("SessionHub: harness & model (D43)", () => {
   it("tells every tab the harness and its models, also tabs that connect later", async () => {
     const { tab } = setup();

@@ -295,15 +295,24 @@ export interface HostTool {
   readonly name: string;
   readonly description: string;
   readonly input: z.ZodObject;
-  call(input: never, context: { toolCallId?: string; signal: AbortSignal }): Promise<HostToolResult>;
+  /** What a call does, in words, for its step and its ask (4m3): "Move this session into the
+   * feature “Reports”". Given the raw input (unchecked: the agent's call as it came). */
+  describe?(input: unknown): string;
+  call(input: never, context: HostToolContext): Promise<HostToolResult>;
 }
+
+/** What a host tool's call knows besides its input: the agent's tool call (its id, and the name
+ * the agent calls the tool by, e.g. Claude's `mcp__kratos__file_session`: the step its ask goes
+ * with), and a signal that aborts if the agent withdraws the call. */
+export type HostToolContext = { toolCallId?: string; toolName?: string; signal: AbortSignal };
 
 /** A host tool with its input typed from its schema. */
 export function hostTool<S extends z.ZodObject>(tool: {
   name: string;
   description: string;
   input: S;
-  call(input: z.output<S>, context: { toolCallId?: string; signal: AbortSignal }): Promise<HostToolResult>;
+  describe?(input: unknown): string;
+  call(input: z.output<S>, context: HostToolContext): Promise<HostToolResult>;
 }): HostTool {
   return tool as HostTool;
 }

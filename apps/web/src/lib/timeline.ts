@@ -225,9 +225,10 @@ function describe(call: ToolCall, cwd: string): Step {
       doing = `Working on ${action.description ?? "a sub-task"}`;
       break;
     default:
-      title = `Used ${call.tool}`;
-      intent = `Use ${call.tool}`;
-      doing = `Using ${call.tool}`;
+      // Kratos's own tools say what they do in words (4m3): "Move this session into …".
+      title = action.description ?? `Used ${call.tool}`;
+      intent = action.description ?? `Use ${call.tool}`;
+      doing = action.description ?? `Using ${call.tool}`;
   }
   const raw = action.type === "run" && action.command ? { command: action.command } : { call: `${call.tool} ${compact(call.input)}` };
   const edit = action.type === "edit" && action.edits ? { path: path ?? "", changes: action.edits } : undefined;

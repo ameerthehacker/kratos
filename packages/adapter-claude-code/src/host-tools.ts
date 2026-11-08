@@ -36,7 +36,8 @@ export class HostToolServer {
     for (const tool of tools) {
       server.registerTool(tool.name, { description: tool.description, inputSchema: tool.input }, async (input, extra) => {
         const toolUseId = extra._meta?.["claudecode/toolUseId"];
-        const out = await tool.call(input as never, { toolCallId: typeof toolUseId === "string" ? toolUseId : undefined, signal: extra.signal });
+        const toolCallId = typeof toolUseId === "string" ? toolUseId : undefined;
+        const out = await tool.call(input as never, { toolCallId, toolName: hostToolName(tool.name), signal: extra.signal });
         return { content: [{ type: "text", text: out.text }], ...(out.isError ? { isError: true } : {}) };
       });
     }

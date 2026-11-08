@@ -69,7 +69,7 @@ export const ChangedFile = z.object({
 export type ChangedFile = z.infer<typeof ChangedFile>;
 
 /** A feature's or a session's name (D73, 3z4): as typed, trimmed, 1–80 characters. */
-const Title = z.string().trim().min(1).max(80);
+export const Title = z.string().trim().min(1).max(80);
 
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [

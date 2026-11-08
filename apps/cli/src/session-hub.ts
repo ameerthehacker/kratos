@@ -13,6 +13,7 @@ import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
+import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
 
 type Send = (message: ServerMessage) => void;
@@ -211,11 +212,7 @@ export class SessionHub {
           return;
         }
         if (!message.newFeatureTitle && message.featureId && !this.featureUsable(send, message.featureId)) return;
-        const featureId = message.newFeatureTitle ? this.newFeature(message.newFeatureTitle) : message.featureId!;
-        this.store.setSessionFeature(message.sessionId, featureId);
-        this.log.info({ session: message.sessionId, feature: featureId }, "session moved");
-        this.broadcast(this.featureList());
-        this.broadcastSessionList();
+        this.moveSession(message.sessionId, message.newFeatureTitle ? this.newFeature(message.newFeatureTitle) : message.featureId!, "owner");
         return;
       }
       case "interrupt":
@@ -359,6 +356,14 @@ export class SessionHub {
     return false;
   }
 
+  /** Put a session in a feature (null: a one-off) and tell every tab; `by` says who moved it. */
+  private moveSession(sessionId: string, featureId: string | null, by: "owner" | "agent"): void {
+    this.store.setSessionFeature(sessionId, featureId);
+    this.log.info({ session: sessionId, feature: featureId, by }, "session moved");
+    this.broadcast(this.featureList());
+    this.broadcastSessionList();
+  }
+
   /** A new feature in this project; its id. Callers tell the tabs. */
   private newFeature(title: string): string {
     const feature = this.store.createFeature(this.cwd, title);
@@ -400,14 +405,67 @@ export class SessionHub {
 
   /** A feature sessions can join: this project's, and not done (reopen it first). */
   private featureUsable(send: Send, featureId: string): boolean {
+    const problem = this.featureProblem(featureId);
+    if (problem) send({ type: "error", message: problem });
+    return problem === undefined;
+  }
+
+  /** Why sessions can't join this feature (another project's, unknown, or done), or undefined. */
+  private featureProblem(featureId: string): string | undefined {
     const feature = this.store.getFeature(featureId);
-    if (feature?.projectDir !== this.cwd) {
-      send({ type: "error", message: `No feature ${featureId} in this project` });
-      return false;
-    }
-    if (feature.doneAt === null) return true;
-    send({ type: "error", message: "That feature is done: reopen it to add sessions to it" });
-    return false;
+    if (feature?.projectDir !== this.cwd) return `No feature ${featureId} in this project`;
+    if (feature.doneAt !== null) return "That feature is done: reopen it to add sessions to it";
+    return undefined;
+  }
+
+  /** What a session's agent may do with its Kratos tools (4m3): only to this session and its
+   * feature, under the same rules as the owner's tabs; every tab hears of a change. */
+  private featureOps(sessionId: string): SessionFeatureOps {
+    const featureOf = () => this.store.get(sessionId)?.featureId ?? null;
+    const cannotFile = (filing: Filing) => ("featureId" in filing ? this.featureProblem(filing.featureId) : undefined);
+    const cannotFinishFeature = () => {
+      const featureId = featureOf();
+      if (!featureId) return "This session isn't in a feature.";
+      if (this.store.getFeature(featureId)?.doneAt) return "Its feature is already done.";
+      const others = this.store.sessionsOfFeature(featureId).filter((s) => s.id !== sessionId && this.busy(s.id)).length;
+      return others > 0 ? `${others} other session${others === 1 ? " is" : "s are"} in this feature still working: they must finish first.` : undefined;
+    };
+    return {
+      features: () => ({
+        features: this.store.listFeatures(this.cwd).map((f) => ({ id: f.id, title: f.title, done: f.doneAt !== null })),
+        current: featureOf(),
+      }),
+      cannotFile,
+      file: (filing) => {
+        const problem = cannotFile(filing);
+        if (problem) return problem;
+        this.moveSession(sessionId, "newTitle" in filing ? this.newFeature(filing.newTitle) : "featureId" in filing ? filing.featureId : null, "agent");
+        return undefined;
+      },
+      // Its own turn is still running (it's making this call): done once the turn ends (D73).
+      markSessionDone: () =>
+        this.runtime(sessionId).whenIdle(() => {
+          this.store.setDone(sessionId, true);
+          this.log.info({ session: sessionId }, "marked done by its agent");
+          this.broadcastSessionList();
+        }),
+      cannotFinishFeature,
+      markFeatureDone: (featureId) => {
+        if (featureOf() !== featureId) return "This session moved to another feature meanwhile: nothing changed.";
+        const problem = cannotFinishFeature();
+        if (problem) return problem;
+        this.runtime(sessionId).whenIdle(() => {
+          // Checked again: by the end of the turn it may have moved, or another session started.
+          const late = featureOf() !== featureId ? "it moved to another feature" : cannotFinishFeature();
+          if (late) return void this.log.info({ session: sessionId, feature: featureId, why: late }, "agent's feature done dropped");
+          this.store.setFeatureDone(featureId, true);
+          this.log.info({ session: sessionId, feature: featureId }, "feature marked done by an agent");
+          this.broadcast(this.featureList());
+          this.broadcastSessionList();
+        });
+        return undefined;
+      },
+    };
   }
 
   /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,
@@ -448,6 +506,7 @@ export class SessionHub {
         log: this.rootLog,
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
+        features: this.featureOps(sessionId),
       });
       this.runtimes.set(sessionId, runtime);
       this.broadcastSessionList(); // a new session (or one just loaded) may change the list

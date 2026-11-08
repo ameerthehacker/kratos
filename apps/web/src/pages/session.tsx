@@ -14,7 +14,6 @@ import { DoneButton } from "@/components/done-button";
 import { Counts } from "@/components/review/counts";
 import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
-import { FeaturePill } from "@/components/feature-pill";
 import { NameField } from "@/components/name-field";
 import { SessionTitle } from "@/components/session-title";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -31,13 +30,12 @@ const NO_LOG: LogMessage[] = [];
 /** `/s/:sessionId` — one session's conversation. Opening the URL makes this tab view it. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const { connected, sessionAnnounced, harnesses, sessions, features, viewing, log, send, cwd, loaded } = useKratos(
+  const { connected, sessionAnnounced, harnesses, sessions, viewing, log, send, cwd, loaded } = useKratos(
     useShallow((s) => ({
       connected: s.connected,
       sessionAnnounced: s.sessionAnnounced,
       harnesses: s.harnesses,
       sessions: s.sessions,
-      features: s.features,
       viewing: s.viewing,
       log: s.log,
       send: s.send,
@@ -172,18 +170,6 @@ export function SessionPage() {
                   disabled={!live}
                 />
               </>
-            }
-            // What it belongs to (D73): its feature, or — a one-off — a way to move it into one.
-            shelf={
-              session && (
-                <FeaturePill
-                  features={features}
-                  value={session.featureId}
-                  purpose={session.featureId ? undefined : "move"}
-                  onChange={(featureId) => send({ type: "set_session_feature", sessionId: session.id, featureId })}
-                  onCreate={(newFeatureTitle) => send({ type: "set_session_feature", sessionId: session.id, newFeatureTitle })}
-                />
-              )
             }
             onSend={(text, attachments, { now }) => {
               askToNotify(); // once, from this click (3r3)

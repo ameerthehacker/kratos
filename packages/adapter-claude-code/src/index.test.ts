@@ -543,6 +543,7 @@ describe("Claude Code adapter: host tools (D77)", () => {
     name: "echo",
     description: "Says the text back",
     input: z.object({ text: z.string() }),
+    describe: (input) => `Echo “${(input as { text?: string }).text}”`,
     async call({ text }, { toolCallId }) {
       calls.push(toolCallId);
       return { text: `echo: ${text}` };
@@ -567,16 +568,19 @@ describe("Claude Code adapter: host tools (D77)", () => {
     });
     session.send(prompt); // sent before `initialize` is answered: held until then
     let report = "";
+    let action: unknown;
     for await (const event of session.events) {
+      if (event.kind === "tool_call") action = event.action;
       if (event.kind === "tool_result") report = event.output;
       if (event.kind === "turn_end") break;
     }
     await session.stop();
-    return { report: JSON.parse(report), asked };
+    return { report: JSON.parse(report), asked, action };
   }
 
   it("serves them in-process: declared and named, listed with their schemas, called with the tool call's id", async () => {
-    const { report, asked } = await useTool('hosttool echo {"text":"hi"}');
+    const { report, asked, action } = await useTool('hosttool echo {"text":"hi"}');
+    expect(action).toEqual({ type: "other", description: "Echo “hi”" }); // its step says it in words (4m3)
     expect(report.servers).toEqual(["kratos"]);
     expect(JSON.parse(report.mcpConfig)).toEqual({ mcpServers: { kratos: { type: "sdk", name: "kratos" } } });
     expect(report.tools.map((t: { name: string }) => t.name)).toEqual(["echo", "boom", "slow"]);

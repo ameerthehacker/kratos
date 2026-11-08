@@ -121,7 +121,6 @@ export function HomePage() {
                 features={features}
                 value={featureId}
                 newTitle={newFeatureTitle}
-                purpose="choose"
                 onChange={(id) => choose(id ? { feature: id } : {})}
                 onCreate={(name) => choose({ new: name })}
               />

@@ -1217,10 +1217,45 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           wait for the held prompts; claude exiting aborts running calls; a reused request id is
           refused; the server's own requests aren't taken for answers. Nothing uses it yet:
           Kratos's own tools are 4m3.
-    - [ ] **4m3. Kratos's tools** — the read and change tools above on the hub; changes wait for
-          the owner's answer, whatever the mode; only the calling session.
-    - [ ] **4m4. The change card** — the ask in the chat says the change in words ("Create the
-          feature CSV export and move this session into it").
+    - [x] **4m3. Kratos's tools, and the card that asks** (~300 + tests; 4m4 folded in: a change
+          can't ask without its card) — four tools, on the calling session only: `list_features`
+          (read: the features, and which one this session is in; never asks); `file_session`
+          (into an existing feature by id, a new one by name, or back to a one-off);
+          `mark_session_done` (this session; its own turn isn't stopped, it ends right after);
+          `mark_feature_done` (this session's feature; refused while another session in it
+          works). Each change takes the agent's optional `reason` and waits for the owner on the
+          session's usual ask (Allow / Deny card, needs-you status, notification) in every mode,
+          Bypass too; Deny reaches the agent as a tool error; a change that can't happen (done
+          feature, no feature) is refused before asking. The card says the change in words: a
+          host tool's `describe(input)` becomes its call's `action.description`, which the step
+          and the card use ("Claude Code wants to create the feature “CSV export” and move this
+          session into it"). Scope: core `agent.ts` (`describe`), adapter `index.ts` (the
+          description on host tool calls) + test, new `apps/cli/src/kratos-tools.ts`,
+          `session-runtime.ts` (passes the tools), `session-hub.ts` (feature operations for a
+          session), web `lib/timeline.ts` + test. Accept: hub tests calling the tools as the agent
+          would (list; file into a new / existing / done feature; allow and deny; mark done;
+          feature done refused while another works); timeline test; live with the real `claude`:
+          asked to file this work in a new feature, it calls the tool, the card says so, Allow
+          moves the session; typecheck, test, build.
+          **Proof:** 237 tests (5 hub tests calling the tools as the agent would; adapter: the
+          description on a host call; timeline: its step and ask read in words). Live with the
+          real `claude` (Haiku, a throwaway repo, the session in **Bypass**): asked to file its
+          work in a new feature, it loaded and called `file_session` with its own reason; the
+          card read "Claude Code wants to create the feature “CSV export” and move this session
+          into it" with the reason under it, the session "Needs approval"; Allow → the feature
+          made, the session in it. Typecheck 7/7, build 5/5. ~300 lines + tests (owner OK'd the
+          size by asking for the tools in one go).
+          **Review round** (owner): 8 findings, all fixed — the feature the owner approved is the
+          one marked done (not whichever the session is in by then); the agent's done-marks wait
+          for its turn to end (`runtime.whenIdle`), checked again then, so Done never holds a
+          working session; a throwing `describe` can't end the session; the ask carries the name
+          the agent calls the tool by (`toolName` from the adapter, no Claude naming in the hub);
+          one session-move path for owner and agent; core's `Title` shared; labels only for calls
+          that will be taken; fewer lookups. Owner, same round: the shelf is on Home only — in a
+          session the sidebar shows its feature, and dragging or the agent's tools move it; the
+          pill lost its session modes. **Proof:** 239 tests; typecheck 7/7, build 5/5; live again
+          with the real `claude` in Bypass: the card, Allow, "You allowed this", the session in
+          its new feature, no shelf in the session.
     - [ ] **4m5. The nudge** — once per session, the agent is told it can offer to file the work
           in a feature or mark it done, and must ask.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside

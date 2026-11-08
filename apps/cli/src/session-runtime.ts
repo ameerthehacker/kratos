@@ -16,6 +16,7 @@ import {
 import type { AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import type { Logger } from "./logger.js";
+import { kratosTools, type SessionFeatureOps } from "./kratos-tools.js";
 import type { SessionStore } from "./store/store.js";
 
 type Outcome = "allowed" | "denied" | "cancelled";
@@ -64,6 +65,8 @@ export class SessionRuntime {
   private agentStarted: boolean;
   /** The agent is naming the session (3z4). */
   private naming = false;
+  /** Changes waiting for the session to be idle (4m3: its agent marked it done mid-turn). */
+  private afterTurn: Array<() => void> = [];
   /** The model this session runs with; null = the agent's default (D43). */
   private model: string | null;
   /** The effort level chosen for this session; null = never chosen (D51). */
@@ -89,6 +92,8 @@ export class SessionRuntime {
       log: Logger;
       onMessage: (message: ServerMessage) => void;
       onChange: () => void;
+      /** What the agent's own Kratos tools may do, on this session (4m3); none = no such tools. */
+      features?: SessionFeatureOps;
     },
   ) {
     this.logger = deps.log.child({ component: "session", session: id });
@@ -175,6 +180,24 @@ export class SessionRuntime {
     this.toAgent(() => session.send(text, files));
     this.deps.onChange();
     if (first) void this.name(text);
+  }
+
+  /**
+   * Run `change` once this session is idle: now if it is, else when its turn ends with nothing
+   * queued (or its agent ends). The agent marking its own session or feature done does it mid-turn,
+   * and Done mustn't hold a session still working: an ask would hide there (4m3, D73).
+   */
+  whenIdle(change: () => void): "now" | "after this turn" {
+    if (this.status === "idle" && this.queue.size === 0) {
+      change();
+      return "now";
+    }
+    this.afterTurn.push(change);
+    return "after this turn";
+  }
+
+  private runAfterTurn(): void {
+    for (const change of this.afterTurn.splice(0)) change();
   }
 
   /** Name the session again, from the conversation so far (3z4: the owner's Regenerate). */
@@ -372,6 +395,8 @@ export class SessionRuntime {
       permissionMode: this.mode ?? undefined,
       requestPermission: (request, { signal }) => this.ask(request, signal),
       askQuestions: (request, { signal }) => this.askQuestions(request, signal),
+      // Its changes ask the owner on this session's usual ask, whatever the mode (4m3, D77).
+      tools: this.deps.features ? kratosTools(this.deps.features, (request, signal) => this.ask(request, signal)) : undefined,
     });
     this.logger.info(
       {
@@ -413,6 +438,7 @@ export class SessionRuntime {
           this.logger.debug({ event }, "turn ended");
           this.turn = { state: "idle" };
           void this.takeSnapshot("turn_end");
+          if (this.queue.size === 0) this.runAfterTurn();
           this.deps.onChange();
         }
       }
@@ -423,6 +449,7 @@ export class SessionRuntime {
     } finally {
       if (this.session === session) this.session = undefined;
       this.dropQueue(); // the agent that held them is gone
+      this.runAfterTurn(); // nothing runs here any more
       if (this.turn.state === "running") {
         this.turn = { state: "idle" };
         this.deps.onChange();

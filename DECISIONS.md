@@ -209,6 +209,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   aborts every call still running. Checked on the real CLI (2.1.308, Haiku): the agent called
   `mcp__kratos__list_features` with `{includeDone: true}` and the real tool call's id, no
   permission card, and answered from it.
+- Kratos's tools (4m3): `list_features`, `file_session`, `mark_session_done`,
+  `mark_feature_done`, on the calling session only, under the same rules as the owner's tabs (the
+  hub's checks, shared). Changes wait on the session's usual permission ask (same card, status,
+  notification) in every mode; Deny is a tool error; a change that can't happen is refused before
+  asking; marking its own session done doesn't stop its turn. A host tool's `describe(input)`
+  becomes its call's `action.description`, so the step and the card say the change in words.
+  Verified live in Bypass: the card still asked. Review round: the agent's done-marks wait for
+  its turn to end (`whenIdle`), so a session still working never sits in Done; the feature the
+  owner approved is the one marked done.
 - Package (owner: library-first, D7): `@modelcontextprotocol/sdk` 1.32.2, MIT, the official MCP
   SDK. Only `McpServer` and its JSON-RPC protocol are imported; the HTTP transports (express,
   hono…) are its dependencies but never bundled (esbuild takes what's imported; the binary still
@@ -309,6 +318,8 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   closed by default). Replaced 4b's first "N done" fold inside the Working folder. A feature can
   be renamed any time (`rename_feature`); the title is only a label until 4f gives it a folder.
   Renaming isn't work on it: its place in the list stays (4c4 review).
+- The shelf lives on Home only (owner, 4m3 round): in a session the sidebar already says its
+  feature, and dragging (4c3) or the agent's tools (4m3) move it; the pill keeps Home's choose.
 - Review rules (4c4): a prompt from Home with no feature makes a one-off, even when it reuses an
   empty session that was in one; reopening a session reopens its done feature (live work isn't
   hidden in Done); only a session's first prompt picks its feature, a later one's is ignored.

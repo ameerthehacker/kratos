@@ -156,6 +156,22 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D68. The session runtime's states are explicit discriminated unions (step 3y4, owner)
+- Found by the architecture review (2026-11-07): `SessionRuntime` tracked its turn with four flags
+  that only made sense together (`turnOpen`, `turnFromQueue`, `lastStep`, `runningStep`), reset
+  by hand in several places, and one place forgot: when the agent died mid-turn, the steps stayed,
+  so the next turn's first queued prompt could be marked "read after" a step of the dead turn.
+- Decision (owner): a plain TS discriminated union, `Turn = idle | running { startedBy, lastStep?,
+  runningStep? }`, set whole at each transition: steps exist only while their turn runs, and going
+  idle drops them. Step events that arrive while idle are ignored. `snapshotting` stays as it is:
+  it holds back messages to the agent until the snapshot is taken, which isn't a turn state.
+- Alternatives: XState v5 (a new dependency and concept for two states; the hard part is the async
+  queue choreography, which a machine doesn't simplify, and 3y3 moves half of it to the adapter);
+  a reducer with events (more ceremony than four transitions need).
+- Order (owner): 3y4a (the turn) now, then 3y3 (Send now into the adapter), then 3y4b (the queue
+  as its own class), which is then about half the size.
+- Reverse: put the four fields back; the transitions are in `prompt`, `pump` and `promptState`.
+
 ### D67. Design review loop: score the dev app, fix inside the design (step 3x, owner)
 - Owner: screenshot every screen of the dev app, review critically, score, improve until ≥ 8.
   Screenshots by headless Chromium (playwright-core in a scratch folder, not a dependency); a

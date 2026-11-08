@@ -940,6 +940,21 @@ describe("SessionHub: steering prompts (D56)", () => {
     expect(late.seen.filter((m) => m.type === "prompt_removed").at(-1)).toEqual({ type: "prompt_removed", id: second, reason: "stopped" });
     expect(count(late)).toBe(0);
   });
+
+  it("a turn after the agent died mid-turn knows none of the dead turn's steps (D68)", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.emit({ kind: "tool_result", id: "old", output: "ok", isError: false });
+    await agents[0]!.stop(); // its events end without a turn_end
+    await tick();
+    a.receive({ type: "prompt", text: "again" }); // a new agent, a new turn
+    a.receive({ type: "prompt", text: "queued" });
+    const [id] = queuedIds(a);
+    agents[1]!.emit({ kind: "prompt_state", id: id!, state: "started" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "prompt_read", id, how: "step" }); // not after "old"
+  });
 });
 
 describe("SessionHub: Send now (D56, 3t2)", () => {

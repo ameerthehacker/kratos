@@ -822,6 +822,92 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         of `only` (needs our own `-z` parse instead of simple-git's `diffSummary`); a slow start
         snapshot can briefly count between-turn edits; a whole-session rename can pair your
         deletion with the agent's new file. Released as v0.9.0.
+- [ ] **3y. Architecture review fixes** (owner asked for the review, 2026-11-07) — what a broad
+      review of the code found, as separate steps, most urgent first. 3y1 goes first and alone (it's
+      a hole); 3y2 before more sessions pile up in the old shape; 3y3 before 3y4 (it shrinks what
+      3y4 has to restructure); the rest whenever.
+  - [ ] **3y1. Only Kratos's own page may connect** (~80 + tests) — today `/ws` takes any
+        `Origin` (checked: a socket claiming `https://evil.example` got `pong`). Browsers don't
+        apply same-origin rules to WebSockets, so any website open in your browser can connect to
+        `ws://127.0.0.1:4317/ws`: it gets the latest session's replay (code, tool output, the
+        project path) and can send a prompt in Bypass (`confirmDangerous` is a UI flag, not a
+        control). Loopback binding doesn't stop it. Fix: refuse the upgrade unless `Origin` is
+        Kratos's own (`http://localhost|127.0.0.1|[::1]:<port>`, the `--host` one, and in `pnpm
+        dev` Vite's `:5173`, which its proxy forwards as-is); refuse HTTP requests whose `Host`
+        isn't one of those (DNS rebinding, for `/attachments` and `/editor-icons`). No `Origin`
+        (not a browser: the tests, curl) stays allowed — a local process can run code anyway.
+        Owner: also a per-run secret (in the URL Kratos opens, then a cookie)? It would also cover
+        another local user on a shared machine and `--host 0.0.0.0`, at the cost of links that
+        stop working after a restart. Scope: `apps/cli/src/server.ts`, `index.ts`, its tests,
+        `apps/web/vite.config.ts` if needed, DECISIONS. Accept: tests — foreign `Origin` refused
+        (no replay, no `pong`), wrong `Host` → 403, own origin and no origin work; the built app
+        and `pnpm dev` still work in a real browser; a page served from another port can't
+        connect (checked by hand in the browser).
+  - [ ] **3y2. The session log has its own schema, checked on load** (~150 + tests) — the
+        `messages` table stores `ServerMessage` exactly as sent, and `store.load()` returns it
+        unvalidated but typed as the current schema: so every field must stay optional forever
+        ("absent in logs from before it existed"), a shape change has no migration path, and the
+        database is the one boundary not checked with zod. And which messages are log entries is a
+        hand-kept list (`LogMessage` excludes 11 types by name in `kratos-store.ts`): a new
+        non-log message, list forgotten, lands in the chat. Fix: `LogEntry` (a zod union of the
+        logged messages) in `packages/core`; `ServerMessage` = `LogEntry` ∪ the others, so the web
+        app's `LogMessage` is just `LogEntry`; rows parsed with it on load, with a `format` column
+        to upgrade old shapes when one changes. Owner: a row that doesn't parse — skipped and
+        logged, or shown as "Kratos couldn't read this part"? Scope: core protocol, store +
+        migration, `kratos-store.ts`, tests. Accept: today's rows (all 10 migrations' shapes) load;
+        a broken row is handled as decided; typecheck proves a non-log message can't enter the log.
+  - [ ] **3y3. Send now belongs to the adapter** (~150 moved, fewer lines overall) — the
+        withdraw-the-others / send-now / re-queue-under-new-ids routine in `SessionRuntime`
+        (`sendingNow`, `holding`, `agentIds`, `requeueHeld`) exists only because Claude's own Send
+        now delivers *every* held prompt, and the generic `AgentSession` docs say so. Move it into
+        the Claude adapter: `sendNow(id)` means "this one only" for any agent, and `prompt_state`
+        reports Kratos's ids. Same look for `turnFromQueue` ("real CLI: B and D started at once"):
+        can the adapter say it instead of the runtime guessing? Scope: `packages/core/src/agent.ts`
+        (docs), the adapter, `session-runtime.ts`, tests. Accept: the hub's Send now tests pass
+        unchanged; new adapter tests; real `claude` Send now with three queued prompts.
+  - [ ] **3y4. The session's states, made explicit** (D68) — `SessionRuntime` (~600 lines)
+        tracks a turn with ~8 flags that depend on each other: the place bugs will come from.
+        Owner: a plain discriminated union (no XState); split in two, with 3y3 between them.
+    - [x] **3y4a. The turn as a union** (~60) — `turnOpen`, `turnFromQueue`, `lastStep`,
+          `runningStep` → `turn: idle | running { startedBy, lastStep?, runningStep? }`, set whole
+          at each transition. Scope: `session-runtime.ts`, one hub test, DECISIONS. Accept: every
+          existing test passes unchanged; a state diagram in the walkthrough.
+          Done (owner approved): 191 existing tests pass unchanged, plus one new test for the bug the
+          union fixed (a turn after the agent died mid-turn inherited its steps: fails on the old
+          runtime with `after: "old"`, passes now). Size: +35 −28 in `session-runtime.ts`.
+    - [ ] **3y4b. The queue as its own class** (~100 after 3y3) — `queue`, `agentIds`,
+          `stopping` (and whatever 3y3 leaves of `sendingNow`) → `PromptQueue` in its own file.
+          Accept: every hub and server test passes unchanged.
+  - [ ] **3y5. Review code out of the hub; snapshots in log order** (~60) — `changes()` and
+        `touched()` (~80 lines of review logic) move from `session-hub.ts` to `changes/`. Fix:
+        the turn-end snapshot isn't awaited, so the next prompt's turn-start one can be stored
+        first, and `snapshotsOf` orders by insert id: order by `log_seq` (id for old rows). The
+        hub's message switch gets an exhaustive `default` (`satisfies never`), since the server
+        handles half the types and the hub the rest. Scope: `apps/cli/src/session-hub.ts`,
+        `changes/**`, `store.ts`, tests. Accept: a test where the start snapshot lands first;
+        all tests pass.
+  - [ ] **3y6. Long sessions stay fast** (~150; numbers first) — the work grows with the square
+        of a session's length: the web store copies the whole log per message and
+        `buildTimeline` re-runs over all of it per message; connecting replays the latest session,
+        then the tab's own on `open_session` (two replays off the latest); runtimes are never
+        evicted (every session opened keeps its log in memory); every prompt waits on a whole-repo
+        `git add --all`. First measure: a synthetic 5,000-message session (replay time, a live
+        message's render time, server memory) and the snapshot time on a big repo. Then fix what
+        the numbers say: append a replay in one store update; connect straight to the tab's
+        session (e.g. `/ws?session=<id>`); evict runtimes with no tab, no agent and nothing open;
+        warn when a snapshot is slow. Owner: what's "fast enough" (e.g. replay under 200 ms)?
+        Scope: `apps/web/src/lib/**`, `hooks/use-kratos-connection.ts`, `session-hub.ts`,
+        protocol if the connect URL changes. Accept: before / after numbers.
+  - [ ] **3y7. Know which `claude` Kratos is driving** (~80 + a script) — the adapter relies on
+        undocumented CLI internals (`cancel_async_message`, `interrupt {send_now}`,
+        `apply_flag_settings`, `get_settings.applied`, two env vars read from claude 2.1.308), and
+        the fake `claude` encodes our understanding of them, so tests stay green when the real one
+        changes. Read `claude --version` once; log it; say so in the UI when it's outside the
+        versions checked; a request the CLI no longer knows fails with a message naming its
+        version. And the opt-in `pnpm smoke` promised under "Deliberately not tested": the main
+        flows (prompt, allow / deny, queue, Send now, remove, model / effort / mode) on the real
+        CLI in a temp repo. Scope: adapter, a `scripts/smoke` file, root `package.json`. Accept:
+        the smoke run's output; a faked unknown version shows the warning.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
@@ -871,7 +957,13 @@ on what's being built. Two gated slices (owner):
 - "Predict" mode and "you write this" mode in the UI
 - Data-flow walkthrough view per step
 - Rewind / branch from any checkpoint
-- More adapters (Codex CLI, Gemini CLI, Aider…)
+- More adapters (Codex CLI, Gemini CLI, Aider…). Before then (review, 2026-11-07): a tiny
+  scripted in-memory adapter for the hub's tests, so `AgentAdapter` has a second implementation
+  and stops taking Claude's shape (3y3 is one place it did)
+- Worktree per session (review, 2026-11-07; D41's known limit): side-by-side sessions share one
+  working tree today, so two agents can overwrite each other and a review counts the other's edits
+- Plan step ids (`3u5c`, `3v3`) in code comments rot when steps are renumbered; D-numbers are
+  stable. Owner's call whether to keep only D-numbers in code (then a CLAUDE.md line)
 - Rebinding shortcuts (3k, D66): in the shortcuts sheet, `useHotkeyRecorder` + conflict check,
   saved as `Settings.keybindings`, passed to the provider's `customHotkeys`
 - Track estimate vs actual per step to calibrate future estimates (step 2 missed by ~30%)

@@ -20,6 +20,23 @@ import type { SessionStore } from "./store/store.js";
 type Outcome = "allowed" | "denied" | "cancelled";
 
 /**
+ * The agent's turn (D68): idle, or running with the steps (tool calls) it has run so far. Step
+ * ids only mean something while their turn runs, so they live in it and go when it ends.
+ */
+type Turn =
+  | { state: "idle" }
+  | {
+      state: "running";
+      /** `queue`: the agent started it itself, with queued prompts (not a prompt sent while idle):
+       * others it takes before any step finishes came with them, as the next turn. */
+      startedBy: "prompt" | "queue";
+      /** The last step that finished: a prompt read now follows it. */
+      lastStep?: string;
+      /** The step running now, if any: what Send now stops. */
+      runningStep?: string;
+    };
+
+/**
  * One session (D41): its stored log, its agent process, its open permission asks and its live
  * status. Knows nothing about tabs — it reports every new log message via `onMessage` and every
  * status/title change via `onChange`; the SessionHub routes them.
@@ -31,13 +48,7 @@ export class SessionRuntime {
   private readonly queue = new Map<string, { text: string; files: readonly AgentAttachment[]; agentId: string }>();
   /** Agent id → Kratos prompt id, for prompts re-queued under a new agent id (Send now). */
   private readonly agentIds = new Map<string, string>();
-  /** The last step (tool call) that finished in the running turn: a prompt read now follows it. */
-  private lastStep: string | undefined;
-  /** The step (tool call) running now, if any: what Send now stops. */
-  private runningStep: string | undefined;
-  /** The running turn was started by the agent itself with queued prompts (not by a prompt sent
-   * while idle): others it takes before any step finishes came with them, as the next turn. */
-  private turnFromQueue = false;
+  private turn: Turn = { state: "idle" };
   /** Send now in progress (owner: only that prompt goes, D56): the others are withdrawn from the
    * agent (`holding`, still queued for us) and sent again once both the withdrawals are done and
    * the chosen one has been read. */
@@ -59,8 +70,6 @@ export class SessionRuntime {
   /** The permission mode: chosen, or as the agent last reported it; null = the agent's default (D53). */
   private mode: string | null;
   private session: AgentSession | undefined;
-  /** A prompt was sent and its turn hasn't ended yet. */
-  private turnOpen = false;
   /** The turn's start snapshot while it's being taken (3v1, D65): prompts reach the agent after it. */
   private snapshotting: Promise<void> | undefined;
   private readonly logger: Logger;
@@ -111,7 +120,7 @@ export class SessionRuntime {
 
   get status(): SessionSummary["status"] {
     if (this.questions.size > 0) return "needs_answer";
-    return this.pending.size > 0 ? "needs_approval" : this.turnOpen ? "working" : "idle";
+    return this.pending.size > 0 ? "needs_approval" : this.turn.state === "running" ? "working" : "idle";
   }
 
   /** The effort level for the session list: what the agent really uses if it has said, else the
@@ -136,7 +145,7 @@ export class SessionRuntime {
     this.deps.store.setTitle(this.id, text);
     const refs = this.storeFiles(files);
     const attachments = refs.length > 0 ? { attachments: refs } : {};
-    if (this.session && this.turnOpen) {
+    if (this.session && this.turn.state === "running") {
       const id = randomUUID();
       this.queue.set(id, { text, files, agentId: id });
       this.publish({ type: "prompt_queued", id, text, ...attachments });
@@ -150,8 +159,7 @@ export class SessionRuntime {
       return;
     }
     this.publish({ type: "user_prompt", text, ...attachments });
-    this.turnFromQueue = false;
-    this.turnOpen = true;
+    this.turn = { state: "running", startedBy: "prompt" };
     this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     const session = (this.session ??= this.start());
@@ -188,7 +196,8 @@ export class SessionRuntime {
     const session = this.session;
     if (!chosen || !session || this.sendingNow) return false;
     const others = [...this.queue.keys()].filter((id) => id !== promptId);
-    const now = { id: promptId, stopped: this.runningStep, holding: new Set(others), withdrawn: false, read: false };
+    const stopped = this.turn.state === "running" ? this.turn.runningStep : undefined;
+    const now = { id: promptId, stopped, holding: new Set(others), withdrawn: false, read: false };
     this.sendingNow = now;
     this.logger.info({ prompt: promptId, holding: others.length, stopped: now.stopped }, "send now");
     void (async () => {
@@ -343,10 +352,9 @@ export class SessionRuntime {
           continue;
         }
         this.publish({ type: "agent_event", event });
-        if (event.kind === "tool_call") this.runningStep = event.id;
-        if (event.kind === "tool_result") {
-          this.lastStep = event.id;
-          this.runningStep = undefined;
+        if (this.turn.state === "running") {
+          if (event.kind === "tool_call") this.turn.runningStep = event.id;
+          if (event.kind === "tool_result") Object.assign(this.turn, { lastStep: event.id, runningStep: undefined });
         }
         // The agent changed mode — on our request or on its own (leaving plan mode): follow it.
         if (event.kind === "permission_mode") {
@@ -355,10 +363,7 @@ export class SessionRuntime {
         }
         if (event.kind === "turn_end") {
           this.logger.debug({ event }, "turn ended");
-          this.turnOpen = false;
-          this.lastStep = undefined;
-          this.runningStep = undefined;
-          this.turnFromQueue = false;
+          this.turn = { state: "idle" };
           void this.takeSnapshot("turn_end");
           this.deps.onChange();
         }
@@ -370,8 +375,8 @@ export class SessionRuntime {
     } finally {
       if (this.session === session) this.session = undefined;
       this.dropQueue(); // the agent that held them is gone
-      if (this.turnOpen) {
-        this.turnOpen = false;
+      if (this.turn.state === "running") {
+        this.turn = { state: "idle" };
         this.deps.onChange();
       }
     }
@@ -391,21 +396,23 @@ export class SessionRuntime {
     this.queue.delete(id);
     if (state === "started") {
       const now = this.sendingNow?.id === id ? this.sendingNow : undefined;
+      const turn = this.turn;
       // Read at a step boundary only if a step has finished in this turn; prompts the agent takes
       // together to start a new turn are all `next_turn` (real CLI: B and D started at once).
-      const atStep = this.turnOpen && !(this.turnFromQueue && !this.lastStep);
+      const atStep = turn.state === "running" && (turn.startedBy === "prompt" || !!turn.lastStep);
       const how = now ? "now" : atStep ? "step" : "next_turn";
-      if (!this.turnOpen) this.turnFromQueue = true;
+      const after = how === "step" && turn.state === "running" ? turn.lastStep : undefined;
       this.publish({
         type: "prompt_read",
         id,
         how,
-        ...(how === "step" && this.lastStep ? { after: this.lastStep } : {}),
+        ...(after ? { after } : {}),
         ...(now?.stopped ? { stopped: now.stopped } : {}),
       });
       if (now) now.read = true;
       this.logger.info({ prompt: id, how }, "queued prompt read");
-      this.turnOpen = true;
+      // Read with no turn running: the agent starts one itself, with this prompt.
+      if (turn.state === "idle") this.turn = { state: "running", startedBy: "queue" };
       this.stopping?.ids.delete(id);
     } else {
       const stopped = this.stopping?.ids.delete(id) ?? false;

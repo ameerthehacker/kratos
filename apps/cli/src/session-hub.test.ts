@@ -11,6 +11,7 @@ import type {
   PermissionRequest,
   QuestionAnswer,
   QuestionRequest,
+  FeatureSummary,
   ServerMessage,
   SessionSummary,
 } from "@kratos/core";
@@ -140,6 +141,7 @@ function setup(snapshots?: Snapshots) {
       seen: [] as ServerMessage[],
       sessionIds: [] as string[],
       list: [] as SessionSummary[],
+      features: [] as FeatureSummary[],
       harnesses: [] as Harness[],
       seenWhenReady: undefined as number | undefined,
     };
@@ -150,6 +152,7 @@ function setup(snapshots?: Snapshots) {
         state.seenWhenReady = undefined;
       } else if (m.type === "session_ready") state.seenWhenReady = state.seen.length;
       else if (m.type === "sessions") state.list = m.list;
+      else if (m.type === "features") state.features = m.list;
       else if (m.type === "harnesses") state.harnesses = m.list;
       else state.seen.push(m);
     }, sessionId);
@@ -160,6 +163,9 @@ function setup(snapshots?: Snapshots) {
       },
       get list() {
         return state.list;
+      },
+      get features() {
+        return state.features;
       },
       get harnesses() {
         return state.harnesses;
@@ -502,6 +508,89 @@ describe("SessionHub across restarts (D36, D41)", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("SessionHub: features (D73)", () => {
+  const featureOf = (list: SessionSummary[], id: string) => list.find((s) => s.id === id)?.featureId;
+
+  it("creates a feature for every tab, also tabs that connect later", () => {
+    const { tab } = setup();
+    const a = tab();
+    const b = tab();
+    expect(a.features).toEqual([]);
+    a.receive({ type: "create_feature", title: "Plans" });
+    for (const t of [a, b, tab()]) expect(t.features).toMatchObject([{ title: "Plans", done: false }]);
+    expect(a.list.every((s) => s.featureId === null)).toBe(true); // sessions start as one-offs
+  });
+
+  it("starts a session from Home in the feature picked there", () => {
+    const { tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "first task" });
+    a.receive({ type: "prompt", text: "save plans", newSession: true, featureId: feature });
+    expect(featureOf(b.list, a.viewing)).toBe(feature);
+    expect(featureOf(b.list, a.opened[0]!)).toBeNull();
+
+    a.receive({ type: "prompt", text: "more", featureId: "ignored" }); // only a session's first prompt picks it
+    expect(featureOf(b.list, a.viewing)).toBe(feature);
+  });
+
+  it("moves a session into a feature and back to a one-off, for every tab", () => {
+    const { tab } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "prompt", text: "a one-off that grew" });
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+
+    b.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: feature });
+    expect(featureOf(a.list, a.viewing)).toBe(feature);
+    b.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: null });
+    expect(featureOf(a.list, a.viewing)).toBeNull();
+  });
+
+  it("marks a feature done and reopens it; its sessions keep their own done", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "task", featureId: feature });
+
+    a.receive({ type: "set_feature_done", id: feature, done: true });
+    expect(a.features[0]).toMatchObject({ id: feature, done: true });
+    expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(false);
+    a.receive({ type: "set_feature_done", id: feature, done: false });
+    expect(a.features[0]?.done).toBe(false);
+  });
+
+  it("refuses a feature that's unknown, another project's, or done — and starts nothing", () => {
+    const { agents, tab, otherProject } = setup();
+    const a = tab();
+    let theirs: FeatureSummary[] = [];
+    const other = otherProject().connect((m) => void (m.type === "features" && (theirs = m.list)));
+    other.receive({ type: "create_feature", title: "Not yours" });
+    a.receive({ type: "create_feature", title: "Finished" });
+    const done = a.features[0]!.id;
+    a.receive({ type: "set_feature_done", id: done, done: true });
+
+    for (const featureId of ["nope", theirs[0]!.id, done]) {
+      a.receive({ type: "prompt", text: "task", newSession: true, featureId });
+      expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+      a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId });
+      expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+    }
+    expect(a.seen.at(-1)).toMatchObject({ message: expect.stringMatching(/reopen it/) });
+    expect(agents).toHaveLength(0);
+    expect(a.list.every((s) => s.featureId === null)).toBe(true);
+
+    a.receive({ type: "set_feature_done", id: theirs[0]!.id, done: true });
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+    a.receive({ type: "set_session_feature", sessionId: "nope", featureId: null });
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
   });
 });
 

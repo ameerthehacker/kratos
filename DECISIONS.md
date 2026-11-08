@@ -156,6 +156,30 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D73. Features group sessions; a feature holds the plan (step 4, owner design)
+- Owner: plan mode should give a source-of-truth document shared across sessions, recording
+  the sessions that worked on it and the decisions made, kept under the project's `.kratos`
+  and not checked in. Designed together on the "Proposal · features and plans" board.
+- Decision: a **feature** is a folder of work: one plan plus the sessions on it. A session
+  belongs to at most one feature; with none it's a **one-off**, the default. The sidebar keeps
+  Working / Done (3d2): folders sort first in Working; a done feature is one row in Done. You
+  pick the feature on a new session from a pill on the composer's shelf. A plan is Markdown at
+  `.kratos/features/<slug>/plan.md` (agents edit it directly, with their normal tools); SQLite
+  links it to sessions and keeps its revisions. When Claude decides to plan, it switches to plan
+  mode and tells you, without asking, since plan mode can't change files. Only you mark a step
+  or a feature done.
+- Data (4a): a `features` table (shaped like `sessions`: project dir, title, done at,
+  created / updated) and a nullable `sessions.feature_id`. Until 4f a feature is only a row:
+  its folder on disk and its slug come with the plan. A done feature takes no new sessions
+  (reopen it first); marking it done leaves its sessions' own done alone. No delete yet, so no
+  `ON DELETE` rule.
+- Alternatives: plans as chat messages (today: an Allow / Deny ask); separate Features /
+  Sessions / Done headings; a feature chip in the composer card; the agent changing the plan
+  only through Kratos tools (MCP: stricter, but a second protocol and MCP-only agents); a
+  session in several features.
+- Reverse: features are additive. Drop `sessions.feature_id` and the folder rendering and the
+  sidebar is back to a flat list; plan files are plain Markdown and stay readable.
+
 ### D72. Images a tool returned are stored like attachments, shown on their step (step 3z, owner)
 - Owner: Claude takes screenshots to check its work; show them so the owner can check too.
 - Found on the real CLI (2.1.308, Haiku, $0.007): a Read of an image answers with a tool_result

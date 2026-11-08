@@ -974,8 +974,60 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       the real CLI: the Read step shows a 96×64 thumbnail; a click opens the 1440×813 image,
       "Read shot.png", 96.9 kB, Open original; `/attachments/<id>` serves it as image/png; the
       97 KB image is in `attachments`, and no base64 is in the session log. D72.
-- [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
-      before code.
+- [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
+      D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
+      it; a session with no feature is a one-off. The plan is a document in the project, not a
+      chat message: sessions update its steps and decisions, you tick steps done. Features first
+      (4a–4c, no plans needed), then plans on top (4d–4k). Only 4a is specified in full; each
+      later step gets its scope and acceptance when it's picked up.
+  - [x] **4a. Features on the server** (~150 + tests) — the server knows features; no UI yet.
+        A feature belongs to the project and has a title; a session belongs to at most one
+        (none = a one-off). Store: a `features` table (id, project dir, title, done at, created,
+        updated) and a nullable `sessions.feature_id`, with a drizzle migration. Protocol (core):
+        `create_feature {title}`, `set_feature_done {id, done}`, `set_session_feature {sessionId,
+        featureId | null}` (move to a feature, or back to one-off), and `featureId` on `prompt`
+        (used when it starts a session, like `harness`); the server sends `features` (id, title,
+        done, updatedAt) to each tab on connect and on every change, and `SessionSummary` gains
+        `featureId`. Rules: titles are trimmed, 1–80 chars; a `featureId` must be one of this
+        project's features and not done, else an `error`; marking a feature done leaves its
+        sessions' own done alone. Scope: core `protocol.ts`, cli `store/schema.ts` + migration,
+        `store.ts`, `session-hub.ts`, their tests. Accept: store + hub tests (create reaches every
+        tab; a prompt with `featureId` starts a session listed with it; move in and back out;
+        unknown or done feature refused; done flips); `pnpm dev` on the existing database
+        migrates, and old sessions show as one-offs; build, typecheck, test pass.
+        **Proof:** 7 new tests (208 pass); typecheck 7/7, build 5/5. A copy of the dev database
+        migrated (11 migrations), its 15 sessions all one-offs; a feature made and a session
+        moved into it there. ~160 lines of code + ~125 of tests. Also touched: the web store
+        keeps `features` (else it would land in the chat log), `server.test.ts` filters it. D73.
+  - [ ] **4b. Folders in the sidebar** (board §3–4) — Working lists features as folders first
+        (open/closed remembered), their sessions nested, done ones folded into "N done"; the
+        folder button by Working names and creates a feature; a folder's menu marks it done or
+        reopens it; a done feature is one row in Done that opens to its sessions.
+  - [ ] **4c. The shelf's feature pill** (board §5) — a shelf under the Home composer with one
+        pill: One-off (default) or a working feature; the folder's + opens Home with it preset.
+        In a session the pill is a fact; a one-off's menu has "Move to feature…". The git pills
+        join the shelf with the worktree work.
+  - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
+        the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
+  - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's
+        reason and Skip planning. First find out how `EnterPlanMode` reaches us (an ask or only
+        a mode change).
+  - [ ] **4f. Plans saved in features** (board §2, §6–7) — approving makes a feature (or fills
+        the one the session is in) and writes `.kratos/features/<slug>/plan.md`; Approve, build
+        later; the folder's Plan item opens the plan page, read-only; the pill's "A new feature"
+        starts in plan mode.
+  - [ ] **4g. Edit before approving** (board §2) — Read / Edit in the review card; your edits go
+        back to Claude as the approved plan (`updatedInput`).
+  - [ ] **4h. Continue a plan in a new session** (board §3, §5) — the first prompt tells the agent
+        about the plan; "Up next" step chips on Home; "Start in new session" on a step.
+  - [ ] **4i. Plan changes per session** (board §3) — at turn end a changed plan is saved as a
+        revision credited to the session and shown as "Updated the plan" with its diff; the
+        session log on the plan page.
+  - [ ] **4j. The gate and decisions** (board §3–4, §6) — a step Claude calls done waits for your
+        tick; proposed decisions wait for Accept / Ask why; the right island shows the step in
+        hand; "Mark feature done" when every step is ticked. Covers step 6.
+  - [ ] **4k. Scope drift** (board §3) — files a turn changed outside the step's files are flagged
+        with Show diff / Add to scope. The first piece of step 5's scope fence.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
       `requestPermission`), using the D24 model: steps carry an estimate (agent must split before
       coding if it exceeds the budget); budget = review load (in-scope insertions, config/lockfiles/
@@ -983,6 +1035,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       UI gate with **Extend** (+N lines, reason logged) / **Checkpoint** (commit what works, continue
       as a new step) / **Split** / **Revert**. Approve/reject between steps; checkpoints via git.
 - [ ] **6. Decision ledger** — decisions captured as structured events, shown in UI, flippable.
+      Now planned as part of 4j (decisions live in the feature's plan).
 - [ ] **7. Dogfood** — build step 8+ of Kratos using Kratos.
 
 ## Website (distribution) — owner, D58

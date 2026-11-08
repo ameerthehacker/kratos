@@ -7,12 +7,13 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ServerMessage } from "@kratos/core";
 import { MIGRATIONS } from "../paths.js";
-import { attachments, messages, sessions, snapshots, viewedFiles } from "./schema.js";
+import { attachments, features, messages, sessions, snapshots, viewedFiles } from "./schema.js";
 
 
 export type StoredSession = typeof sessions.$inferSelect;
 export type StoredAttachment = typeof attachments.$inferSelect;
 export type StoredSnapshot = typeof snapshots.$inferSelect;
+export type StoredFeature = typeof features.$inferSelect;
 
 /** Most recently active first; a tie (same millisecond) goes to the later-created session. */
 const NEWEST_FIRST = [desc(sessions.updatedAt), desc(sql`rowid`)];
@@ -83,6 +84,45 @@ export class SessionStore {
       .update(sessions)
       .set({ doneAt: done ? new Date() : null })
       .where(eq(sessions.id, sessionId))
+      .run();
+  }
+
+  /** Put a session in a feature, or back to a one-off with null (D73). A session joining moves
+   * the feature up in its list; the session's own place doesn't change. */
+  setSessionFeature(sessionId: string, featureId: string | null): void {
+    this.db.transaction((tx) => {
+      tx.update(sessions).set({ featureId }).where(eq(sessions.id, sessionId)).run();
+      if (featureId) tx.update(features).set({ updatedAt: new Date() }).where(eq(features.id, featureId)).run();
+    });
+  }
+
+  /** Start a feature in a project (D73). */
+  createFeature(projectDir: string, title: string): StoredFeature {
+    const now = new Date();
+    return this.db.insert(features).values({ id: randomUUID(), projectDir, title, createdAt: now, updatedAt: now }).returning().get();
+  }
+
+  getFeature(featureId: string): StoredFeature | undefined {
+    return this.db.select().from(features).where(eq(features.id, featureId)).get();
+  }
+
+  /** A project's features, most recently changed first (a tie: the later-created). */
+  listFeatures(projectDir: string): StoredFeature[] {
+    return this.db
+      .select()
+      .from(features)
+      .where(eq(features.projectDir, projectDir))
+      .orderBy(desc(features.updatedAt), desc(sql`rowid`))
+      .all();
+  }
+
+  /** Mark a feature done, or reopen it. Unlike a session's, this moves it: Done is newest first. */
+  setFeatureDone(featureId: string, done: boolean): void {
+    const now = new Date();
+    this.db
+      .update(features)
+      .set({ doneAt: done ? now : null, updatedAt: now })
+      .where(eq(features.id, featureId))
       .run();
   }
 

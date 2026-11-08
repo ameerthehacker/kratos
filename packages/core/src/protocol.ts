@@ -87,6 +87,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
     /** The mode to start in (D53); a `dangerous` one also needs `confirmDangerous: true`. */
     permissionMode: z.string().optional(),
     confirmDangerous: z.boolean().optional(),
+    /** The feature the session it starts belongs to (D73); none = a one-off. */
+    featureId: z.string().optional(),
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
@@ -107,6 +109,12 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("send_now"), id: z.string() }),
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
+  /** Start a feature in this project (D73). Answered with `features`. */
+  z.object({ type: z.literal("create_feature"), title: z.string().trim().min(1).max(80) }),
+  /** Mark a feature done, or reopen it (D73). Its sessions keep their own done. */
+  z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean() }),
+  /** Move a session into a working feature, or back to a one-off with null (D73). */
+  z.object({ type: z.literal("set_session_feature"), sessionId: z.string(), featureId: z.string().nullable() }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
   /** Answer to a `question_request`; the first valid answer from any tab wins (D54). */
@@ -157,8 +165,20 @@ export const SessionSummary = z.object({
   queued: z.number(),
   /** The owner marked it done (3d2): listed under "Done", hidden from Recent. */
   done: z.boolean(),
+  /** The feature it belongs to (D73); null = a one-off. */
+  featureId: z.string().nullable(),
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
+
+/** A feature as shown in the sidebar (D73): a folder of sessions, later holding their plan. */
+export const FeatureSummary = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** The owner marked it done: one row under "Done". */
+  done: z.boolean(),
+  updatedAt: z.number(),
+});
+export type FeatureSummary = z.infer<typeof FeatureSummary>;
 
 /** Somewhere the project folder can be opened: an installed editor, or the file manager (3d3). */
 export const Editor = z.object({
@@ -199,8 +219,8 @@ export const UpdateStatus = z.object({
 });
 export type UpdateStatus = z.infer<typeof UpdateStatus>;
 
-/** Server → browser. Everything except pong/error/session/sessions/harnesses/update/settings/
- * changes/viewed is in a session's log. */
+/** Server → browser. Everything except pong/error/session/sessions/features/harnesses/update/
+ * settings/changes/viewed is in a session's log. */
 export const ServerMessage = z.discriminatedUnion("type", [
   /** The owner's settings (3w): on connect, and whenever any tab changes them. */
   z.object({ type: z.literal("settings"), settings: Settings }),
@@ -215,6 +235,8 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session_ready"), id: z.string() }),
   /** All of this project's sessions, most recent first: on connect and whenever one changes. */
   z.object({ type: z.literal("sessions"), list: z.array(SessionSummary) }),
+  /** All of this project's features, most recent first: on connect and whenever one changes (D73). */
+  z.object({ type: z.literal("features"), list: z.array(FeatureSummary) }),
   /** Reply to `ping`: server info + timestamp. */
   z.object({
     type: z.literal("pong"),

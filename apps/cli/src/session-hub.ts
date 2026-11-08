@@ -59,11 +59,12 @@ export class SessionHub {
     this.loadHarnesses();
   }
 
-  /** A tab connected: show it the session list and the harnesses, then the session it asked for
-   * (3y6b) or else the most recent one. That order lets its chat draw once, with the agent's
-   * name, instead of again when they arrive. */
+  /** A tab connected: show it the features, the session list and the harnesses, then the session
+   * it asked for (3y6b) or else the most recent one. That order lets its chat draw once, with the
+   * agent's name, instead of again when they arrive. */
   connect(send: Send, sessionId?: string): Tab {
     const shown = sessionId && this.ours(sessionId) ? sessionId : this.store.latestOrCreate(this.cwd, this.adapter.id).id;
+    send(this.featureList());
     send(this.sessionList());
     if (this.harnesses.length > 0) send({ type: "harnesses", list: this.harnesses });
     this.view(send, shown);
@@ -108,6 +109,8 @@ export class SessionHub {
         }
         // Checked before anything starts: a refused mode must not start a session in another one.
         if (message.permissionMode && !this.modeAllowed(send, message.permissionMode, message.confirmDangerous)) return;
+        // And for the feature (D73): one that's gone or done starts nothing.
+        if (message.featureId && !this.featureUsable(send, message.featureId)) return;
         // Same for files (D55): a refused one means nothing is sent.
         const files = this.checkAttachments(send, message.attachments ?? []);
         if (!files) return;
@@ -123,6 +126,10 @@ export class SessionHub {
         if (!target.hasPrompts && message.model) target.setModel(message.model);
         if (!target.hasPrompts && message.effort) target.setEffort(message.effort);
         if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
+        if (!target.hasPrompts && message.featureId) {
+          this.store.setSessionFeature(target.id, message.featureId);
+          this.broadcast(this.featureList());
+        }
         // New work on a done session means it isn't done (owner, 3d2).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
         target.prompt(message.text, files, { sendNow: message.sendNow });
@@ -144,6 +151,26 @@ export class SessionHub {
         if (!this.inProject(send, message.id)) return;
         this.store.setDone(message.id, message.done);
         this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
+        this.broadcastSessionList();
+        return;
+      case "create_feature": {
+        const feature = this.store.createFeature(this.cwd, message.title);
+        this.log.info({ feature: feature.id }, "new feature");
+        this.broadcast(this.featureList());
+        return;
+      }
+      case "set_feature_done":
+        if (!this.featureInProject(send, message.id)) return;
+        this.store.setFeatureDone(message.id, message.done);
+        this.log.info({ feature: message.id, done: message.done }, message.done ? "feature marked done" : "feature reopened");
+        this.broadcast(this.featureList());
+        return;
+      case "set_session_feature":
+        if (!this.inProject(send, message.sessionId)) return;
+        if (message.featureId && !this.featureUsable(send, message.featureId)) return;
+        this.store.setSessionFeature(message.sessionId, message.featureId);
+        this.log.info({ session: message.sessionId, feature: message.featureId }, "session moved");
+        this.broadcast(this.featureList());
         this.broadcastSessionList();
         return;
       case "interrupt":
@@ -287,6 +314,21 @@ export class SessionHub {
     return false;
   }
 
+  /** Is this one of this project's features? Tells the tab when not. */
+  private featureInProject(send: Send, featureId: string): boolean {
+    if (this.store.getFeature(featureId)?.projectDir === this.cwd) return true;
+    send({ type: "error", message: `No feature ${featureId} in this project` });
+    return false;
+  }
+
+  /** A feature sessions can join: this project's, and not done (reopen it first). */
+  private featureUsable(send: Send, featureId: string): boolean {
+    if (!this.featureInProject(send, featureId)) return false;
+    if (this.store.getFeature(featureId)!.doneAt === null) return true;
+    send({ type: "error", message: "That feature is done: reopen it to add sessions to it" });
+    return false;
+  }
+
   /** A mode the harness has; a `dangerous` one (Bypass) only with the owner's explicit consent,
    * which only the consent dialog sends (D53). Tells the tab why when not. */
   private modeAllowed(send: Send, id: string, confirmDangerous = false): boolean {
@@ -350,7 +392,15 @@ export class SessionHub {
         permissionMode: this.runtimes.get(s.id)?.permissionMode ?? s.permissionMode,
         queued: this.runtimes.get(s.id)?.queuedCount ?? 0,
         done: s.doneAt !== null,
+        featureId: s.featureId,
       })),
+    };
+  }
+
+  private featureList(): ServerMessage {
+    return {
+      type: "features",
+      list: this.store.listFeatures(this.cwd).map((f) => ({ id: f.id, title: f.title, done: f.doneAt !== null, updatedAt: f.updatedAt.getTime() })),
     };
   }
 

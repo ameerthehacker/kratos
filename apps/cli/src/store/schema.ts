@@ -24,12 +24,31 @@ export const sessions = sqliteTable(
     permissionMode: text("permission_mode"),
     /** When the owner marked the session done (3d2); null = still being worked on. */
     doneAt: integer("done_at", { mode: "timestamp_ms" }),
+    /** The feature it belongs to (D73); null = a one-off. Can change: "Move to feature…". */
+    featureId: text("feature_id").references(() => features.id),
     /** Set the first time the agent process starts; from then on, starts must resume. */
     agentStartedAt: integer("agent_started_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("sessions_by_project").on(t.projectDir, t.updatedAt)],
+);
+
+/** A piece of work that groups sessions, and later holds their plan (D73). Belongs to one
+ * project; a session points at one, or none (a one-off). */
+export const features = sqliteTable(
+  "features",
+  {
+    id: text("id").primaryKey(),
+    projectDir: text("project_dir").notNull(),
+    /** As the owner named it (1–80 chars, trimmed); later, the approved plan's title. */
+    title: text("title").notNull(),
+    /** When the owner marked it done; null = still being worked on. Its sessions keep their own. */
+    doneAt: integer("done_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("features_by_project").on(t.projectDir, t.updatedAt)],
 );
 
 /** Files sent with prompts (D55): what they are; the bytes are a file named by `id` in the

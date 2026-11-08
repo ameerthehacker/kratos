@@ -1,18 +1,20 @@
 import { create } from "zustand";
-import type { ClientMessage, Harness, ServerMessage, SessionSummary, Settings, UpdateStatus } from "@kratos/core";
+import type { ClientMessage, FeatureSummary, Harness, ServerMessage, SessionSummary, Settings, UpdateStatus } from "@kratos/core";
 import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** What a session changed, as the server last said (3v1). */
 export type Changes = Extract<ServerMessage, { type: "changes" }>;
 /** Messages that belong to a session's log (everything the server replays). */
-export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" | "viewed" }>;
+export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "features" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" | "viewed" }>;
 
 type KratosState = {
   connected: boolean;
   info?: ServerInfo;
   /** All of this project's sessions, newest first, with live status (D41). */
   sessions: SessionSummary[];
+  /** This project's features, newest first (D73); the sidebar folders arrive with step 4b. */
+  features: FeatureSummary[];
   /** Harnesses the server can run and their models (D43); empty until the server knows them. */
   harnesses: Harness[];
   /** The session this tab views, as confirmed by the server, and its log. */
@@ -50,6 +52,7 @@ let replay: LogMessage[] = [];
 export const useKratos = create<KratosState>((set, get) => ({
   connected: false,
   sessions: [],
+  features: [],
   harnesses: [],
   log: [],
   changes: {},
@@ -93,6 +96,8 @@ export const useKratos = create<KratosState>((set, get) => ({
       }
       case "sessions":
         return set({ sessions: message.list });
+      case "features":
+        return set({ features: message.list });
       case "harnesses":
         return set({ harnesses: message.list });
       case "prompts_returned": // not part of the log: this tab's own, for its composer

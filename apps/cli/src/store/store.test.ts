@@ -102,4 +102,37 @@ describe("SessionStore", () => {
     store.append(a.id, prompt("activity")); // activity moves it to the top
     expect(store.list("/proj").map((s) => s.id)).toEqual([a.id, b.id]);
   });
+
+  it("keeps a project's features newest first; joining, done and reopen move a feature up (D73)", () => {
+    const store = openStore();
+    const a = store.createFeature("/proj", "Plans");
+    later();
+    const b = store.createFeature("/proj", "Worktrees");
+    store.createFeature("/other", "Elsewhere");
+    expect(store.listFeatures("/proj").map((f) => f.title)).toEqual(["Worktrees", "Plans"]);
+
+    const session = store.create("/proj", "Claude Code");
+    later();
+    store.setSessionFeature(session.id, a.id); // a session joining moves the feature up…
+    expect(store.get(session.id)?.featureId).toBe(a.id);
+    expect(store.listFeatures("/proj").map((f) => f.id)).toEqual([a.id, b.id]);
+    expect(store.get(session.id)?.updatedAt).toEqual(session.updatedAt); // …not the session
+
+    later();
+    store.setFeatureDone(b.id, true);
+    expect(store.getFeature(b.id)?.doneAt).not.toBeNull();
+    expect(store.listFeatures("/proj")[0]?.id).toBe(b.id); // Done is newest first
+    store.setFeatureDone(b.id, false);
+    expect(store.getFeature(b.id)?.doneAt).toBeNull();
+
+    store.setSessionFeature(session.id, null); // back to a one-off
+    expect(store.get(session.id)?.featureId).toBeNull();
+    expect(store.getFeature("missing")).toBeUndefined();
+  });
+
+  it("refuses a session in a feature that doesn't exist (foreign key)", () => {
+    const store = openStore();
+    const session = store.create("/proj", "Claude Code");
+    expect(() => store.setSessionFeature(session.id, "missing")).toThrow(/FOREIGN KEY/);
+  });
 });

@@ -48,7 +48,7 @@ const turnEnd = (m: ServerMessage): m is Extract<ServerMessage, { type: "agent_e
  * agent's models are known) are left out — their timing isn't part of the conversation. */
 const summary = (messages: ServerMessage[]) =>
   messages
-    .filter((m) => m.type !== "sessions" && m.type !== "harnesses")
+    .filter((m) => m.type !== "sessions" && m.type !== "features" && m.type !== "harnesses")
     .map((m) => (m.type === "agent_event" ? `agent_event:${m.event.kind}` : m.type));
 
 describe("kratos server", () => {

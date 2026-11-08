@@ -11,3 +11,10 @@ Status: `[ ]` open · `[~]` planned (step in PLAN.md) · `[x]` done (step)
       the conversation instead of having to open it elsewhere.
 - [ ] **Skills invocation** (owner, 2026-11-07) — invoke the agent's skills from Kratos.
 - [ ] **File mentions** (owner, 2026-11-07) — mention files in a prompt.
+- [ ] **A big prompt stops auto-scroll** (owner, 2026-11-08) — after sending a long message to the
+      agent, the chat no longer follows new output; the message's size seems to knock it out of
+      "stuck to the bottom".
+- [ ] **Marking a file viewed with its shortcut should go to the next file** (owner, 2026-11-08)
+      — in the changes review, marking viewed from the keyboard leaves you on the same file.
+- [ ] **Unviewed files first when moving between files** (owner, 2026-11-08) — next / previous
+      file in the review should prefer files not yet viewed.

@@ -1033,10 +1033,24 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         sessions); typecheck 7/7, build 5/5. Headless Chrome on a copy of the dev database: open,
         closed-with-an-ask, done and Done-shaped folders, naming and renaming (F2 + Enter saves,
         Esc cancels), keyboard walk (←/→/↓/Enter), Tab enters each tree once. D73, D74.
-  - [ ] **4c. The shelf's feature pill** (board §5) — a shelf under the Home composer with one
-        pill: One-off (default) or a working feature; the folder's + opens Home with it preset.
-        In a session the pill is a fact; a one-off's menu has "Move to feature…". The git pills
-        join the shelf with the worktree work.
+  - [x] **4c. The shelf's feature pill** (~150; board §5) — the composer gets a shelf: a tray
+        tucked under the card (the Worktrees proposal's), holding one pill for now. On Home it
+        picks what the new session belongs to: One-off (the default, every time) or one of the
+        working features; a Working folder's hover + opens Home with it picked (`/?feature=<id>`),
+        and the prompt carries `featureId`. In a session the pill says which feature it's in
+        (opening the plan comes with 4f); a one-off's opens "Move to a feature". No features yet:
+        the menu says to make one with the folder button. "A new feature" waits for plans (4f);
+        the git pills join the shelf with the worktree work. Scope: web `prompt-card.tsx` (shelf
+        slot), new `feature-pill.tsx`, `pages/home.tsx`, `pages/session.tsx`,
+        `sessions-sidebar.tsx` (the folder's +). Accept: screenshots of Home's shelf and menu,
+        Home preset from a folder's +, a feature session's pill, a one-off's move menu; a prompt
+        from Home with a feature lands in its folder; typecheck, test, build.
+        **Proof:** 214 tests pass, typecheck 7/7, build 5/5 (UI only; the server side is 4a's,
+        tested there). Headless Chrome on a copy of the dev database: the folder's + opened
+        `/?feature=…` with the pill on Plans; Enter sent `featureId` with the prompt (held back
+        in the browser, so no real `claude` ran); "Move to a feature" sent
+        `set_session_feature` and the session showed in Plans, its pill now the feature's name.
+        ~75 lines + the new `feature-pill.tsx` (~90).
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's

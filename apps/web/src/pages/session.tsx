@@ -14,6 +14,7 @@ import { DoneButton } from "@/components/done-button";
 import { Counts } from "@/components/review/counts";
 import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
+import { FeaturePill } from "@/components/feature-pill";
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
 import { clientLog } from "@/lib/log";
@@ -27,8 +28,19 @@ const NO_LOG: LogMessage[] = [];
 /** `/s/:sessionId` — one session's conversation. Opening the URL makes this tab view it. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const { connected, sessionAnnounced, harnesses, sessions, viewing, log, send, cwd, loaded } = useKratos(
-    useShallow((s) => ({ connected: s.connected, sessionAnnounced: s.sessionAnnounced, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send, cwd: s.info?.cwd, loaded: s.ready })),
+  const { connected, sessionAnnounced, harnesses, sessions, features, viewing, log, send, cwd, loaded } = useKratos(
+    useShallow((s) => ({
+      connected: s.connected,
+      sessionAnnounced: s.sessionAnnounced,
+      harnesses: s.harnesses,
+      sessions: s.sessions,
+      features: s.features,
+      viewing: s.viewing,
+      log: s.log,
+      send: s.send,
+      cwd: s.info?.cwd,
+      loaded: s.ready,
+    })),
   );
   const session = sessions.find((s) => s.id === sessionId);
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
@@ -157,6 +169,17 @@ export function SessionPage() {
                   disabled={!live}
                 />
               </>
+            }
+            // What it belongs to (D73): its feature, or — a one-off — a way to move it into one.
+            shelf={
+              session && (
+                <FeaturePill
+                  features={features}
+                  value={session.featureId}
+                  purpose={session.featureId ? undefined : "move"}
+                  onChange={(featureId) => send({ type: "set_session_feature", sessionId: session.id, featureId })}
+                />
+              )
             }
             onSend={(text, attachments, { now }) => {
               askToNotify(); // once, from this click (3r3)

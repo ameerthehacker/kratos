@@ -234,10 +234,13 @@ function Row({ item }: { item: ItemInstance<TreeNode> }) {
 
 /** A feature's folder row (D73). Closed, it shows the most urgent status inside, so an ask can't
  * hide in it; open, how many sessions it holds here. In Done it's muted: the finished part. On
- * hover, rename (also F2 / double-click) and done / reopen take the count's place. */
+ * hover, its buttons take the count's place: a new session in it (Working only), rename (also
+ * F2 / double-click), done / reopen. */
 function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feature" }>; item: ItemInstance<TreeNode>; box: string }) {
   const { feature, count, status, inDone } = node;
+  const navigate = useNavigate();
   const open = item.isExpanded();
+  const canStart = !inDone && !feature.done; // a new session in it: Working's folders only
   const Icon = feature.done ? FolderCheck : Folder;
   if (item.isRenaming()) {
     return (
@@ -264,7 +267,7 @@ function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feat
       {/* The hover buttons need room only on hover: then the title makes way for them. */}
       <div
         onDoubleClick={() => item.startRenaming()}
-        className={cn(box, "flex cursor-pointer items-center gap-2 py-2 pr-3 pl-2.5 text-sm group-hover/row:pr-16 hover:bg-accent")}
+        className={cn(box, "flex cursor-pointer items-center gap-2 py-2 pr-3 pl-2.5 text-sm hover:bg-accent", canStart ? "group-hover/row:pr-24" : "group-hover/row:pr-16")}
       >
         <ChevronRight className={cn("size-3.5 shrink-0 text-faint transition-transform", open && "rotate-90")} aria-hidden="true" />
         <Icon className={cn("size-4 shrink-0", feature.done ? "text-add" : "text-muted-foreground")} aria-hidden="true" />
@@ -279,6 +282,21 @@ function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feat
         )}
       </div>
       <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 opacity-0 group-hover/row:opacity-100">
+        {canStart && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation(); // inside the folder's row: don't open or close it
+              navigate(`/?feature=${feature.id}`); // Home, with this feature picked on the shelf
+            }}
+            aria-label={`New session in ${feature.title}`}
+            title="New session in this feature"
+            tabIndex={-1}
+            className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {

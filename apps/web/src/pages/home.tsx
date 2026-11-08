@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { AttachmentUpload, Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
+import { FeaturePill } from "@/components/feature-pill";
 import { PermissionPicker } from "@/components/permission-picker";
 import { askToNotify } from "@/hooks/use-attention";
 import { PromptCard } from "@/components/prompt-card";
@@ -12,9 +13,14 @@ import { useKratos } from "@/lib/kratos-store";
 
 /** `/` — new work (owner's design): sending starts a new session; Recent lists all sessions. */
 export function HomePage() {
-  const { connected, harnesses, sessions, viewing, log, send } = useKratos(
-    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send })),
+  const { connected, harnesses, sessions, features, viewing, log, send } = useKratos(
+    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, features: s.features, viewing: s.viewing, log: s.log, send: s.send })),
   );
+  // What the new session belongs to (D73): a one-off unless picked, or preset by a folder's +
+  // (`/?feature=<id>`). Kept in the URL, so it isn't remembered for the next one; a feature
+  // that's gone or done falls back to a one-off.
+  const [params, setParams] = useSearchParams();
+  const featureId = features.find((f) => f.id === params.get("feature") && !f.done)?.id ?? null;
   const { choice: remembered, setChoice } = useHomeChoice();
   const choice = currentChoice(remembered, harnesses);
   const harness = harnesses.find((h) => h.id === choice?.harness);
@@ -47,6 +53,7 @@ export function HomePage() {
       model: choice?.model ?? undefined,
       effort: choice?.effort ?? undefined,
       permissionMode: permissionMode ?? undefined,
+      featureId: featureId ?? undefined,
       ...(attachments.length > 0 ? { attachments } : {}),
       confirmDangerous: dangerous || undefined,
     });
@@ -74,6 +81,7 @@ export function HomePage() {
               />
             </>
           }
+          shelf={<FeaturePill features={features} value={featureId} purpose="choose" onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })} />}
           onSend={start}
           attachments={harness?.attachments}
           disabled={!connected}

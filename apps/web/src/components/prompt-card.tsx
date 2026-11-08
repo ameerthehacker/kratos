@@ -35,6 +35,9 @@ export function PromptCard(props: {
   /** Text to add to the box (a queued prompt being edited, or what Stop gave back); a new `key`
    * adds it again. */
   insert?: { text: string; key: number };
+  /** The shelf (D73, board §5): a tray tucked under the card for choices made once per session,
+   * leaving the card for writing. */
+  shelf?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const files = useDraftFiles(props.attachments);
@@ -65,7 +68,7 @@ export function PromptCard(props: {
         {...files.rootProps({ onSubmit: submit })}
         role={undefined} // react-dropzone marks its root "presentation"; this is a real form
         className={cn(
-          "group/prompt relative flex flex-col gap-3.5 rounded-3xl bg-card py-3 pr-3 pl-4.5 ring-1 ring-border outline-4 outline-transparent transition-[box-shadow,outline-color] focus-within:ring-primary/55 focus-within:outline-primary/8",
+          "group/prompt relative z-10 flex flex-col gap-3.5 rounded-3xl bg-card py-3 pr-3 pl-4.5 ring-1 ring-border outline-4 outline-transparent transition-[box-shadow,outline-color] focus-within:ring-primary/55 focus-within:outline-primary/8",
           files.failed && "ring-destructive/60 focus-within:ring-destructive/60",
         )}
       >
@@ -103,6 +106,10 @@ export function PromptCard(props: {
           />
         </div>
       </form>
+      {/* Tucked under the card: it starts behind the card's bottom edge (the column's gap + 22px). */}
+      {props.shelf && (
+        <div className="mx-3 -mt-7 flex min-w-0 items-center gap-0.5 rounded-b-2xl bg-secondary/60 px-2 pt-6.5 pb-1.5 ring-1 ring-border">{props.shelf}</div>
+      )}
       <FileNotes error={files.failed?.error} note={files.note} />
     </div>
   );

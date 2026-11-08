@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 import { ArrowDown } from "lucide-react";
-import { Virtuoso, type Components, type ItemContent, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type Components, type ItemContent } from "react-virtuoso";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
 import { PromptBubble } from "@/components/conversation/prompt-bubble";
 import { StepGroup } from "@/components/conversation/step-group";
@@ -33,52 +34,56 @@ export function Conversation(props: Props) {
     () => ({ items, agent, status, queued, raw, onToggleRaw: () => setRaw((r) => !r) }),
     [items, agent, status, queued, raw],
   );
-  // `followOutput` follows *new* items; growth without one (the working indicator appearing in
-  // the footer, a step added to the last group) is left to Virtuoso, which lagged up to half a
-  // second when a turn started. This follows it at once, and only when the view was at the
-  // bottom (measured, D71). Layout effect: before the ResizeObserver sees the growth.
-  const list = useRef<VirtuosoHandle>(null);
-  useLayoutEffect(() => list.current?.autoscrollToBottom(), [items, status, queued]);
-  // A new prompt at the end: go to the bottom, wherever the view was (D75). Following it with a
-  // smooth glide could land short of the bottom (the working indicator grows in the same update)
-  // and then count as "scrolled up", so the chat stopped following; a plain jump corrects itself.
+  // Pinned to the newest message until you scroll up, and again once you're back at the bottom
+  // (use-stick-to-bottom, D76): it watches the content's size, so a new message, a growing step or
+  // a reply measured late all keep it pinned. Virtuoso still draws only what's on screen, inside
+  // the library's scroll container (`customScrollParent`).
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({ initial: "instant", resize: "instant" });
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  const scrollerRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollRef(el);
+      setScroller(el);
+    },
+    [scrollRef],
+  );
+  // Sending a prompt means you want to see where it goes: back to the bottom, wherever you were (D75).
   const seen = useRef(items.length);
-  useLayoutEffect(() => {
-    if (items.length > seen.current && items.at(-1)?.type === "prompt") {
-      list.current?.scrollToIndex({ index: "LAST", align: "end" });
-    }
+  useEffect(() => {
+    if (items.length > seen.current && items.at(-1)?.type === "prompt") void scrollToBottom("instant");
     seen.current = items.length;
-  }, [items]);
-  // Away from the bottom (you scrolled up), the chat stops following and offers the way back (3y6e).
-  const [atBottom, setAtBottom] = useState(true);
+  }, [items, scrollToBottom]);
 
   return (
     // The fade on top (3x1): what scrolls under the title goes soft instead of being cut off.
     <div className="relative min-h-0 flex-1 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-6 before:bg-linear-to-b before:from-background before:to-transparent">
-      <Virtuoso
-        className="h-full"
+      <div
+        ref={scrollerRef}
+        className="h-full overflow-y-auto"
         style={{ scrollbarGutter: "stable both-edges" }} // centred with or without a scrollbar
-        ref={list}
-        data={items}
-        context={context}
-        computeItemKey={(index) => index} // items change at the end (grow, or the last one replaced)
-        initialTopMostItemIndex={{ index: "LAST", align: "end" }}
-        followOutput={(atBottom) => (atBottom ? "smooth" : false)}
-        atBottomStateChange={setAtBottom}
-        increaseViewportBy={{ top: 1000, bottom: 400 }} // drawn a little early: less blank while scrolling
-        itemContent={itemContent}
-        components={COMPONENTS}
-      />
-      {!atBottom && (
-        // Faded in late: following a big new message leaves the bottom for ~300 ms, and that
-        // shouldn't flash it. `scrollToIndex`, not `scrollTo`: on the way down Virtuoso measures
-        // items it skipped and corrects, where a plain scroll lands short. At the bottom,
-        // following resumes on its own.
+      >
+        <div ref={contentRef}>
+          {scroller && (
+            <Virtuoso
+              customScrollParent={scroller}
+              data={items}
+              context={context}
+              computeItemKey={(index) => index} // items change at the end (grow, or the last one replaced)
+              initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+              increaseViewportBy={{ top: 1000, bottom: 400 }} // drawn a little early: less blank while scrolling
+              itemContent={itemContent}
+              components={COMPONENTS}
+            />
+          )}
+        </div>
+      </div>
+      {!isAtBottom && (
+        // Faded in late, so a quick look up doesn't flash it (3y6e).
         <Button
           variant="secondary"
           size="icon"
           aria-label="Scroll to the newest message"
-          onClick={() => list.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" })}
+          onClick={() => void scrollToBottom()}
           className="absolute bottom-3 left-1/2 size-9 -translate-x-1/2 rounded-full bg-card shadow-md ring-1 ring-border animate-in fade-in fill-mode-both delay-500"
         >
           <ArrowDown className="size-4.5" strokeWidth={2.4} />

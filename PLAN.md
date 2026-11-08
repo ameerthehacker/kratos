@@ -983,6 +983,22 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       ends at the bottom in 15 of 15 runs; typecheck, test, build.
       **Proof:** 15 of 15 at the bottom; the 48 px short landing still showed in 2 runs and was
       corrected within ~70 ms both times. Typecheck 7/7, 214 tests, build 5/5. D75.
+- [x] **3z3. The chat follows until you scroll up** (~60; owner, 2026-11-08; BUGS, reopened) —
+      3z2 didn't hold: with a stand-in `claude` that streams a real-looking turn (steps 400 ms
+      apart, then a long reply), even a small prompt left the view at the prompt with the reply
+      out of sight, 6 of 6 rounds. The jump lines the prompt up with the bottom, the working
+      indicator appears under it, the view counts as "scrolled up", and nothing follows after
+      that. Fix: `use-stick-to-bottom` (what bolt.new and AI Elements use; owner found a first,
+      hand-written version too complicated): pinned until you scroll up, again at the bottom;
+      Virtuoso virtualizes inside its scroll container. Scope: web `conversation.tsx`, the
+      package. Accept: the stand-in repro ends at the bottom
+      every round; scrolling up mid-turn stays put and the ↓ shows; ↓ resumes following;
+      typecheck, test, build.
+      **Proof:** before, 6 of 6 rounds stuck ~1000 px up with ↓ showing; after, 6 of 6 end at the
+      bottom (1 px; sampled every frame in 3 more: off the bottom 1–2 samples, ~50–80 ms, while new
+      content is measured). Its default spring glide trailed by ~850 px for ~1 s: `resize:
+      "instant"`. Wheel up mid-turn: the view stays (gap 574 → 929 px as the turn went on), ↓
+      shown; ↓ → bottom at the end, following again. Typecheck 7/7, 217 tests, build 5/5. D76.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a
@@ -1066,6 +1082,21 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         a copy of the dev database: Esc left One-off (no `?new=`), clicking into the prompt kept
         the name, Enter sent `newFeatureTitle` (held back: no real `claude`), a one-off moved into
         a new "Reports" feature; Package icons throughout. ~175 lines incl. tests.
+  - [x] **4c3. Drag sessions between features** (~120; owner) — drag a session onto a working
+        feature's folder to move it there, or onto open space in a section to make it a one-off;
+        a closed folder opens while you hover on it. Works within and across Working and Done
+        (two trees: across them the drag carries the session ids); a done feature takes no drops
+        (reopen it first, D73). Headless Tree's drag-and-drop, no reordering: a session's place
+        is by activity. The folder under the drag lights up, the dragged row dims. The keyboard
+        way stays the shelf's "Move to a feature". Scope: web `sessions-sidebar.tsx`,
+        `lib/sidebar-tree.ts` (where a drop may land) + test. Accept: drop-rule tests; headless
+        Chrome drags a session into a folder, between folders, out to a one-off, and from Done
+        into a working feature; a drop on a done feature does nothing; typecheck, test, build.
+        **Proof:** 217 tests pass (the drop rule), typecheck 7/7, build 5/5. Real drags in headless
+        Chrome on a copy of the dev database: into another folder (moved), out to open space
+        (one-off), Done → a Working folder (moved, the cross-tree path), onto a done feature and
+        onto a sibling in its own folder (no move). The target folder and open space light up.
+        No new package: Headless Tree's own drag-and-drop (D74). ~140 lines + ~20 of tests.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's
@@ -1082,21 +1113,6 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
   - [ ] **4i. Plan changes per session** (board §3) — at turn end a changed plan is saved as a
         revision credited to the session and shown as "Updated the plan" with its diff; the
         session log on the plan page.
-  - [x] **4c3. Drag sessions between features** (~120; owner) — drag a session onto a working
-        feature's folder to move it there, or onto open space in a section to make it a one-off;
-        a closed folder opens while you hover on it. Works within and across Working and Done
-        (two trees: across them the drag carries the session ids); a done feature takes no drops
-        (reopen it first, D73). Headless Tree's drag-and-drop, no reordering: a session's place
-        is by activity. The folder under the drag lights up, the dragged row dims. The keyboard
-        way stays the shelf's "Move to a feature". Scope: web `sessions-sidebar.tsx`,
-        `lib/sidebar-tree.ts` (where a drop may land) + test. Accept: drop-rule tests; headless
-        Chrome drags a session into a folder, between folders, out to a one-off, and from Done
-        into a working feature; a drop on a done feature does nothing; typecheck, test, build.
-        **Proof:** 217 tests pass (the drop rule), typecheck 7/7, build 5/5. Real drags in headless
-        Chrome on a copy of the dev database: into another folder (moved), out to open space
-        (one-off), Done → a Working folder (moved, the cross-tree path), onto a done feature and
-        onto a sibling in its own folder (no move). The target folder and open space light up.
-        No new package: Headless Tree's own drag-and-drop (D74). ~140 lines + ~20 of tests.
   - [ ] **4j. The gate and decisions** (board §3–4, §6) — a step Claude calls done waits for your
         tick; proposed decisions wait for Accept / Ask why; the right island shows the step in
         hand; "Mark feature done" when every step is ticked. Covers step 6.

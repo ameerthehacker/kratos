@@ -11,9 +11,11 @@ Status: `[ ]` open · `[~]` planned (step in PLAN.md) · `[x]` done (step)
       the conversation instead of having to open it elsewhere.
 - [ ] **Skills invocation** (owner, 2026-11-07) — invoke the agent's skills from Kratos.
 - [ ] **File mentions** (owner, 2026-11-07) — mention files in a prompt.
-- [x] **A big prompt stops auto-scroll** (step 3z2) (owner, 2026-11-08) — after sending a long message to the
+- [x] **A big prompt stops auto-scroll** (step 3z3) (owner, 2026-11-08; reopened 2026-11-08) — after sending a long message to the
       agent, the chat no longer follows new output; the message's size seems to knock it out of
-      "stuck to the bottom".
+      "stuck to the bottom". Step 3z2 (D75: a new prompt jumps to the bottom) didn't fix it for
+      the owner: still happens in real use, and even a small prompt does it. D75's known gap
+      (another short landing, e.g. a big reply, knocks the chat out of following) is a suspect.
 - [ ] **Marking a file viewed with its shortcut should go to the next file** (owner, 2026-11-08)
       — in the changes review, marking viewed from the keyboard leaves you on the same file.
 - [ ] **Unviewed files first when moving between files** (owner, 2026-11-08) — next / previous

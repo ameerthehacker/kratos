@@ -156,6 +156,27 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D76. The chat sticks to the bottom with use-stick-to-bottom (step 3z3, owner) — **replaces D71's following, keeps D75's jump**
+- Bug (reopened after D75): with a stand-in `claude` streaming a real-looking turn, even a small
+  prompt left the view at the prompt and the reply out of sight, 6 of 6 rounds. D75's jump lines
+  the new prompt up with the bottom; the working indicator then appears under it, Virtuoso counts
+  the view as "not at the bottom", and D71's following was gated on exactly that, so it stopped.
+- Decision: `use-stick-to-bottom` (StackBlitz, MIT, no dependencies; bolt.new, and Vercel's AI
+  Elements `<Conversation>`, are built on it). It watches the content's size and keeps the view
+  pinned until you scroll up, and again once you're back at the bottom; `isAtBottom` drives the ↓
+  button. Virtuoso keeps virtualizing inside its scroll container (`customScrollParent`).
+  `resize: "instant"`: its default spring glide trailed a streaming turn by up to ~850 px for
+  ~1 s at a time. D75 stays: a prompt you send jumps to the bottom (`scrollToBottom("instant")`).
+- Owner, on a first hand-written version (our own "following" flag and scroll listeners): "too
+  complicated, how do other apps do it?" — this is what they do.
+- Proof: 6 of 6 rounds end at the bottom (1 px); sampled every frame, off the bottom only 1–2
+  samples (~50–80 ms) while new content is measured. Scrolling up mid-turn stays put, ↓ resumes.
+- Alternatives: Virtuoso's `followOutput` (what broke; Stream Chat uses it, Owncast replaced it);
+  `@virtuoso.dev/message-list`, Virtuoso's own chat list (commercial license); hand-rolled
+  listeners (worked, but more code to own).
+- Reverse: drop the hook and `customScrollParent`; Virtuoso scrolls itself again with
+  `followOutput`.
+
 ### D75. A new prompt jumps the chat to the bottom (step 3z2, owner)
 - Bug: after a big prompt in a long session the chat stopped following. Headless Chrome, frame by
   frame (2 of ~10 scripted runs): the smooth follow to the new 3,536 px prompt landed 48 px

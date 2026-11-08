@@ -37,3 +37,11 @@ describe("a session's replay (3y6a)", () => {
     expect(useKratos.getState().log).toEqual([prompt("from b")]);
   });
 });
+
+describe("which session the server shows (3y6b)", () => {
+  it("is announced by the connection's first `session`", () => {
+    useKratos.setState({ sessionAnnounced: false }); // a new connection
+    receive({ type: "session", id: "a" });
+    expect(useKratos.getState().sessionAnnounced).toBe(true);
+  });
+});

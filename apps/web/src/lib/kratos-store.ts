@@ -17,6 +17,10 @@ type KratosState = {
   harnesses: Harness[];
   /** The session this tab views, as confirmed by the server, and its log. */
   viewing?: string;
+  /** The server has announced (with `session`) which session it shows this connection. Until it
+   * has, the tab can't tell whether it shows the wrong one, so it doesn't ask for its own: that
+   * asked twice on every connect (3y6b). */
+  sessionAnnounced: boolean;
   /** Its replay is complete (the server said `session_ready`): the log holds its whole history. */
   ready: boolean;
   /** Text of queued prompts that Stop dropped, for this tab's composer (D56); the composer takes it. */
@@ -51,6 +55,7 @@ export const useKratos = create<KratosState>((set, get) => ({
   changes: {},
   viewed: {},
   ready: false,
+  sessionAnnounced: false,
   send: () => {},
   setViewed: (sessionId, path, version, viewed) => {
     set((state) => {
@@ -77,7 +82,7 @@ export const useKratos = create<KratosState>((set, get) => ({
         performance.clearMeasures("kratos:replay");
         performance.clearMeasures("kratos:drawn");
         performance.mark("kratos:open"); // `session drawn` in pages/session.tsx measures from here
-        return set({ viewing: message.id, log: [], ready: false });
+        return set({ viewing: message.id, sessionAnnounced: true, log: [], ready: false });
       case "session_ready": {
         if (get().viewing !== message.id) return;
         const { duration } = performance.measure("kratos:replay", "kratos:open");

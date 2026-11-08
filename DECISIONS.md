@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D70. A tab connects to its own session (step 3y6b, owner)
+- Found in 3y6a: a link to a session replayed the latest session, then its own twice. Connecting
+  showed the latest; `SessionPage` asked for its own as soon as the socket opened, and again when
+  that first replay arrived. The chat was drawn, cleared and drawn again.
+- Decision: the socket URL names the session, `/ws?session=<id>` (`ConnectQuery` in core,
+  checked with zod on the server; a missing, unknown or other project's id gets the latest, as
+  before). The URL is a function that react-use-websocket calls at each (re)connect and that reads
+  the route then (`matchPath`), so changing pages doesn't reconnect. The web store's
+  `sessionAnnounced` (cleared when the socket closes, set by the first `session`) makes
+  `SessionPage` ask for a session only after the server has said which one it shows.
+- Also, so the chat is drawn once: `connect()` sends the session list and harnesses *before* the
+  replay (the agent's name was arriving after it), and the chat waits for `pong`'s `cwd` (step
+  paths are shown relative to it). Each late arrival re-rendered every Streamdown block.
+- Alternatives: no session on connect at all, the tab always asks (Home and the hub's message
+  handling assume every tab views one); the id in the path, `/ws/<id>` (a second route for one
+  socket); the session in a first client message (one more round trip before anything shows).
+- Reverse: `useWebSocket(WS_URL, …)`, drop `sessionAnnounced` and `ConnectQuery`; `connect(send)`.
+
 ### D69. A replay reaches the web store in one update (step 3y6a, owner)
 - Found by measuring (2026-11-08): each replayed WebSocket message was its own store update, so
   `SessionPage` re-rendered and `buildTimeline` re-ran over the whole log once per message.

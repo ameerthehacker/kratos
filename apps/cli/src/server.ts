@@ -3,7 +3,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket, { type WebSocket } from "@fastify/websocket";
 import { extname } from "node:path";
 import { createReadStream } from "node:fs";
-import { ClientMessage, WS_PATH, type ServerMessage } from "@kratos/core";
+import { ClientMessage, ConnectQuery, WS_PATH, type ServerMessage } from "@kratos/core";
 import { editorIcon, openIn, publicEditors, type DetectedEditor } from "./editors.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { WEB_DIST } from "./paths.js";
@@ -81,8 +81,9 @@ export async function startServer(options: {
     return reply.code(404).send("Not found");
   });
 
-  app.get(WS_PATH, { websocket: true }, (socket) => {
-    const tab = hub.connect((message) => send(socket, message)); // shows the latest session first
+  app.get(WS_PATH, { websocket: true }, (socket, request) => {
+    const query = ConnectQuery.safeParse(request.query); // a malformed one: the latest session
+    const tab = hub.connect((message) => send(socket, message), query.success ? query.data.session : undefined);
     socket.on("close", tab.disconnect);
     if (options.updater) {
       send(socket, { type: "update", status: options.updater.status });

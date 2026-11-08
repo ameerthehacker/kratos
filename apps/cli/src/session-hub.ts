@@ -59,11 +59,14 @@ export class SessionHub {
     this.loadHarnesses();
   }
 
-  /** A tab connected: show it the most recent session, the session list and the harnesses. */
-  connect(send: Send): Tab {
-    this.view(send, this.store.latestOrCreate(this.cwd, this.adapter.id).id);
+  /** A tab connected: show it the session list and the harnesses, then the session it asked for
+   * (3y6b) or else the most recent one. That order lets its chat draw once, with the agent's
+   * name, instead of again when they arrive. */
+  connect(send: Send, sessionId?: string): Tab {
+    const shown = sessionId && this.ours(sessionId) ? sessionId : this.store.latestOrCreate(this.cwd, this.adapter.id).id;
     send(this.sessionList());
     if (this.harnesses.length > 0) send({ type: "harnesses", list: this.harnesses });
+    this.view(send, shown);
     return {
       receive: (message) => this.receive(send, message),
       disconnect: () => this.views.delete(send),
@@ -135,8 +138,7 @@ export class SessionHub {
         if (this.modeAllowed(send, message.mode, message.confirmDangerous)) viewing.setPermissionMode(message.mode);
         return;
       case "open_session":
-        if (this.store.get(message.id)?.projectDir === this.cwd) this.view(send, message.id);
-        else send({ type: "error", message: `No session ${message.id} in this project` });
+        if (this.inProject(send, message.id)) this.view(send, message.id);
         return;
       case "set_done":
         if (!this.inProject(send, message.id)) return;
@@ -213,7 +215,7 @@ export class SessionHub {
    * for any other id. */
   readAttachment(id: string): { name: string; kind: AgentAttachment["kind"]; mediaType: string; data: Uint8Array } | undefined {
     const stored = this.store.getAttachment(id);
-    if (!stored || this.store.get(stored.sessionId)?.projectDir !== this.cwd) return undefined;
+    if (!stored || !this.ours(stored.sessionId)) return undefined;
     const data = this.files.read(id);
     return data && { name: stored.name, kind: stored.kind, mediaType: stored.mediaType, data };
   }
@@ -273,9 +275,14 @@ export class SessionHub {
     return new Set(paths.flat());
   }
 
+  /** Is this one of this project's sessions? */
+  private ours(sessionId: string): boolean {
+    return this.store.get(sessionId)?.projectDir === this.cwd;
+  }
+
   /** Is this one of this project's sessions? Tells the tab when not. */
   private inProject(send: Send, sessionId: string): boolean {
-    if (this.store.get(sessionId)?.projectDir === this.cwd) return true;
+    if (this.ours(sessionId)) return true;
     send({ type: "error", message: `No session ${sessionId} in this project` });
     return false;
   }

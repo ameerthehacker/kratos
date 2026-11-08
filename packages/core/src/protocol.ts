@@ -292,4 +292,8 @@ export const ServerMessage = z.discriminatedUnion("type", [
 export type ServerMessage = z.infer<typeof ServerMessage>;
 
 export const WS_PATH = "/ws";
+/** The WebSocket URL's query: the session the tab opens on (3y6b), so a link to a session replays
+ * only that one. Without it, or for an id not in this project, the latest session. */
+export const ConnectQuery = z.object({ session: z.string().optional() });
+export type ConnectQuery = z.infer<typeof ConnectQuery>;
 export const DEFAULT_PORT = 4317;

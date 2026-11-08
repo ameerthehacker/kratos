@@ -133,8 +133,9 @@ function setup(snapshots?: Snapshots) {
   let hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots);
 
   /** A browser tab on the current hub. Like the real UI: its log clears when it switches session,
-   * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then). */
-  const tab = () => {
+   * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then).
+   * `sessionId`: the session it connects on (3y6b). */
+  const tab = (sessionId?: string) => {
     const state = {
       seen: [] as ServerMessage[],
       sessionIds: [] as string[],
@@ -151,7 +152,7 @@ function setup(snapshots?: Snapshots) {
       else if (m.type === "sessions") state.list = m.list;
       else if (m.type === "harnesses") state.harnesses = m.list;
       else state.seen.push(m);
-    });
+    }, sessionId);
     return {
       ...handle,
       get seen() {
@@ -165,6 +166,10 @@ function setup(snapshots?: Snapshots) {
       },
       get seenWhenReady() {
         return state.seenWhenReady;
+      },
+      /** Every session this tab was shown, in order. */
+      get opened() {
+        return state.sessionIds;
       },
       /** The session this tab views now. */
       get viewing() {
@@ -327,6 +332,25 @@ describe("SessionHub: sessions side by side (D41)", () => {
     a.receive({ type: "open_session", id: "nope" });
     expect(a.viewing).toBe(firstId);
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("connects a tab straight to the session it asks for, replaying only that one (3y6b)", () => {
+    const { tab, otherProject } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    const firstId = a.viewing;
+    a.receive({ type: "prompt", text: "second task", newSession: true }); // now the latest
+
+    const b = tab(firstId);
+    expect(b.opened).toEqual([firstId]); // not the latest first
+    expect(b.seen).toEqual([{ type: "user_prompt", text: "first task" }]);
+    expect(b.seenWhenReady).toBe(1);
+
+    // An unknown id, or another project's, gets the latest session, as with none.
+    const elsewhere: ServerMessage[] = [];
+    otherProject().connect((m) => elsewhere.push(m));
+    const otherId = elsewhere.find((m) => m.type === "session")!.id;
+    for (const id of ["nope", otherId]) expect(tab(id).viewing).toBe(a.viewing);
   });
 
   it("marks any session done by id, for every tab, without reordering; a new prompt reopens it (3d2)", () => {

@@ -27,15 +27,19 @@ const NO_LOG: LogMessage[] = [];
 /** `/s/:sessionId` — one session's conversation. Opening the URL makes this tab view it. */
 export function SessionPage() {
   const { sessionId } = useParams();
-  const { connected, harnesses, sessions, viewing, log, send, cwd, loaded } = useKratos(
-    useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send, cwd: s.info?.cwd, loaded: s.ready })),
+  const { connected, sessionAnnounced, harnesses, sessions, viewing, log, send, cwd, loaded } = useKratos(
+    useShallow((s) => ({ connected: s.connected, sessionAnnounced: s.sessionAnnounced, harnesses: s.harnesses, sessions: s.sessions, viewing: s.viewing, log: s.log, send: s.send, cwd: s.info?.cwd, loaded: s.ready })),
   );
   const session = sessions.find((s) => s.id === sessionId);
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
   const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
   const rememberMode = useHomeChoice((s) => s.rememberMode);
   const shown = viewing === sessionId ? log : NO_LOG;
-  const ready = viewing === sessionId && loaded; // this session's whole history has arrived
+  // This session's whole history has arrived, and the project dir its steps' paths are shown
+  // relative to (from `pong`, just after a connect's replay): so the chat draws once (3y6b).
+  const ready = viewing === sessionId && loaded && cwd !== undefined;
+  // The server shows this tab this session now: not while a reconnect hasn't said which one yet.
+  const live = connected && sessionAnnounced && viewing === sessionId;
   const items = useMemo(() => buildTimeline(shown, cwd, agentName), [shown, cwd, agentName]);
   const queue = useMemo(() => openQueue(shown), [shown]);
   const working = session !== undefined && session.status !== "idle";
@@ -63,10 +67,11 @@ export function SessionPage() {
     return () => cancelAnimationFrame(frame);
   }, [ready, sessionId]);
 
-  // Ask the server to show this session in this tab (connecting shows the latest one).
+  // Ask the server to show this session in this tab, once it has said what it shows: connecting
+  // shows this one already (3y6b), so asking then would replay it twice.
   useEffect(() => {
-    if (connected && sessionId && viewing !== sessionId) send({ type: "open_session", id: sessionId });
-  }, [connected, sessionId, viewing, send]);
+    if (connected && sessionAnnounced && sessionId && viewing !== sessionId) send({ type: "open_session", id: sessionId });
+  }, [connected, sessionAnnounced, sessionId, viewing, send]);
 
   // Esc stops the turn, from the prompt too (like Claude Code) — but not while a question waits
   // (its card's Esc skips it), and not an Esc that closed a menu (base-ui handles those on the
@@ -134,7 +139,7 @@ export function SessionPage() {
                     else if (choice.effort && choice.effort !== session?.effort) send({ type: "set_effort", effort: choice.effort });
                   }}
                   harnessLocked
-                  disabled={!connected || viewing !== sessionId}
+                  disabled={!live}
                 />
                 <PermissionPicker
                   agentName={agentName}
@@ -149,7 +154,7 @@ export function SessionPage() {
                     const picked = modes.find((m) => m.id === mode);
                     if (picked && (!picked.dangerous || confirmed)) rememberMode(session.harness, picked.isDefault ? null : mode);
                   }}
-                  disabled={!connected || viewing !== sessionId}
+                  disabled={!live}
                 />
               </>
             }
@@ -160,7 +165,7 @@ export function SessionPage() {
             insert={insert}
             attachments={harnesses.find((h) => h.id === session?.harness)?.attachments}
             onStop={session?.status === "idle" || !session ? undefined : () => send({ type: "interrupt" })}
-            disabled={!connected || viewing !== sessionId}
+            disabled={!live}
             size="compact"
             placeholder={working ? "Add to the queue…" : "Reply…"}
           />

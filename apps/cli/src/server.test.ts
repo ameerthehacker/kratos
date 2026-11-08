@@ -16,8 +16,8 @@ import { Updater } from "./updater/updater.js";
 const FAKE_CLAUDE = fileURLToPath(new URL("../../../packages/adapter-claude-code/test/fake-claude.mjs", import.meta.url));
 
 /** A browser tab, played by Node's built-in WebSocket client. */
-async function openTab(port: number) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}${WS_PATH}`);
+async function openTab(port: number, query = "") {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${WS_PATH}${query}`);
   const messages: ServerMessage[] = [];
   ws.addEventListener("message", (e) => messages.push(JSON.parse(String(e.data))));
   await new Promise((resolve, reject) => {
@@ -59,8 +59,8 @@ describe("kratos server", () => {
     // Watch the cleanup paths: closed tabs must leave the hub, server shutdown must stop the agent.
     let disconnects = 0;
     const connect = hub.connect.bind(hub);
-    vi.spyOn(hub, "connect").mockImplementation((send) => {
-      const tab = connect(send);
+    vi.spyOn(hub, "connect").mockImplementation((send, sessionId) => {
+      const tab = connect(send, sessionId);
       return { ...tab, disconnect: () => (disconnects++, tab.disconnect()) };
     });
     const hubClose = vi.spyOn(hub, "close");
@@ -212,6 +212,25 @@ describe("kratos server", () => {
     } finally {
       a.close();
       b.close();
+      await server.close();
+    }
+  });
+
+  it("connects a tab to the session its URL names (?session=), or the latest when it can't (3y6b)", async () => {
+    const cwd = process.cwd();
+    const store = SessionStore.open(":memory:");
+    const first = store.create(cwd, "claude-code");
+    const latest = store.create(cwd, "claude-code");
+    const hub = new SessionHub(createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }), cwd, store);
+    const server = await startServer({ port: 0, hub, cwd, agent: "Claude Code" });
+    const tabs = await Promise.all(
+      [`?session=${first.id}`, "?session=nope", `?session=${first.id}&session=${latest.id}`].map((q) => openTab(server.port, q)),
+    );
+    try {
+      const shown = await Promise.all(tabs.map((tab) => tab.waitFor(is("session"))));
+      expect(shown.map((m) => m.id)).toEqual([first.id, latest.id, latest.id]); // unknown, malformed: the latest
+    } finally {
+      for (const tab of tabs) tab.close();
       await server.close();
     }
   });

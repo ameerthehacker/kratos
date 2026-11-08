@@ -906,7 +906,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           numbers on the 957-message session; spinner seen on a slow open.
           **Proof (headless Chrome, deep link, warm runs):** chat drawn 1,530 → 260 ms after
           navigation; the replay itself 1,280 → 74 ms. D69.
-    - [ ] **3y6b. Connect straight to the tab's session** (~50) — e.g. `/ws?session=<id>`, so a
+    - [x] **3y6b. Connect straight to the tab's session** (~50) — e.g. `/ws?session=<id>`, so a
           deep link replays once, not the latest session first. Found in 3y6a: a deep link
           replays the latest session, then the tab's own **twice**. `SessionPage` sends
           `open_session` on connect (`viewing` still unset) and again when the connect's replay
@@ -914,6 +914,10 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           `use-kratos-connection.ts`, `server.ts`, `session-hub.ts`, `pages/session.tsx`.
           Accept: one replay in the debug log on a deep link; `session drawn` measures the
           whole open.
+          **Proof (headless Chrome, deep link, warm runs):** one `session` per load (was three);
+          the chat mounts once, drawn at ~255 ms. On its own, the single replay made the first
+          mount *slower* (~410 ms): the agent's name and `cwd` arrived after the replay and
+          re-rendered the whole chat. Fixed by sending those first / waiting for `pong`. D70.
     - [ ] **3y6c. Draw only what's near** (~120; after 3y6a's numbers) — draw the newest ~40
           items and more as you scroll up (keeping your place), or full virtualization
           (react-virtuoso, which handles variable heights and sticking to the bottom; it would

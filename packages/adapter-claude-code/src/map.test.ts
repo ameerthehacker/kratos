@@ -81,6 +81,14 @@ describe("toEvents: tool results", () => {
     ]);
   });
 
+  it("keeps the images a tool returned, as the real CLI sends them (3z); other types stay text", () => {
+    const image = (media_type: string, data = "iVBORw0K") => ({ type: "image", source: { type: "base64", data, media_type } });
+    const events = map(toolResults({ type: "tool_result", tool_use_id: "r", content: [image("image/png"), image("image/svg+xml", "PHN2Zz4=")] }));
+    expect(events).toEqual([
+      { kind: "tool_result", id: "r", output: "[image]\n[image]", isError: false, images: [{ mediaType: "image/png", base64: "iVBORw0K" }] },
+    ]);
+  });
+
   it("ignores a user message that is plain text (not tool results)", () => {
     expect(map({ type: "user", message: { content: "hello" } })).toEqual([]);
   });

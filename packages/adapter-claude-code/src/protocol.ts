@@ -13,7 +13,19 @@ export const Block = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("tool_result"),
     tool_use_id: z.string(),
-    content: z.union([z.string(), z.array(z.object({ type: z.string(), text: z.string().optional() }))]).optional(),
+    content: z
+      .union([
+        z.string(),
+        z.array(
+          z.object({
+            type: z.string(),
+            text: z.string().optional(),
+            /** On an `image` part (3z): `{type: "base64", media_type, data}`, as the agent saw it. */
+            source: z.object({ type: z.string(), media_type: z.string().optional(), data: z.string().optional() }).optional(),
+          }),
+        ),
+      ])
+      .optional(),
     is_error: z.boolean().optional(),
   }),
 ]);

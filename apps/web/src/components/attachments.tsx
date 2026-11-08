@@ -87,38 +87,73 @@ export function SentFiles({ files }: { files: AttachmentRef[] }) {
     <div className="flex flex-wrap justify-end gap-2">
       {files.map((file) =>
         file.kind === "image" && !missing.has(file.id) ? (
-          <button
-            key={file.id}
-            type="button"
-            onClick={() => setOpen(file)}
-            aria-label={`View ${file.name}`}
-            className="h-20 w-30 overflow-hidden rounded-xl ring-1 ring-border hover:ring-ring focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <img src={attachmentUrl(file.id)} alt={file.name} onError={() => setMissing((m) => new Set(m).add(file.id))} className="size-full object-cover" />
-          </button>
+          <ImageThumb key={file.id} image={file} label={file.name} onOpen={setOpen} onMissing={() => setMissing((m) => new Set(m).add(file.id))} className="h-20 w-30" />
         ) : missing.has(file.id) ? (
           <FileChip key={file.id} name={file.name} kind={file.kind} detail="Not available" />
         ) : (
           <FileChip key={file.id} name={file.name} kind={file.kind} detail={prettyBytes(file.size)} href={attachmentUrl(file.id)} />
         ),
       )}
-      <Dialog open={open !== null} onOpenChange={(isOpen) => !isOpen && setOpen(null)}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="truncate">{open?.name}</DialogTitle>
-            <DialogDescription className="flex items-center gap-3">
-              {open && prettyBytes(open.size)}
-              {open && (
-                <a href={attachmentUrl(open.id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
-                  Open original <ExternalLink className="size-3.5" aria-hidden="true" />
-                </a>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {open && <img src={attachmentUrl(open.id)} alt={open.name} className="max-h-150 w-full rounded-xl object-contain" />}
-        </DialogContent>
-      </Dialog>
+      <ImageLightbox image={open} title={open?.name} onClose={() => setOpen(null)} />
     </div>
+  );
+}
+
+/**
+ * Images a tool returned (3z), under its step: a screenshot the agent read, as it saw it. Small
+ * thumbnails that open the same lightbox as sent files, titled with what the step did ("Read
+ * shot.png"); one gone from disk shows "Not available".
+ */
+export function ToolImages({ images, label }: { images: AttachmentRef[]; label: string }) {
+  const [open, setOpen] = useState<AttachmentRef | null>(null);
+  const [missing, setMissing] = useState<Set<string>>(new Set());
+  return (
+    <div className="flex flex-wrap gap-2">
+      {images.map((image) =>
+        missing.has(image.id) ? (
+          <FileChip key={image.id} name={label} kind="image" detail="Not available" />
+        ) : (
+          <ImageThumb key={image.id} image={image} label={label} onOpen={setOpen} onMissing={() => setMissing((m) => new Set(m).add(image.id))} className="h-16 w-24" />
+        ),
+      )}
+      <ImageLightbox image={open} title={label} onClose={() => setOpen(null)} />
+    </div>
+  );
+}
+
+/** A stored image as a thumbnail button (sized by `className`) that opens it. */
+function ImageThumb(props: { image: AttachmentRef; label: string; onOpen: (image: AttachmentRef) => void; onMissing: () => void; className: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => props.onOpen(props.image)}
+      aria-label={`View ${props.label}`}
+      className={cn("overflow-hidden rounded-xl ring-1 ring-border hover:ring-ring focus-visible:outline-2 focus-visible:outline-ring", props.className)}
+    >
+      <img src={attachmentUrl(props.image.id)} alt={props.label} onError={props.onMissing} className="size-full object-cover" />
+    </button>
+  );
+}
+
+/** A stored image, large (shadcn Dialog): its size and a link to the original. */
+function ImageLightbox({ image, title, onClose }: { image: AttachmentRef | null; title?: string; onClose: () => void }) {
+  return (
+    <Dialog open={image !== null} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="truncate">{title}</DialogTitle>
+          <DialogDescription className="flex items-center gap-3">
+            {image && prettyBytes(image.size)}
+            {image && (
+              <a href={attachmentUrl(image.id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
+                Open original <ExternalLink className="size-3.5" aria-hidden="true" />
+              </a>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {image && <img src={attachmentUrl(image.id)} alt={title} className="max-h-150 w-full rounded-xl object-contain" />}
+      </DialogContent>
+    </Dialog>
   );
 }
 

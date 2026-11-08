@@ -2,6 +2,10 @@ import type { AgentEvent } from "@kratos/core";
 import { Block, type CliMessage } from "./protocol.js";
 import { toolAction } from "./tool-action.js";
 
+/** The image types Claude takes (the Claude API's): the attachment policy's, and the images a tool
+ * result may carry to the UI (3z). Anything else stays "[image]" text. */
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
 /**
  * Map one CLI message to our few normalized events; everything else is dropped.
  * Pure: no I/O, no state — `interrupted` is passed in by the session.
@@ -22,11 +26,11 @@ export function toEvents(msg: CliMessage, interrupted: boolean): AgentEvent[] {
         return [];
       });
     case "user": // tool results go back to Claude as a "user" message
-      return blocks(msg.message.content).flatMap((b): AgentEvent[] =>
-        b.type === "tool_result"
-          ? [{ kind: "tool_result", id: b.tool_use_id, output: textOf(b.content), isError: b.is_error ?? false }]
-          : [],
-      );
+      return blocks(msg.message.content).flatMap((b): AgentEvent[] => {
+        if (b.type !== "tool_result") return [];
+        const images = imagesOf(b.content);
+        return [{ kind: "tool_result", id: b.tool_use_id, output: textOf(b.content), isError: b.is_error ?? false, ...(images.length > 0 ? { images } : {}) }];
+      });
     case "result":
       if (interrupted) return [{ kind: "turn_end", reason: "interrupted" }];
       return msg.subtype === "success"
@@ -45,7 +49,19 @@ function blocks(content: string | unknown[]): Block[] {
   });
 }
 
-function textOf(content: string | Array<{ type: string; text?: string }> | undefined): string {
+type ResultContent = Extract<Block, { type: "tool_result" }>["content"];
+
+/** The images in a tool result (3z): a screenshot the agent read, as it saw it. */
+function imagesOf(content: ResultContent): Array<{ mediaType: string; base64: string }> {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap(({ type, source }) =>
+    type === "image" && source?.type === "base64" && source.data && source.media_type && IMAGE_TYPES.includes(source.media_type)
+      ? [{ mediaType: source.media_type, base64: source.data }]
+      : [],
+  );
+}
+
+function textOf(content: ResultContent): string {
   if (content === undefined) return "";
   if (typeof content === "string") return content;
   return content.map((part) => (part.type === "text" ? part.text : `[${part.type}]`)).join("\n");

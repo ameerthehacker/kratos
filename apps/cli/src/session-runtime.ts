@@ -3,6 +3,7 @@ import {
   checkQuestionReply,
   type AgentAdapter,
   type AgentAttachment,
+  type AgentEvent,
   type AttachmentRef,
   type AgentSession,
   type PermissionDecision,
@@ -351,7 +352,7 @@ export class SessionRuntime {
           this.promptState(event.id, event.state);
           continue;
         }
-        this.publish({ type: "agent_event", event });
+        this.publish({ type: "agent_event", event: event.kind === "tool_result" && event.images ? this.storeImages(event) : event });
         if (this.turn.state === "running") {
           if (event.kind === "tool_call") this.turn.runningStep = event.id;
           if (event.kind === "tool_result") Object.assign(this.turn, { lastStep: event.id, runningStep: undefined });
@@ -495,6 +496,16 @@ export class SessionRuntime {
     } catch (err) {
       this.logger.warn({ err, kind }, "snapshot failed");
     }
+  }
+
+  /** Keep the images a tool returned (3z) like a prompt's files: the log gets refs, never bytes. */
+  private storeImages(event: Extract<AgentEvent, { kind: "tool_result" }>): AgentEvent {
+    const { images = [], ...rest } = event;
+    const files = images.map((image, i): AgentAttachment => {
+      const name = `image${images.length > 1 ? `-${i + 1}` : ""}.${image.mediaType.split("/")[1]}`;
+      return { name, kind: "image", mediaType: image.mediaType, data: Buffer.from(image.base64, "base64") };
+    });
+    return { ...rest, attachments: this.storeFiles(files) };
   }
 
   /** Keep a prompt's files (D55): bytes by id, the log gets only what they are. */

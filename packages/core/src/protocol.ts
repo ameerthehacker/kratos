@@ -3,8 +3,8 @@ import {
   AgentEvent,
   AgentModel,
   AgentPermissionMode,
-  AttachmentKind,
   AttachmentPolicy,
+  AttachmentRef,
   PermissionDecision,
   PermissionRequest,
   QuestionAnswer,
@@ -23,11 +23,6 @@ import {
 /** A file a tab sends with a prompt (D55): base64 bytes, inline in the prompt message. */
 export const AttachmentUpload = z.object({ name: z.string().min(1).max(255), mediaType: z.string().max(255), data: z.string() });
 export type AttachmentUpload = z.infer<typeof AttachmentUpload>;
-
-/** A stored attachment, as the session log and the UI know it (D55): fetch it from
- * `/attachments/<id>`. */
-export const AttachmentRef = z.object({ id: z.string(), name: z.string(), kind: AttachmentKind, mediaType: z.string(), size: z.number() });
-export type AttachmentRef = z.infer<typeof AttachmentRef>;
 
 /** The app's themes (3w1, the design's Themes board); the UI names and draws them. */
 export const THEMES = ["kratos-dark", "kratos-light", "graphite", "midnight", "forest", "paper", "mist", "contrast"] as const;

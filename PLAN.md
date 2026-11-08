@@ -956,6 +956,24 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         flows (prompt, allow / deny, queue, Send now, remove, model / effort / mode) on the real
         CLI in a temp repo. Scope: adapter, a `scripts/smoke` file, root `package.json`. Accept:
         the smoke run's output; a faked unknown version shows the warning.
+- [x] **3z. Images the agent looked at** (~150; owner, 2026-11-08; BUGS "Screenshots viewed in
+      the chat itself") — when a tool returns an image (Claude reads a screenshot to check its
+      work; a browser MCP's screenshot), its step shows a small thumbnail; a click opens it large.
+      Found on the real CLI (2.1.308, Haiku, $0.007): the tool_result's content is a list with
+      `{type: "image", source: {type: "base64", media_type, data}}`, exactly what the agent saw
+      (the CLI has already resized it). Today the adapter turns it into "[image]". Flow: the
+      adapter keeps PNG/JPEG/GIF/WebP images on `tool_result.images` (base64); the runtime stores
+      their bytes like prompt attachments (D55: by UUID, `attachments` table, served by
+      `/attachments/:id` to this project only) and logs `attachments` refs instead, never bytes;
+      the timeline puts them on the step; the step row draws thumbnails with the same lightbox as
+      sent files. Scope: core `agent.ts` (+ `AttachmentRef` moves there), adapter `protocol.ts` +
+      `map.ts`, `session-runtime.ts`, web `timeline.ts`, `step-group.tsx`, `attachments.tsx`,
+      fake claude + tests. Accept: map, runtime (no bytes in the log) and timeline tests; in
+      headless Chrome, a fake turn that reads an image shows the thumbnail and the lightbox.
+      **Proof:** 3 new tests (201 pass). Headless Chrome with a fake turn answering exactly like
+      the real CLI: the Read step shows a 96×64 thumbnail; a click opens the 1440×813 image,
+      "Read shot.png", 96.9 kB, Open original; `/attachments/<id>` serves it as image/png; the
+      97 KB image is in `attachments`, and no base64 is in the session log. D72.
 - [ ] **4. Plan artifact** — plan file model + UI to view/edit steps; agent must write a plan
       before code.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via

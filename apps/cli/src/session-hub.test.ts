@@ -188,6 +188,7 @@ function setup(snapshots?: Snapshots) {
     tab,
     restart,
     otherProject,
+    store,
     get hub() {
       return hub;
     },
@@ -824,6 +825,26 @@ describe("SessionHub: attachments (D55)", () => {
     expect(Buffer.from(hub.readAttachment(refs[1]!.id)!.data).toString()).toBe("export {}");
     expect(otherProject().readAttachment(refs[1]!.id)).toBeUndefined(); // only this project's
     expect(hub.readAttachment("not-an-id")).toBeUndefined();
+  });
+
+  it("stores images a tool returned like files; the log and the tabs get refs, never bytes (3z)", async () => {
+    const { agents, tab, hub, otherProject, store } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "check the screenshot" });
+    const png = Buffer.from([137, 80, 78, 71, 13, 10]);
+    agents[0]!.emit({ kind: "tool_call", id: "t1", tool: "Read", input: { file_path: "/tmp/shot.png" } });
+    agents[0]!.emit({ kind: "tool_result", id: "t1", output: "[image]", isError: false, images: [{ mediaType: "image/png", base64: png.toString("base64") }] });
+    await tick();
+
+    const result = a.seen.find((m) => m.type === "agent_event" && m.event.kind === "tool_result");
+    expect(result).toEqual({
+      type: "agent_event",
+      event: { kind: "tool_result", id: "t1", output: "[image]", isError: false, attachments: [expect.objectContaining({ name: "image.png", kind: "image", mediaType: "image/png", size: 6 })] },
+    });
+    const ref = result?.type === "agent_event" && result.event.kind === "tool_result" ? result.event.attachments![0]! : undefined;
+    expect(Buffer.from(hub.readAttachment(ref!.id)!.data)).toEqual(png);
+    expect(otherProject().readAttachment(ref!.id)).toBeUndefined(); // only this project's
+    expect(JSON.stringify(store.load(a.viewing))).not.toContain(png.toString("base64")); // no bytes in the log
   });
 
   it("refuses the whole prompt — nothing starts — if any file doesn't fit", () => {

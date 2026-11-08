@@ -27,6 +27,8 @@ export type Step = {
   finished?: boolean;
   /** Cut short by Send now (D56): shown as "Stopped running the tests", not as a failure. */
   stopped?: boolean;
+  /** Images the tool returned, as the agent saw them (3z): a screenshot it read. */
+  images?: AttachmentRef[];
 };
 
 /** How a prompt sent while the agent worked was read (D56), for the mark under its bubble. */
@@ -161,6 +163,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       } else if (event.kind === "tool_result") {
         const step = steps.get(event.id);
         if (step) addResult(step, event.output, event.isError);
+        if (step && event.attachments?.length) step.images = event.attachments;
       } else if (event.kind === "turn_end" && event.reason !== "completed") {
         breakGroup();
         items.push({ type: "event", text: event.reason === "interrupted" ? "Stopped" : `Stopped: ${event.error ?? "agent error"}` });

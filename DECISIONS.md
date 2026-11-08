@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D72. Images a tool returned are stored like attachments, shown on their step (step 3z, owner)
+- Owner: Claude takes screenshots to check its work; show them so the owner can check too.
+- Found on the real CLI (2.1.308, Haiku, $0.007): a Read of an image answers with a tool_result
+  whose content is `[{type: "image", source: {type: "base64", media_type, data}}]`, what the agent
+  saw (already resized by the CLI); `tool_use_result` beside it has the original size. Any tool
+  returning an image (a browser MCP's screenshot) arrives the same way, so it's handled generally.
+- Decision: the adapter keeps PNG/JPEG/GIF/WebP images on `tool_result.images` (base64; the
+  types Claude takes, one list shared with the attachment policy; anything else stays "[image]");
+  the runtime stores the bytes with the prompt attachments' code (D55: UUID file, `attachments`
+  row, `/attachments/:id` for this project only) and publishes `attachments` refs instead, so the
+  log and replays never carry bytes. `AttachmentRef` moved from protocol.ts to agent.ts (an event
+  now uses it). The step draws 96×64 thumbnails; a click opens the sent-files lightbox, titled
+  with the step ("Read shot.png"), not the stored name (`image.png`).
+- Alternatives: serve the file from its path on disk (no copy, but a route that reads any path,
+  and it shows the file as it is now, not what the agent saw); keep the base64 in the log
+  (every replay would carry every screenshot).
+- Reverse: drop `images` in `map.ts` (back to "[image]"); old logs' refs keep working.
+
 ### D71. The chat is virtualized with react-virtuoso (step 3y6c, owner)
 - After 3y6a/b, drawing the whole chat was most of what was left: 334 items, ~6,100 elements,
   ~90 ms of a 168 ms session switch.

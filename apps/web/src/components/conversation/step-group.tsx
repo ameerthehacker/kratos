@@ -1,4 +1,5 @@
 import { Ellipsis, Eye, Globe, GitFork, Hand, MessageCircleQuestion, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
+import { ToolImages } from "@/components/attachments";
 import { Preview } from "@/components/conversation/preview";
 import type { Chip, Step } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
@@ -86,6 +87,8 @@ function StepRow({ step, raw }: { step: Step; raw: boolean }) {
             ))}
           </div>
         )}
+        {/* What the agent saw (3z): a screenshot it read to check its work. */}
+        {step.images && <ToolImages images={step.images} label={step.title} />}
         {raw && hasRaw && <Preview step={step} showOutput />}
       </div>
     </div>

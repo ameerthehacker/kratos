@@ -13,7 +13,7 @@ import {
 import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
-import { toEvents } from "./map.js";
+import { IMAGE_TYPES, toEvents } from "./map.js";
 import {
   AskUserQuestionInput,
   CancelAsyncMessageResponse,
@@ -101,7 +101,7 @@ const CLAUDE_DEFAULT_MODE = "default";
 const MB = 1024 * 1024;
 const ATTACHMENTS: AttachmentPolicy = {
   kinds: [
-    { kind: "image", mediaTypes: ["image/png", "image/jpeg", "image/gif", "image/webp"], maxBytes: 5 * MB },
+    { kind: "image", mediaTypes: IMAGE_TYPES, maxBytes: 5 * MB },
     { kind: "pdf", mediaTypes: ["application/pdf"], maxBytes: 30 * MB },
     { kind: "text", mediaTypes: [], maxBytes: 1 * MB },
   ],

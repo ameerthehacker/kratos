@@ -33,6 +33,14 @@ export const ToolAction = z.object({
 });
 export type ToolAction = z.infer<typeof ToolAction>;
 
+export const AttachmentKind = z.enum(["image", "pdf", "text"]);
+export type AttachmentKind = z.infer<typeof AttachmentKind>;
+
+/** A stored attachment, as the session log and the UI know it (D55): fetch it from
+ * `/attachments/<id>`. A prompt's files, or an image a tool returned (3z). */
+export const AttachmentRef = z.object({ id: z.string(), name: z.string(), kind: AttachmentKind, mediaType: z.string(), size: z.number() });
+export type AttachmentRef = z.infer<typeof AttachmentRef>;
+
 export const AgentEvent = z.discriminatedUnion("kind", [
   /** A complete block of the agent's reply (not token-by-token). */
   z.object({ kind: z.literal("text"), text: z.string() }),
@@ -48,7 +56,17 @@ export const AgentEvent = z.discriminatedUnion("kind", [
     /** Agent-neutral meaning of the call (D45); absent in logs from before it existed. */
     action: ToolAction.optional(),
   }),
-  z.object({ kind: z.literal("tool_result"), id: z.string(), output: z.string(), isError: z.boolean() }),
+  z.object({
+    kind: z.literal("tool_result"),
+    id: z.string(),
+    output: z.string(),
+    isError: z.boolean(),
+    /** Images the tool returned, as the agent saw them (3z): a screenshot it read. Adapter → runtime
+     * only: the runtime stores the bytes and logs `attachments` instead. */
+    images: z.array(z.object({ mediaType: z.string(), base64: z.string() })).optional(),
+    /** Those images, stored: what the log and the tabs get. */
+    attachments: z.array(AttachmentRef).optional(),
+  }),
   /** The agent's permission mode changed — by Kratos, or by the agent itself (e.g. leaving plan
    * mode once its plan is approved). D53. */
   z.object({ kind: z.literal("permission_mode"), mode: z.string() }),
@@ -164,9 +182,6 @@ export function checkQuestionReply(request: QuestionRequest, reply: QuestionRepl
 }
 
 // ── Attachments: files sent with a prompt (D55) ─────────────────────────────────────────
-
-export const AttachmentKind = z.enum(["image", "pdf", "text"]);
-export type AttachmentKind = z.infer<typeof AttachmentKind>;
 
 /** What a harness accepts with a prompt (D55): per kind, its media types (none listed = any type,
  * for text: judged by content) and size; and how many files / bytes in all. No kinds = none. */

@@ -82,6 +82,23 @@ describe("buildTimeline (D45)", () => {
   });
 });
 
+describe("buildTimeline: images a tool returned (3z)", () => {
+  it("puts them on the step that returned them", () => {
+    const shot = { id: "img1", name: "image.png", kind: "image" as const, mediaType: "image/png", size: 6 };
+    const items = buildTimeline(
+      [
+        agent({ kind: "tool_call", id: "r", tool: "Read", input: {}, action: { type: "read", target: "/repo/shot.png" } }),
+        agent({ kind: "tool_result", id: "r", output: "[image]", isError: false, attachments: [shot] }),
+        agent({ kind: "tool_call", id: "s", tool: "Read", input: {}, action: { type: "read", target: "/repo/a.ts" } }),
+        agent({ kind: "tool_result", id: "s", output: "code", isError: false }),
+      ],
+      "/repo",
+    );
+    const steps = items[0]?.type === "steps" ? items[0].steps : [];
+    expect(steps.map((step) => step.images)).toEqual([[shot], undefined]);
+  });
+});
+
 describe("currentActivity (3d6)", () => {
   const prompt = { type: "user_prompt", text: "go" } as const;
   const read = agent({ kind: "tool_call", id: "r", tool: "Read", input: {}, action: { type: "read", target: "/repo/src/store.ts" } });

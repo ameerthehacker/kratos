@@ -7,7 +7,7 @@ Status: `[ ]` open · `[~]` planned (step in PLAN.md) · `[x]` done (step)
 
 ## Open
 
-- [ ] **Screenshots viewed in the chat itself** (owner, 2026-11-07) — see a screenshot right in
+- [~] **Screenshots viewed in the chat itself** (step 3z) (owner, 2026-11-07) — see a screenshot right in
       the conversation instead of having to open it elsewhere.
 - [ ] **Skills invocation** (owner, 2026-11-07) — invoke the agent's skills from Kratos.
 - [ ] **File mentions** (owner, 2026-11-07) — mention files in a prompt.

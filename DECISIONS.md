@@ -185,6 +185,11 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   appearing, a step added to the last group) `autoscrollToBottom()` runs on every change, which
   only scrolls when the view was at the bottom. Measured with a scripted live turn: without it, a
   turn's start lagged ~0.5 s once; scrolled up 1,600 px, what you read moves 0 px either way.
+- Jump to the newest (3y6e): Virtuoso's `atBottomStateChange` shows a round ↓ button; it calls
+  `scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" })`, which corrects as it
+  measures the items it passes. A smooth `scrollTo` the end landed 153 px short from far up (those
+  items were taller than guessed), so the chat didn't resume following. The button fades in after
+  500 ms: following a big new message is ~300 ms away from the bottom, and 200 ms flashed it.
 - Costs: find-in-page (Cmd+F) only finds what's drawn (a few items). Items scrolled away are
   unmounted, so scrolling back redraws them (markdown, highlighting).
 - Reverse: render `items.map(…)` inside use-stick-to-bottom again (commit 566cf90's

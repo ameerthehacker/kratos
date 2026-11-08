@@ -1,7 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
+import { ArrowDown } from "lucide-react";
 import { Virtuoso, type Components, type ItemContent, type VirtuosoHandle } from "react-virtuoso";
+import { Button } from "@/components/ui/button";
 import { PromptBubble } from "@/components/conversation/prompt-bubble";
 import { StepGroup } from "@/components/conversation/step-group";
 import { WorkingIndicator } from "@/components/conversation/working-indicator";
@@ -37,6 +39,8 @@ export function Conversation(props: Props) {
   // bottom (measured, D71). Layout effect: before the ResizeObserver sees the growth.
   const list = useRef<VirtuosoHandle>(null);
   useLayoutEffect(() => list.current?.autoscrollToBottom(), [items, status, queued]);
+  // Away from the bottom (you scrolled up), the chat stops following and offers the way back (3y6e).
+  const [atBottom, setAtBottom] = useState(true);
 
   return (
     // The fade on top (3x1): what scrolls under the title goes soft instead of being cut off.
@@ -50,10 +54,26 @@ export function Conversation(props: Props) {
         computeItemKey={(index) => index} // items change at the end (grow, or the last one replaced)
         initialTopMostItemIndex={{ index: "LAST", align: "end" }}
         followOutput={(atBottom) => (atBottom ? "smooth" : false)}
+        atBottomStateChange={setAtBottom}
         increaseViewportBy={{ top: 1000, bottom: 400 }} // drawn a little early: less blank while scrolling
         itemContent={itemContent}
         components={COMPONENTS}
       />
+      {!atBottom && (
+        // Faded in late: following a big new message leaves the bottom for ~300 ms, and that
+        // shouldn't flash it. `scrollToIndex`, not `scrollTo`: on the way down Virtuoso measures
+        // items it skipped and corrects, where a plain scroll lands short. At the bottom,
+        // following resumes on its own.
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label="Scroll to the newest message"
+          onClick={() => list.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" })}
+          className="absolute bottom-3 left-1/2 size-9 -translate-x-1/2 rounded-full bg-card shadow-md ring-1 ring-border animate-in fade-in fill-mode-both delay-500"
+        >
+          <ArrowDown className="size-4.5" strokeWidth={2.4} />
+        </Button>
+      )}
     </div>
   );
 }

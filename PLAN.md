@@ -930,6 +930,19 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           (Virtuoso's measure passes cost what not drawing saves); wheel-scrolling reaches the
           first item, 0 remounts of items on screen, 2–6 jumps; a live turn follows the agent and
           leaves you in place (0 px) when you have scrolled up.
+    - [x] **3y6e. Jump to the newest** (~40; owner, 2026-11-08) — scrolling up already stops the
+          chat following the agent; now a round ↓ button floats over the bottom of the chat while
+          you're away from the bottom, and takes you back there, where following resumes. Fades in
+          late, so following a new message doesn't flash it. Not in the design canvas yet (the
+          design has no such control): built from the composer's round buttons and the popovers'
+          floating card. Scope: `components/conversation/conversation.tsx`. Accept (headless
+          Chrome): shown after scrolling up, hidden at the bottom; a click lands at the very bottom
+          (working indicator included) from far up; following resumes in a live turn; no flash
+          while following at the bottom.
+          **Proof (headless Chrome, scripted live turn, twice):** all six checks pass; a click
+          from ~27,000 px up lands at 0 px. A plain smooth `scrollTo` landed 153 px short, so
+          the button stayed and following didn't resume; a 200 ms fade-in flashed it 3 times in
+          a live turn, 500 ms never.
     - [ ] **3y6d. Server memory and snapshots** (~60) — evict runtimes with no tab, no agent and
           nothing open; warn when a turn's snapshot is slow (synthetic 5,000-message session, big
           repo). Accept: before / after memory and snapshot numbers.

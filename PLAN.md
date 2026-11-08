@@ -974,6 +974,15 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       the real CLI: the Read step shows a 96×64 thumbnail; a click opens the 1440×813 image,
       "Read shot.png", 96.9 kB, Open original; `/attachments/<id>` serves it as image/png; the
       97 KB image is in `attachments`, and no base64 is in the session log. D72.
+- [x] **3z2. A big prompt stops auto-scroll** (~10; owner, 2026-11-08; BUGS) — found in headless
+      Chrome (2 of ~10 scripted runs): the smooth follow to a big new prompt landed 48 px short,
+      because the working indicator grew in the same update; Virtuoso counts > 4 px from the
+      bottom as "scrolled up", and every later message is gated on that, so the chat stayed
+      stuck. Fix (owner's): when a new prompt lands at the end, `scrollToIndex(LAST, end)` — a
+      plain jump, wherever the view was. Scope: web `conversation.tsx`. Accept: the repro script
+      ends at the bottom in 15 of 15 runs; typecheck, test, build.
+      **Proof:** 15 of 15 at the bottom; the 48 px short landing still showed in 2 runs and was
+      corrected within ~70 ms both times. Typecheck 7/7, 214 tests, build 5/5. D75.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

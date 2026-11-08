@@ -39,6 +39,16 @@ export function Conversation(props: Props) {
   // bottom (measured, D71). Layout effect: before the ResizeObserver sees the growth.
   const list = useRef<VirtuosoHandle>(null);
   useLayoutEffect(() => list.current?.autoscrollToBottom(), [items, status, queued]);
+  // A new prompt at the end: go to the bottom, wherever the view was (D75). Following it with a
+  // smooth glide could land short of the bottom (the working indicator grows in the same update)
+  // and then count as "scrolled up", so the chat stopped following; a plain jump corrects itself.
+  const seen = useRef(items.length);
+  useLayoutEffect(() => {
+    if (items.length > seen.current && items.at(-1)?.type === "prompt") {
+      list.current?.scrollToIndex({ index: "LAST", align: "end" });
+    }
+    seen.current = items.length;
+  }, [items]);
   // Away from the bottom (you scrolled up), the chat stops following and offers the way back (3y6e).
   const [atBottom, setAtBottom] = useState(true);
 

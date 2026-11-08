@@ -156,6 +156,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D75. A new prompt jumps the chat to the bottom (step 3z2, owner)
+- Bug: after a big prompt in a long session the chat stopped following. Headless Chrome, frame by
+  frame (2 of ~10 scripted runs): the smooth follow to the new 3,536 px prompt landed 48 px
+  short, because the working indicator (the list's footer) grew from 4 to 52 px in the same
+  update. Virtuoso counts > 4 px from the bottom as "not at the bottom", and D71's following is
+  gated on that (`followOutput(atBottom)`, `autoscrollToBottom()`), so nothing pulled it back.
+- Decision (owner: the simple fix): when a new prompt lands at the end of the list,
+  `scrollToIndex({ index: "LAST", align: "end" })`, a plain jump, wherever the view was. 15 of
+  15 repro runs ended at the bottom; the short landing still happened twice and was corrected
+  within ~70 ms, most likely by Virtuoso re-checking a plain jump once the item is measured
+  (the smooth follow didn't get that). D71's following stays as it was for everything else.
+- Known gap: only a prompt triggers it. Another short landing (a big reply, an image) could
+  still knock the chat out of following; not seen so far.
+- Alternative (built, measured 10/10, not taken: more code): following as a flag only your own
+  scrolling up turns off (wheel / touch / keys / scrollbar), re-pinning on every height change
+  (`totalListHeightChanged`). The one to reach for if the gap above shows up.
+- Reverse: remove the prompt effect in `conversation.tsx`.
+
 ### D74. The sidebar's sections are trees, drawn with Headless Tree (step 4b, owner)
 - Owner: use the best tree library rather than hand-roll the folders.
 - Decision: `@headless-tree/core` + `@headless-tree/react` (1.8.0; the successor of
@@ -249,10 +267,11 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   everything you scroll through stays drawn); @tanstack/react-virtual (headless: the
   bottom-anchored chat behaviour would be ours to write); CSS `content-visibility: auto` (React
   still builds every element, which is the cost here).
-- Following: `followOutput` follows new items; for growth without one (the working indicator
-  appearing, a step added to the last group) `autoscrollToBottom()` runs on every change, which
-  only scrolls when the view was at the bottom. Measured with a scripted live turn: without it, a
-  turn's start lagged ~0.5 s once; scrolled up 1,600 px, what you read moves 0 px either way.
+- Following (a new prompt also jumps, D75): `followOutput` follows new items; for growth without one (the
+  working indicator appearing, a step added to the last group) `autoscrollToBottom()` runs on
+  every change, which only scrolls when the view was at the bottom. Measured with a scripted live
+  turn: without it, a turn's start lagged ~0.5 s once; scrolled up 1,600 px, what you read moves
+  0 px either way.
 - Jump to the newest (3y6e): Virtuoso's `atBottomStateChange` shows a round ↓ button; it calls
   `scrollToIndex({ index: "LAST", align: "end", behavior: "smooth" })`, which corrects as it
   measures the items it passes. A smooth `scrollTo` the end landed 153 px short from far up (those

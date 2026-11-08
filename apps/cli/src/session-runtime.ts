@@ -184,14 +184,15 @@ export class SessionRuntime {
     const reply = [...this.log].reverse().find((m) => m.type === "agent_event" && m.event.kind === "text");
     const last = reply?.type === "agent_event" && reply.event.kind === "text" ? [`Agent: ${reply.event.text}`] : [];
     // The first prompt says what it set out to do, the latest ones where it went; trimmed, it's for a title.
-    const about = [...prompts.slice(0, 1), ...prompts.slice(1).slice(-3), ...last].join("\n").slice(0, 2000);
+    const about = [...prompts.slice(0, 1), ...prompts.slice(1).slice(-3), ...last].join("\n");
     void this.name(about);
   }
 
   /**
    * Have the agent's fast model name the session (3z4), given what it's about. Starts (resumes)
    * the agent if none runs; one that can't name sessions leaves the title as it is, and so does a
-   * failure (logged). One at a time.
+   * failure (logged), and so does the owner renaming it meanwhile. One at a time; what it's
+   * about is trimmed to 2000 characters, it's only for a title.
    */
   private async name(about: string): Promise<void> {
     if (this.naming) return;
@@ -199,8 +200,11 @@ export class SessionRuntime {
     if (!session.title) return;
     this.naming = true;
     this.deps.onChange();
+    const before = this.deps.store.get(this.id)?.title ?? null;
     try {
-      const title = (await session.title(about)).trim().slice(0, 80);
+      const title = (await session.title(about.slice(0, 2000))).trim().slice(0, 80);
+      // Renamed by the owner meanwhile: theirs wins over the agent's.
+      if (this.deps.store.get(this.id)?.title !== before) return;
       if (title) this.deps.store.renameSession(this.id, title);
       this.logger.info({ title }, "session named");
     } catch (err) {

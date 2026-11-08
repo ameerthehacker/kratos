@@ -444,7 +444,9 @@ function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feat
 function FeatureDoneButton({ feature, className }: { feature: FeatureSummary; className?: string }) {
   const send = useKratos((s) => s.send);
   const busy = useKratos((s) => s.sessions.filter((x) => x.featureId === feature.id && isBusy(x)).length);
-  const [confirming, setConfirming] = useState(false);
+  // How many were busy when you asked: the dialog says that, not a count that runs down while
+  // it's open (to "0 still working"). Sessions that finish meanwhile just have nothing to stop.
+  const [confirming, setConfirming] = useState<number | null>(null);
   const label = feature.done ? "Reopen feature" : "Mark feature done";
   const Icon = feature.done ? RotateCcw : Check;
   const markDone = (stop: boolean) => send({ type: "set_feature_done", id: feature.id, done: true, ...(stop ? { stop: true } : {}) });
@@ -455,7 +457,7 @@ function FeatureDoneButton({ feature, className }: { feature: FeatureSummary; cl
         onClick={(e) => {
           e.stopPropagation(); // inside the folder's row: don't open or close it
           if (feature.done) send({ type: "set_feature_done", id: feature.id, done: false });
-          else if (busy > 0) setConfirming(true);
+          else if (busy > 0) setConfirming(busy);
           else markDone(false);
         }}
         aria-label={`${label}: ${feature.title}`}
@@ -468,7 +470,13 @@ function FeatureDoneButton({ feature, className }: { feature: FeatureSummary; cl
       >
         <Icon className="size-3.5" />
       </button>
-      <StopAndDoneDialog open={confirming} onOpenChange={setConfirming} what="feature" busy={busy} onConfirm={() => markDone(true)} />
+      <StopAndDoneDialog
+        open={confirming !== null}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        what="feature"
+        busy={confirming ?? busy}
+        onConfirm={() => markDone(true)}
+      />
     </>
   );
 }

@@ -1038,6 +1038,17 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       shelf + ⌘↵ twice: one Reports feature holding both, the pill on it; Enter went to the
       session; New session from a session: Home, box focused. 225 tests, typecheck 7/7, build
       5/5. ~60 lines.
+- [x] **3z6. Review of 3z3–3z5 and 4c5** (owner: "a code review of what we did, fix the findings")
+      — 10 findings; fixed: the owner's rename during naming wins over the agent's title; an
+      empty session can't be renamed (it would list in Recent); the input to the title model is
+      trimmed for the first prompt too (2000 characters); after ⌘↵ the pill only picks a feature
+      that didn't exist before, not an older one of the same name; the page's own URL changes
+      don't pull focus into the prompt; marking the open session done goes Home only once it's
+      done (a refused one stays); the feature dialog keeps the count it opened with; a doc comment
+      back on its schema; a test's indentation. Kept by design (D78): Regenerate starts the agent
+      if none runs. **Proof:** 226 tests (a new hub test: rename during naming, empty session);
+      typecheck 7/7, build 5/5; live on the stand-in: header ✓ while working → Home after done;
+      naming on the shelf keeps focus; ⌘↵ twice with a new name → one feature, both sessions.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

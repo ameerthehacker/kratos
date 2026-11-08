@@ -48,23 +48,34 @@ export function HomePage() {
 
   // ⌘↵ (3z5): start it but stay here, the box cleared and focused for the next one. A new feature
   // it named is made by the server: the pill then picks it, so the next ones join it.
-  const awaitedFeature = useRef<string | null>(null);
+  // Only a feature that wasn't there at the send counts, so one already named the same isn't picked.
+  const awaitedFeature = useRef<{ title: string; existing: Set<string> } | null>(null);
+  // This page's own URL changes (the shelf's choice) aren't landing here: they keep the focus.
+  const ownParams = useRef(false);
+  const choose = (next: Record<string, string>) => {
+    ownParams.current = true;
+    setParams(next, { replace: true });
+  };
   useEffect(() => {
-    const title = awaitedFeature.current;
-    const made = title && features.find((f) => f.title === title && !f.done); // newest first
+    const awaited = awaitedFeature.current;
+    const made = awaited && features.find((f) => f.title === awaited.title && !f.done && !awaited.existing.has(f.id));
     if (!made) return;
     awaitedFeature.current = null;
+    ownParams.current = true;
     setParams({ feature: made.id }, { replace: true });
   }, [features, setParams]);
   // Landing here (New session, its shortcut, opening Kratos) puts the cursor in the box.
   const { key } = useLocation();
-  useEffect(() => document.getElementById("prompt")?.focus(), [key]);
+  useEffect(() => {
+    if (ownParams.current) ownParams.current = false;
+    else document.getElementById("prompt")?.focus();
+  }, [key]);
 
   const start = (text: string, attachments: AttachmentUpload[], { mod: stay }: { mod: boolean }) => {
     if (!stay) pending.current = { text, viewing, seen: log.length }; // go to it once it lands
     else if (newFeatureTitle) {
-      awaitedFeature.current = newFeatureTitle;
-      setParams({}, { replace: true }); // not a second one with the same name
+      awaitedFeature.current = { title: newFeatureTitle, existing: new Set(features.map((f) => f.id)) };
+      choose({}); // not a second one with the same name
     }
     askToNotify(); // once, from this click: so Kratos can tell you when the agent needs you
     send({
@@ -111,8 +122,8 @@ export function HomePage() {
                 value={featureId}
                 newTitle={newFeatureTitle}
                 purpose="choose"
-                onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })}
-                onCreate={(name) => setParams({ new: name }, { replace: true })}
+                onChange={(id) => choose(id ? { feature: id } : {})}
+                onCreate={(name) => choose({ new: name })}
               />
               {/* ⌘↵ isn't something you'd guess: said where you type (3z5). */}
               <span className="ml-auto flex items-center gap-1.5 pr-1 text-xs text-faint max-sm:hidden">

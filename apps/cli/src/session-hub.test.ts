@@ -603,7 +603,7 @@ describe("SessionHub: features (D73)", () => {
     expect(a.list.filter((s) => s.featureId === feature).every((s) => s.done)).toBe(true);
   });
 
-    it("renames a feature for every tab; another project's can't be", () => {
+  it("renames a feature for every tab; another project's can't be", () => {
     const { tab, otherProject } = setup();
     const a = tab();
     const b = tab();
@@ -750,6 +750,21 @@ describe("SessionHub: sessions name themselves (3z4)", () => {
 
     a.receive({ type: "regenerate_title", sessionId: "nope" });
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
+  it("a rename by the owner while the agent is naming it wins; an empty session can't be renamed", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "rename_session", sessionId: a.viewing, title: "Too early" }); // no prompt yet
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+    expect(titleOf(a.list, a.viewing)?.title).toBeNull(); // so it stays out of Recent
+
+    a.receive({ type: "prompt", text: "first ask" });
+    await tick();
+    a.receive({ type: "rename_session", sessionId: a.viewing, title: "Mine" }); // while it's naming
+    agents[0]!.titleCalls[0]!.answer("The agent's");
+    await tick();
+    expect(titleOf(a.list, a.viewing)).toMatchObject({ title: "Mine", titling: false });
   });
 
   it("renames a session by hand, for every tab, without moving it in the list", async () => {

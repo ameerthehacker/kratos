@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, RotateCcw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -22,9 +22,15 @@ export function DoneButton({ session, variant, className, tabIndex }: { session:
   const label = session.done ? "Reopen" : "Mark as done";
   const Icon = session.done ? RotateCcw : Check;
   const [confirming, setConfirming] = useState(false);
+  // Home only once the server has marked it done: a refused one (it got busy meanwhile) keeps you
+  // here, with the server's error.
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (leaving && session.done && pathname === `/s/${session.id}`) navigate("/");
+  }, [leaving, session.done, session.id, pathname, navigate]);
   const markDone = (stop: boolean) => {
     send({ type: "set_done", id: session.id, done: true, ...(stop ? { stop: true } : {}) });
-    if (pathname === `/s/${session.id}`) navigate("/");
+    setLeaving(true);
   };
   const toggle = (event: React.MouseEvent) => {
     event.preventDefault(); // rows sit inside links' hover areas: don't navigate

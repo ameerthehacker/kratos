@@ -241,7 +241,7 @@ function SessionHeader({ session }: { session: SessionSummary }) {
                 <Sparkles className="size-4" />
                 {session.titling ? "Naming…" : "Regenerate title"}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setRenaming(true)}>
+              <DropdownMenuItem disabled={session.title === null} onClick={() => setRenaming(true)}>
                 <Pencil className="size-4" />
                 Rename…
               </DropdownMenuItem>

@@ -176,6 +176,11 @@ export class SessionHub {
         return;
       case "rename_session":
         if (!this.inProject(send, message.sessionId)) return;
+        // An empty session has no title: one would list it in Recent, and its first prompt names it.
+        if (this.store.get(message.sessionId)?.title === null) {
+          send({ type: "error", message: "Send a first prompt before naming the session" });
+          return;
+        }
         this.store.renameSession(message.sessionId, message.title);
         this.broadcastSessionList();
         return;

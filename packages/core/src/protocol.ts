@@ -113,14 +113,17 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Stop the current step and have the agent read this queued prompt now; the rest stay
    * queued (owner, D56). */
   z.object({ type: z.literal("send_now"), id: z.string() }),
-  /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
-  z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
+  /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. Done
+   * while its agent is busy (working, waiting on you, prompts queued) only with `stop: true`, the
+   * owner's consent: the agent is stopped and its queue dropped first (4c5). */
+  z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
   /** Start a feature in this project (D73). Answered with `features`. */
   z.object({ type: z.literal("create_feature"), title: FeatureTitle }),
   /** Rename a feature (D73). Answered with `features`. */
   z.object({ type: z.literal("rename_feature"), id: z.string(), title: FeatureTitle }),
-  /** Mark a feature done with its sessions (refused while one is busy), or reopen it (D73). */
-  z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean() }),
+  /** Mark a feature done with its sessions, or reopen it (D73). Like `set_done`, a busy session
+   * in it needs `stop: true` (4c5). */
+  z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
   /** Move a session into a working feature, back to a one-off with null, or into a new feature
    * named here (`newFeatureTitle`, which wins) (D73). */
   z.object({

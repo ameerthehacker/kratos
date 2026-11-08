@@ -238,8 +238,11 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   its folder on disk and its slug come with the plan. A done feature takes no new sessions
   (reopen it first). No delete yet, so no `ON DELETE` rule.
 - Done (owner, 4b review): marking a feature done marks its sessions done too (the folder is
-  finished), and is refused while any of them is working, waiting on you or has prompts
-  queued: in the collapsed Done section an ask would hide. Reopening leaves them done; new work
+  finished). None may stay working, waiting on you or with prompts queued (in the collapsed Done
+  section an ask would hide): since 4c5 (owner) the owner is asked "Stop and mark done?" and, on
+  yes, the server stops those agents (turn, asks, queue) first. It needs that consent as
+  `stop: true` (like `confirmDangerous`), for a feature and for a single session alike; without
+  it, a busy one isn't marked done. Reopening leaves them done; new work
   in one of them reopens it and its feature.
 - Done keeps the tree (owner, 4b): a done session sits in its feature's folder in Done, so a
   feature with live and done sessions has a folder in each section (Working's open, Done's

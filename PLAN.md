@@ -1108,6 +1108,24 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         done looks up only its sessions. **Proof:** 219 tests (2 new hub tests, store and drop
         rule extended); typecheck 7/7, build 5/5; live in headless Chrome: the drag cases (3, 5,
         D, E, A, B), the sidebar's name + Enter, and clicking away on a one-off's page.
+  - [x] **4c5. Stop, then mark done** (~120; owner) — marking a session or a feature done while
+        an agent in it is working (or waiting on you, or has prompts queued) asks first: "Stop and
+        mark done?", saying the agent is stopped and anything queued dropped (a feature says how
+        many of its sessions). On yes, the server stops each busy agent (`interrupt`, queue
+        cancelled), then marks done. The server requires that consent (`stop: true`, like
+        `confirmDangerous`): without it, a busy session or feature isn't marked done. Scope: core
+        `protocol.ts`, `session-hub.ts` + tests, web `done-button.tsx`, `sessions-sidebar.tsx`,
+        a shared dialog. Accept: hub tests (refused without `stop`; with it the agents are
+        interrupted, queues cancelled, then done); live with the streaming stand-in: the dialog
+        for a working session and a feature, Cancel leaves it working, confirm stops and marks
+        done; typecheck, test, build.
+        **Proof:** 221 tests (2 new hub tests: refused without consent and nothing stopped; with it
+        only the busy agents are interrupted, queue cancelled, then done). Live, Kratos on the
+        streaming stand-in: a working session's ✓ asked; "Keep working" left it working and
+        didn't open anything under the dialog; "Stop and mark done" sent `stop: true`, the agent
+        stopped (idle) and the session was done. Same for a feature ("1 of its sessions is still
+        working…"): the folder stayed as it was on Keep working; confirm left feature and session
+        done, agent idle. Typecheck 7/7, build 5/5.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's

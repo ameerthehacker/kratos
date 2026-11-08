@@ -369,7 +369,7 @@ describe("SessionHub: sessions side by side (D41)", () => {
     a.receive({ type: "prompt", text: "second task", newSession: true }); // a now views the second
     const order = a.list.map((s) => s.id);
 
-    b.receive({ type: "set_done", id: firstId, done: true }); // from a tab not viewing it
+    b.receive({ type: "set_done", id: firstId, done: true, stop: true }); // from a tab not viewing it (still working: 4c5)
     for (const t of [a, b]) expect(t.list.find((s) => s.id === firstId)?.done).toBe(true);
     expect(a.list.map((s) => s.id)).toEqual(order); // housekeeping: Recent order unchanged
 
@@ -399,6 +399,25 @@ describe("SessionHub: sessions side by side (D41)", () => {
 
     a.receive({ type: "prompt", text: "second task", newSession: true });
     expect(b.list.map((s) => s.title)).toEqual(["second task", "first task"]);
+  });
+
+  it("marks a busy session done only with consent to stop it: then its agent and queue stop first (4c5)", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first task" });
+    a.receive({ type: "prompt", text: "queued meanwhile" });
+    const id = a.viewing;
+
+    a.receive({ type: "set_done", id, done: true }); // no consent: refused, nothing stopped
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringMatching(/still working/) });
+    expect(a.list.find((s) => s.id === id)?.done).toBe(false);
+    expect(agents[0]!.interrupts).toBe(0);
+
+    a.receive({ type: "set_done", id, done: true, stop: true });
+    await tick();
+    expect(agents[0]!.interrupts).toBe(1);
+    expect(agents[0]!.interruptOptions[0]).toEqual({ cancelQueued: true }); // the queue goes too
+    expect(a.list.find((s) => s.id === id)?.done).toBe(true);
   });
 
   it("uses the viewed session when it has no prompts yet, instead of creating another", () => {
@@ -562,7 +581,24 @@ describe("SessionHub: features (D73)", () => {
     expect(a.features[0]).toMatchObject({ id: feature, done: false });
   });
 
-  it("renames a feature for every tab; another project's can't be", () => {
+  it("marks a feature done with consent to stop its busy sessions: only those are stopped (4c5)", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "idle one", featureId: feature });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "prompt", text: "busy one", newSession: true, featureId: feature });
+
+    a.receive({ type: "set_feature_done", id: feature, done: true, stop: true });
+    await tick();
+    expect(agents.map((g) => g.interrupts)).toEqual([0, 1]); // the idle one isn't touched
+    expect(a.features[0]?.done).toBe(true);
+    expect(a.list.filter((s) => s.featureId === feature).every((s) => s.done)).toBe(true);
+  });
+
+    it("renames a feature for every tab; another project's can't be", () => {
     const { tab, otherProject } = setup();
     const a = tab();
     const b = tab();
@@ -624,6 +660,7 @@ describe("SessionHub: features (D73)", () => {
     a.receive({ type: "set_feature_done", id: feature, done: true }); // still working: refused
     expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringMatching(/still working or waiting on you/) });
     expect(a.features[0]?.done).toBe(false);
+    expect(agents[0]!.interrupts).toBe(0);
 
     agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await tick();

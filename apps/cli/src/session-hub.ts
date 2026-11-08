@@ -164,6 +164,7 @@ export class SessionHub {
         return;
       case "set_done":
         if (!this.inProject(send, message.id)) return;
+        if (message.done && !this.stopBusy(send, [message.id], message.stop, "It's still working or waiting on you")) return;
         this.store.setDone(message.id, message.done);
         this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
         // A reopened session can't stay inside a done feature (D73): that reopens too.
@@ -181,12 +182,9 @@ export class SessionHub {
         return;
       case "set_feature_done": {
         if (!this.featureInProject(send, message.id)) return;
-        // Done takes its sessions with it, so none may still be busy: an ask would hide in Done.
-        const busy = this.store.sessionsOfFeature(message.id).filter((s) => this.busy(s.id)).length;
-        if (message.done && busy > 0) {
-          send({ type: "error", message: `${busy} of its sessions ${busy === 1 ? "is" : "are"} still working or waiting on you: finish or stop ${busy === 1 ? "it" : "them"} first` });
-          return;
-        }
+        // Done takes its sessions with it, so none may stay busy: an ask would hide in Done.
+        const ids = this.store.sessionsOfFeature(message.id).map((s) => s.id);
+        if (message.done && !this.stopBusy(send, ids, message.stop, "Some of its sessions are still working or waiting on you")) return;
         this.store.setFeatureDone(message.id, message.done);
         this.log.info({ feature: message.id, done: message.done }, message.done ? "feature marked done" : "feature reopened");
         this.broadcast(this.featureList());
@@ -353,6 +351,23 @@ export class SessionHub {
     const feature = this.store.createFeature(this.cwd, title);
     this.log.info({ feature: feature.id }, "new feature");
     return feature.id;
+  }
+
+  /**
+   * Before marking done (4c5): with the owner's consent (`stop`), stop every busy agent among
+   * these sessions — its turn, its asks, its queue; without it, refuse if any is busy. False when
+   * refused (the tab is told).
+   */
+  private stopBusy(send: Send, sessionIds: string[], stop: boolean | undefined, refusal: string): boolean {
+    const busy = sessionIds.filter((id) => this.busy(id));
+    if (busy.length === 0) return true;
+    if (!stop) {
+      send({ type: "error", message: `${refusal}: stop it first, or confirm stopping` });
+      return false;
+    }
+    for (const id of busy) this.runtimes.get(id)!.interrupt();
+    this.log.info({ sessions: busy }, "stopped to mark done");
+    return true;
   }
 
   /** The session's feature, if done, is reopened: live work isn't hidden in a done folder (D73). */

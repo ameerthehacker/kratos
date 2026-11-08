@@ -18,3 +18,6 @@ Status: `[ ]` open · `[~]` planned (step in PLAN.md) · `[x]` done (step)
       — in the changes review, marking viewed from the keyboard leaves you on the same file.
 - [ ] **Unviewed files first when moving between files** (owner, 2026-11-08) — next / previous
       file in the review should prefer files not yet viewed.
+- [ ] **Shades of change in the diff** (owner, 2026-11-08) — in the review, one color for what
+      the whole session changed and another for what changed since you last viewed the file; and
+      the file list marks files that changed since you last viewed them.

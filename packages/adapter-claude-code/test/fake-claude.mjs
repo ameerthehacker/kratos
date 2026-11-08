@@ -88,11 +88,55 @@ const startTurn = ({ uuid, content }) => {
   out({ type: "system", subtype: "init", permissionMode: mode });
   // A prompt with files is a list of content blocks (D55): the turn is named by its text block.
   lastBlocks = Array.isArray(content) ? content : [];
-  void turns[Array.isArray(content) ? content.find((b) => b.type === "text")?.text : content]?.();
+  const text = Array.isArray(content) ? content.find((b) => b.type === "text")?.text : content;
+  const host = text?.startsWith("hosttool ") ? "hosttool" : text?.startsWith("hosttool-withdraw ") ? "hosttool-withdraw" : undefined;
+  void (turns[text] ?? (host ? () => turns[host](text) : undefined))?.();
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Kratos's in-process tools (D77), like the real CLI: `--mcp-config` declares the "sdk" server,
+// `initialize` names it; using a tool lists the tools, asks `can_use_tool`, then calls it — all as
+// control requests to the adapter (`mcp_message` carries the JSON-RPC).
+let sdkServers = [];
+// `initialize` answered late (tests: FAKE_CLAUDE_INIT_DELAY_MS) — a prompt arriving before that
+// answer would find no tools on the real CLI: noted, so a test sees the adapter held it back.
+const INIT_DELAY = Number(process.env.FAKE_CLAUDE_INIT_DELAY_MS ?? 0);
+let initAnswered = false;
+let promptBeforeInit = false;
+const mcp = async (message) => (await ask({ subtype: "mcp_message", server_name: "kratos", message })).response?.mcp_response;
+
 const turns = {
+  // "hosttool <name> <json input>": use one of Kratos's tools; report what each step answered.
+  async hosttool(text) {
+    const [, name, json] = text.match(/^hosttool (\S+) ?(.*)$/);
+    const toolInput = json ? JSON.parse(json) : {};
+    const listed = await mcp({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: `mcp__kratos__${name}`, input: toolInput }] }, parent_tool_use_id: null });
+    const permission = await ask({ subtype: "can_use_tool", tool_name: `mcp__kratos__${name}`, input: toolInput, tool_use_id: "t1" });
+    const called = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: toolInput, _meta: { "claudecode/toolUseId": "t1" } } });
+    report(JSON.stringify({
+      servers: sdkServers,
+      mcpConfig: flag("--mcp-config") ?? null,
+      tools: listed?.result?.tools?.map((t) => ({ name: t.name, schema: t.inputSchema })),
+      permission: permission.response?.behavior,
+      result: called?.result,
+      error: called?.error,
+      promptBeforeInit,
+    }));
+    finish();
+  },
+  // "hosttool-withdraw <name>": call one of Kratos's tools, then withdraw the call mid-way, like the
+  // real CLI does when its turn is stopped; report whether an answer still came.
+  async "hosttool-withdraw"(text) {
+    const name = text.split(" ")[1];
+    void mcp({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name, arguments: {} } });
+    await sleep(150);
+    cancelled.add("r1");
+    out({ type: "control_cancel_request", request_id: "r1" });
+    await sleep(300);
+    report(JSON.stringify({ responsesAfterCancel }));
+    finish();
+  },
   // Ask permission for a Write; report exactly what the adapter answered.
   async ask() {
     toolUse();
@@ -205,6 +249,7 @@ const turns = {
 for await (const line of createInterface({ input: process.stdin })) {
   const msg = JSON.parse(line);
   if (msg.type === "user") {
+    if (sdkServers.length > 0 && !initAnswered) promptBeforeInit = true;
     const prompt = { uuid: msg.uuid, content: msg.message.content };
     lifecycle(prompt.uuid, "queued");
     if (busy) held.push(prompt); // steering: the running turn takes it at its next boundary
@@ -224,7 +269,12 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (at >= 0) lifecycle(held.splice(at, 1)[0].uuid, "cancelled");
     success(msg.request_id, { cancelled: at >= 0 });
   }
-  else if (msg.type === "control_request" && msg.request.subtype === "initialize") success(msg.request_id, { models: MODELS });
+  else if (msg.type === "control_request" && msg.request.subtype === "initialize") {
+    sdkServers = msg.request.sdkMcpServers ?? [];
+    const answer = () => ((initAnswered = true), success(msg.request_id, { models: MODELS }));
+    if (INIT_DELAY > 0) setTimeout(answer, INIT_DELAY);
+    else answer();
+  }
   // Like the real CLI's (3z4): a short title for what it's told the session is about.
   else if (msg.type === "control_request" && msg.request.subtype === "generate_session_title") {
     success(msg.request_id, { title: `Title: ${msg.request.description.split("\n")[0].slice(0, 30)}` });

@@ -12,6 +12,8 @@ import {
 } from "@kratos/core";
 import { toolAction } from "./tool-action.js";
 import { ControlChannel } from "./control-channel.js";
+import { JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js";
+import { HOST_SERVER, HostToolServer, hostServerConfig, hostToolName } from "./host-tools.js";
 import { JsonLinesProcess } from "./json-lines-process.js";
 import { IMAGE_TYPES, toEvents } from "./map.js";
 import {
@@ -163,7 +165,7 @@ function startSession(
   options: Parameters<AgentAdapter["startSession"]>[0],
   listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
-  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode } = options;
+  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode, tools = [] } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
   // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
@@ -175,6 +177,8 @@ function startSession(
     ...(permissionMode ? ["--permission-mode", permissionMode] : []),
     // Makes Bypass reachable by set_permission_mode later; it doesn't turn it on (D53).
     "--allow-dangerously-skip-permissions",
+    // Kratos's own tools, as an in-process MCP server (D77).
+    ...(tools.length > 0 ? ["--mcp-config", hostServerConfig()] : []),
   ];
   const proc = new JsonLinesProcess(claudePath, args, { cwd, env: cliEnv() });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
@@ -184,6 +188,26 @@ function startSession(
   const control = new ControlChannel(proc); // requests we send (set_model, effort, interrupt)
   const pending = new Map<string, AbortController>(); // permission asks still waiting for Kratos
   let interrupted = false;
+  // With host tools, `initialize` names their server first (D77); prompts wait for its answer, so
+  // the first turn already has them. Prompts wait in order; the requests about prompts (interrupt,
+  // send now, cancel a prompt) wait for `ready` too, so they never overtake one that isn't there yet.
+  const hostServer = tools.length > 0 ? new HostToolServer(tools) : null;
+  const hostToolNames = new Set(tools.map((t) => hostToolName(t.name)));
+  let held: object[] | null = hostServer ? [] : null;
+  const ready: Promise<void> = hostServer
+    ? control
+        .request({ subtype: "initialize", sdkMcpServers: [HOST_SERVER] }, { timeoutMs: 30_000 })
+        .then(
+          () => {},
+          () => {}, // the tools are then missing; the session still works
+        )
+        .finally(() => {
+          const waiting = held ?? [];
+          held = null;
+          for (const message of waiting) proc.send(message);
+        })
+    : Promise.resolve();
+  const sendPrompt = (message: object) => (held ? held.push(message) : proc.send(message));
 
   /**
    * Answer one of the CLI's `can_use_tool` asks: questions go to `askQuestions` (D54), every other
@@ -191,12 +215,29 @@ function startSession(
    * the CLI withdrew the ask meanwhile (control_cancel_request).
    */
   async function answer({ request_id, request }: ControlRequest) {
-    if (request.subtype !== "can_use_tool" || !request.tool_name) {
-      const error = `Kratos does not handle control request "${request.subtype}"`;
-      proc.send({ type: "control_response", response: { subtype: "error", request_id, error } });
+    const respond = (response: object) => proc.send({ type: "control_response", response: { subtype: "success", request_id, response } });
+    const refuse = (error: string) => proc.send({ type: "control_response", response: { subtype: "error", request_id, error } });
+    // Our own tools aren't put through the gate: one that needs the owner's yes asks in its call,
+    // in every permission mode (Bypass skips this ask altogether, D77).
+    if (request.subtype === "can_use_tool" && request.tool_name && hostToolNames.has(request.tool_name)) {
+      respond({ behavior: "allow", updatedInput: request.input ?? {} });
       return;
     }
+    // Still waiting on Kratos: the CLI withdrawing it (control_cancel_request) aborts it.
     const abort = new AbortController();
+    if (request.subtype === "mcp_message" && request.server_name === HOST_SERVER && hostServer) {
+      const message = JSONRPCMessageSchema.safeParse(request.message);
+      if (!message.success) return refuse("Not a JSON-RPC message");
+      const id = "id" in message.data ? message.data.id : undefined;
+      abort.signal.addEventListener("abort", () => id !== undefined && id !== null && hostServer.cancel(id), { once: true });
+      pending.set(request_id, abort);
+      const mcp_response = await hostServer.answer(message.data).finally(() => pending.delete(request_id));
+      if (!abort.signal.aborted) respond({ mcp_response });
+      return;
+    }
+    if (request.subtype !== "can_use_tool" || !request.tool_name) {
+      return refuse(`Kratos does not handle control request "${request.subtype}"`);
+    }
     pending.set(request_id, abort);
     const input = request.input ?? {};
     let response: object;
@@ -209,9 +250,7 @@ function startSession(
     } finally {
       pending.delete(request_id);
     }
-    if (!abort.signal.aborted) {
-      proc.send({ type: "control_response", response: { subtype: "success", request_id, response } });
-    }
+    if (!abort.signal.aborted) respond(response);
   }
 
   /** The permission gate: allow (maybe with edited input) or deny with the owner's message. */
@@ -291,6 +330,7 @@ function startSession(
       }
     }
     control.close("claude exited"); // requests still waiting will never be answered
+    for (const abort of pending.values()) abort.abort(); // nor will asks and host tool calls be read
     // If nobody asked it to stop, claude died (or never started): say so.
     const exit = await proc.exited;
     if (!exit.requested) {
@@ -306,9 +346,10 @@ function startSession(
       const content = attachments.length > 0 ? [...attachments.map(contentBlock), { type: "text", text: prompt }] : prompt;
       // Tagged with our id, the CLI reports what becomes of it (command_lifecycle, D56).
       if (options.id) ourPrompts.add(options.id);
-      proc.send({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(options.id ? { uuid: options.id } : {}) });
+      sendPrompt({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, ...(options.id ? { uuid: options.id } : {}) });
     },
     async cancelPrompt(id) {
+      await ready; // a prompt still held must reach the CLI first, or it can't be cancelled
       const answer = await control.request({ subtype: "cancel_async_message", message_uuid: id });
       return CancelAsyncMessageResponse.parse(answer).cancelled;
     },
@@ -316,6 +357,7 @@ function startSession(
       // The CLI's own Send now (verified, D56): stops the step and delivers what it holds. The
       // stopped turn ends like an interrupt.
       interrupted = true;
+      await ready;
       const answer = SendNowResponse.parse(await control.request({ subtype: "interrupt", send_now: true, message_uuid: id }));
       if (answer.send_now === "nothing_waiting") interrupted = false; // nothing was stopped
     },
@@ -323,7 +365,8 @@ function startSession(
       interrupted = true;
       // Not awaited: the turn's end is reported as `turn_end: interrupted` on `events`; withdrawn
       // prompts as `prompt_state` cancelled (D56).
-      control.request({ subtype: "interrupt", ...(options.cancelQueued ? { cancel_queued: true } : {}) }).catch(() => {});
+      // After `ready`: an interrupt must not overtake a prompt still held (D77).
+      void ready.then(() => control.request({ subtype: "interrupt", ...(options.cancelQueued ? { cancel_queued: true } : {}) })).catch(() => {});
     },
     // null = back to the agent's default, which Claude calls "default" (D43, 3c4).
     async setModel(model) {

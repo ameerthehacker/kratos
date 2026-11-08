@@ -277,6 +277,37 @@ export const AgentPermissionMode = z.object({
 });
 export type AgentPermissionMode = z.infer<typeof AgentPermissionMode>;
 
+/** What a host tool answers the agent: text, flagged when it's an error (the agent sees it as a
+ * failed tool call and carries on). */
+export type HostToolResult = { text: string; isError?: boolean };
+
+/**
+ * A tool Kratos itself offers the agent (D77), e.g. "move this session into a feature". The agent
+ * calls it like any other tool; the adapter serves it its own way (Claude: an in-process MCP
+ * server) and checks the input against `input` first. Given per session, so `call` knows which
+ * session it serves. It isn't put through the permission gate: a tool that needs the owner's
+ * yes asks for it in `call`, whatever the permission mode (Bypass would skip the gate).
+ * `toolCallId`: the agent's tool call, to show the ask on its step; `signal`: aborts if the
+ * agent withdraws the call.
+ */
+export interface HostTool {
+  /** Lowercase words with underscores, e.g. `list_features`. */
+  readonly name: string;
+  readonly description: string;
+  readonly input: z.ZodObject;
+  call(input: never, context: { toolCallId?: string; signal: AbortSignal }): Promise<HostToolResult>;
+}
+
+/** A host tool with its input typed from its schema. */
+export function hostTool<S extends z.ZodObject>(tool: {
+  name: string;
+  description: string;
+  input: S;
+  call(input: z.output<S>, context: { toolCallId?: string; signal: AbortSignal }): Promise<HostToolResult>;
+}): HostTool {
+  return tool as HostTool;
+}
+
 /** A coding agent Kratos knows how to drive (a "harness"). One adapter per agent (e.g. "claude-code"). */
 export interface AgentAdapter {
   readonly id: string;
@@ -299,6 +330,8 @@ export interface AgentAdapter {
     permissionMode?: string;
     /** Where the agent's questions go (D54); without it, questions are refused. */
     askQuestions?: AskQuestions;
+    /** Tools Kratos offers this session's agent (D77); none = the agent's own tools only. */
+    tools?: readonly HostTool[];
   }): AgentSession;
 }
 

@@ -58,6 +58,9 @@ export const CliMessage = z.discriminatedUnion("type", [
       decision_reason: z.string().optional(),
       /** Which tool_use block this ask is about (verified on the real CLI, 3c4). */
       tool_use_id: z.string().optional(),
+      /** `mcp_message` (D77): which in-process server, and the JSON-RPC message for it. */
+      server_name: z.string().optional(),
+      message: z.unknown().optional(),
     }),
   }),
   z.object({ type: z.literal("control_cancel_request"), request_id: z.string() }),

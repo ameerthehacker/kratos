@@ -196,6 +196,24 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Alternatives: an HTTP MCP endpoint on the Kratos server (`--mcp-config` with a URL: a network
   surface to guard, 3y1, and calls must say which session they're from); a stdio MCP subprocess
   (another process per session, and it needs a way back to the hub).
+- Built (4m2): core `HostTool` (zod input; `call` gets the tool call's id and an abort signal)
+  given per session to `startSession`. The Claude adapter serves them with the official MCP SDK
+  (`@modelcontextprotocol/sdk`, pinned: its `McpServer` does the protocol — versions, listing
+  with JSON schemas, checking input, errors, cancelling — as in the Agent SDK); `host-tools.ts`
+  only bridges it to `mcp_message` through an in-process `Transport`. Alternative: answering the
+  JSON-RPC by hand (three methods, `z.toJSONSchema`), smaller but ours to keep in step with MCP.
+  Prompts are held until `initialize` is answered, in order; interrupt, send now and cancelling
+  a prompt wait for that too, so none overtakes a held prompt. Its own tools are allowed at
+  `can_use_tool`; the tool's `call` asks the owner when it must. Bad input, a throwing tool, an
+  unknown tool: tool errors the agent sees (`isError`), never a crash. claude exiting on its own
+  aborts every call still running. Checked on the real CLI (2.1.308, Haiku): the agent called
+  `mcp__kratos__list_features` with `{includeDone: true}` and the real tool call's id, no
+  permission card, and answered from it.
+- Package (owner: library-first, D7): `@modelcontextprotocol/sdk` 1.32.2, MIT, the official MCP
+  SDK. Only `McpServer` and its JSON-RPC protocol are imported; the HTTP transports (express,
+  hono…) are its dependencies but never bundled (esbuild takes what's imported; the binary still
+  builds). Known cost: its `Server` builds an Ajv validator per session, used only for
+  elicitation, which we don't use; fine at one per session.
 - Reverse: stop declaring the server; we answer `mcp_message` with "unsupported" again.
 
 ### D76. The chat sticks to the bottom with use-stick-to-bottom (step 3z3, owner) — **replaces D71's following, keeps D75's jump**

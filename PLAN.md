@@ -1198,9 +1198,25 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           Kratos got `can_use_tool` for it, then `tools/call`; it answered "Only 'Plans as
           first-class' is not done", from our result. $0.008. Found: Bypass skips `can_use_tool`,
           so the always-ask must live in `tools/call` (D77).
-    - [ ] **4m2. Host tools in the adapter interface** — core: tools Kratos offers an agent (name,
-          description, zod input, handler with the session); the Claude adapter serves them
-          over `mcp_message`; the fake `claude` can call one, for tests.
+    - [x] **4m2. Host tools in the adapter interface** (~150 + tests) — core: `HostTool` (name,
+          description, zod `input`, `call(input, {toolCallId, signal})` → text, maybe an error) and
+          `hostTool()` for typed input; `startSession({tools})`. Claude adapter (`host-tools.ts`):
+          declares the server (`--mcp-config`, `initialize` with `sdkMcpServers`; prompts wait for
+          its answer, in order), answers `mcp_message` JSON-RPC with the MCP SDK's `McpServer`
+          (`initialize`, `tools/list`, `tools/call` checked by zod; bad input, a throwing
+          tool, an unknown one → a tool error the agent sees), lets its own tools through
+          `can_use_tool` (a tool that needs the owner asks in its call, D77), aborts a call the
+          CLI withdraws. Fake `claude`: a `hosttool <name> <json>` turn doing what the real CLI
+          does (list, ask, call). **Proof:** 5 adapter tests (served, listed with schemas, called
+          with the tool call's id, never through the gate; bad input / failing / unknown → tool
+          errors; the first prompt held until a late `initialize` is answered — fails without the
+          hold; a withdrawn call aborts the tool and sends no answer; nothing declared without
+          tools); on the real CLI the agent called it and answered from it; 231 tests, typecheck
+          7/7, build 5/5, the binary builds. Review (owner asked: library first, then review): the
+          JSON-RPC moved from hand-written to the MCP SDK's `McpServer`; prompt-related requests
+          wait for the held prompts; claude exiting aborts running calls; a reused request id is
+          refused; the server's own requests aren't taken for answers. Nothing uses it yet:
+          Kratos's own tools are 4m3.
     - [ ] **4m3. Kratos's tools** — the read and change tools above on the hub; changes wait for
           the owner's answer, whatever the mode; only the calling session.
     - [ ] **4m4. The change card** — the ask in the chat says the change in words ("Create the

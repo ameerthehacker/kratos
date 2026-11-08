@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentEvent, AgentSession, AskQuestions, Conversation, PermissionRequest, QuestionRequest, RequestPermission } from "@kratos/core";
+import { z } from "zod";
+import { hostTool, type AgentEvent, type AgentSession, type AskQuestions, type Conversation, type PermissionRequest, type QuestionRequest, type RequestPermission } from "@kratos/core";
 import { cliEnv, createClaudeCodeAdapter } from "./index.js";
 
 /** A fake `claude` that speaks the real control protocol, scripted by prompt (see the file). */
@@ -533,5 +534,87 @@ describe("Claude Code adapter: steering (D56)", () => {
     } finally {
       await done();
     }
+  });
+});
+
+describe("Claude Code adapter: host tools (D77)", () => {
+  const calls: Array<string | undefined> = [];
+  const echo = hostTool({
+    name: "echo",
+    description: "Says the text back",
+    input: z.object({ text: z.string() }),
+    async call({ text }, { toolCallId }) {
+      calls.push(toolCallId);
+      return { text: `echo: ${text}` };
+    },
+  });
+  const boom = hostTool({ name: "boom", description: "Always fails", input: z.object({}), call: async () => Promise.reject(new Error("nope")) });
+
+  const withdrawn: string[] = [];
+  const slow = hostTool({
+    name: "slow",
+    description: "Waits until withdrawn",
+    input: z.object({}),
+    call: (_, { signal }) => new Promise((done) => signal.addEventListener("abort", () => (withdrawn.push("slow"), done({ text: "stopped" })))),
+  });
+
+  async function useTool(prompt: string) {
+    const asked: string[] = [];
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async (request) => (asked.push(request.tool), { decision: "allow" }),
+      tools: [echo, boom, slow],
+    });
+    session.send(prompt); // sent before `initialize` is answered: held until then
+    let report = "";
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") report = event.output;
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    return { report: JSON.parse(report), asked };
+  }
+
+  it("serves them in-process: declared and named, listed with their schemas, called with the tool call's id", async () => {
+    const { report, asked } = await useTool('hosttool echo {"text":"hi"}');
+    expect(report.servers).toEqual(["kratos"]);
+    expect(JSON.parse(report.mcpConfig)).toEqual({ mcpServers: { kratos: { type: "sdk", name: "kratos" } } });
+    expect(report.tools.map((t: { name: string }) => t.name)).toEqual(["echo", "boom", "slow"]);
+    expect(report.tools[0].schema).toMatchObject({ type: "object", properties: { text: { type: "string" } }, required: ["text"] });
+    expect(report.result).toEqual({ content: [{ type: "text", text: "echo: hi" }] });
+    expect(calls.at(-1)).toBe("t1");
+    // Not put through the permission gate: a tool that needs the owner asks in its own call.
+    expect(report.permission).toBe("allow");
+    expect(asked).toEqual([]);
+  });
+
+  it("answers bad input, a failing tool and an unknown one as tool errors the agent sees, never by crashing", async () => {
+    const error = async (prompt: string) => (await useTool(prompt)).report.result;
+    expect(await error('hosttool echo {"text":5}')).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/Invalid arguments for tool echo/) }] });
+    expect(await error("hosttool boom {}")).toEqual({ isError: true, content: [{ type: "text", text: "nope" }] });
+    expect(await error("hosttool nope {}")).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/Tool nope not found/) }] });
+  });
+
+  it("holds the first prompt until `initialize` is answered, so the first turn has the tools", async () => {
+    process.env.FAKE_CLAUDE_INIT_DELAY_MS = "300"; // the fake answers late; the child inherits it
+    try {
+      const { report } = await useTool('hosttool echo {"text":"late"}');
+      expect(report.promptBeforeInit).toBe(false);
+      expect(report.result).toEqual({ content: [{ type: "text", text: "echo: late" }] });
+    } finally {
+      delete process.env.FAKE_CLAUDE_INIT_DELAY_MS;
+    }
+  });
+
+  it("a call the CLI withdraws is cancelled: the tool's signal aborts, and no answer is sent", async () => {
+    const { report } = await useTool("hosttool-withdraw slow");
+    expect(withdrawn).toEqual(["slow"]);
+    expect(report.responsesAfterCancel).toBe(0);
+  });
+
+  it("declares nothing without tools", async () => {
+    const events = await runTurn("args", async () => ({ decision: "allow" }));
+    const args = events.flatMap((e) => (e.kind === "tool_result" ? [e.output] : []))[0]!;
+    expect(JSON.parse(args)).not.toContain("--mcp-config");
   });
 });

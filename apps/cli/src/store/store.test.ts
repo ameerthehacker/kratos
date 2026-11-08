@@ -129,6 +129,11 @@ describe("SessionStore", () => {
     store.setFeatureDone(b.id, false);
     expect(store.getFeature(b.id)?.doneAt).toBeNull();
 
+    expect(store.sessionsOfFeature(a.id).map((s) => s.id)).toEqual([session.id]);
+    later();
+    store.renameFeature(a.id, "Plans, renamed"); // not work on it: it keeps its place
+    expect(store.listFeatures("/proj").map((f) => f.title)).toEqual(["Worktrees", "Plans, renamed"]);
+
     store.setSessionFeature(session.id, null); // back to a one-off
     expect(store.get(session.id)?.featureId).toBeNull();
     expect(store.getFeature("missing")).toBeUndefined();

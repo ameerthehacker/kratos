@@ -245,6 +245,10 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   feature with live and done sessions has a folder in each section (Working's open, Done's
   closed by default). Replaced 4b's first "N done" fold inside the Working folder. A feature can
   be renamed any time (`rename_feature`); the title is only a label until 4f gives it a folder.
+  Renaming isn't work on it: its place in the list stays (4c4 review).
+- Review rules (4c4): a prompt from Home with no feature makes a one-off, even when it reuses an
+  empty session that was in one; reopening a session reopens its done feature (live work isn't
+  hidden in Done); only a session's first prompt picks its feature, a later one's is ignored.
 - New feature from the shelf (owner, 4c2): named in place of the pill. On Home it's made by the
   server when the prompt starts its session (`prompt.newFeatureTitle`), so a name typed and
   abandoned leaves no empty folder; alternative was `create_feature` at once plus a reply with

@@ -1097,6 +1097,17 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         (one-off), Done → a Working folder (moved, the cross-tree path), onto a done feature and
         onto a sibling in its own folder (no move). The target folder and open space light up.
         No new package: Headless Tree's own drag-and-drop (D74). ~140 lines + ~20 of tests.
+  - [x] **4c4. Review of features so far** (owner: "a good code review, fix the findings") — 10
+        findings over 4a–4c3, all fixed: a one-off picked on Home now clears the feature of a
+        reused empty session; reopening a session reopens its done feature; a later prompt's
+        `featureId` is ignored, not refused; a drag from Done onto a session row lands in that
+        row's folder; Done's open space takes no drops (it only removed the feature); on a
+        one-off's page clicking away from a new feature's name cancels (only Enter makes it);
+        the open-space highlight shows only when a drop would change something; renaming keeps
+        a folder's place; one shared name field (`feature-name-field.tsx`); marking a feature
+        done looks up only its sessions. **Proof:** 219 tests (2 new hub tests, store and drop
+        rule extended); typecheck 7/7, build 5/5; live in headless Chrome: the drag cases (3, 5,
+        D, E, A, B), the sidebar's name + Enter, and clicking away on a one-off's page.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's

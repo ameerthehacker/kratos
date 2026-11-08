@@ -114,8 +114,10 @@ export class SessionHub {
         }
         // Checked before anything starts: a refused mode must not start a session in another one.
         if (message.permissionMode && !this.modeAllowed(send, message.permissionMode, message.confirmDangerous)) return;
-        // And for the feature (D73): one that's gone or done starts nothing.
-        if (!message.newFeatureTitle && message.featureId && !this.featureUsable(send, message.featureId)) return;
+        // And for the feature (D73): one that's gone or done starts nothing. Only a prompt that
+        // starts a session picks one; a later prompt's is ignored, not refused.
+        const starts = message.newSession || !viewing.hasPrompts;
+        if (starts && !message.newFeatureTitle && message.featureId && !this.featureUsable(send, message.featureId)) return;
         // Same for files (D55): a refused one means nothing is sent.
         const files = this.checkAttachments(send, message.attachments ?? []);
         if (!files) return;
@@ -131,19 +133,20 @@ export class SessionHub {
         if (!target.hasPrompts && message.model) target.setModel(message.model);
         if (!target.hasPrompts && message.effort) target.setEffort(message.effort);
         if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
-        // Its feature, new or picked (D73) — only when this prompt starts the session.
-        const featureId = target.hasPrompts ? undefined : message.newFeatureTitle ? this.newFeature(message.newFeatureTitle) : message.featureId;
-        if (featureId) {
+        // Its feature, new or picked (D73) — only when this prompt starts the session. From Home
+        // (`newSession`) none picked means a one-off, also for a reused empty session that had one.
+        const featureId = target.hasPrompts
+          ? undefined
+          : message.newFeatureTitle
+            ? this.newFeature(message.newFeatureTitle)
+            : (message.featureId ?? (message.newSession ? null : undefined));
+        if (featureId !== undefined && featureId !== this.store.get(target.id)?.featureId) {
           this.store.setSessionFeature(target.id, featureId);
           this.broadcast(this.featureList());
         }
         // New work on a done session means it isn't done (owner, 3d2), nor is its feature (D73).
-        const stored = this.store.get(target.id);
-        if (stored?.doneAt) this.store.setDone(target.id, false);
-        if (stored?.featureId && this.store.getFeature(stored.featureId)?.doneAt) {
-          this.store.setFeatureDone(stored.featureId, false);
-          this.broadcast(this.featureList());
-        }
+        if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
+        this.reopenFeatureOf(target.id);
         target.prompt(message.text, files, { sendNow: message.sendNow });
         return;
       }
@@ -163,6 +166,8 @@ export class SessionHub {
         if (!this.inProject(send, message.id)) return;
         this.store.setDone(message.id, message.done);
         this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
+        // A reopened session can't stay inside a done feature (D73): that reopens too.
+        if (!message.done) this.reopenFeatureOf(message.id);
         this.broadcastSessionList();
         return;
       case "create_feature":
@@ -177,7 +182,7 @@ export class SessionHub {
       case "set_feature_done": {
         if (!this.featureInProject(send, message.id)) return;
         // Done takes its sessions with it, so none may still be busy: an ask would hide in Done.
-        const busy = this.store.list(this.cwd).filter((s) => s.featureId === message.id && this.busy(s.id)).length;
+        const busy = this.store.sessionsOfFeature(message.id).filter((s) => this.busy(s.id)).length;
         if (message.done && busy > 0) {
           send({ type: "error", message: `${busy} of its sessions ${busy === 1 ? "is" : "are"} still working or waiting on you: finish or stop ${busy === 1 ? "it" : "them"} first` });
           return;
@@ -350,6 +355,14 @@ export class SessionHub {
     return feature.id;
   }
 
+  /** The session's feature, if done, is reopened: live work isn't hidden in a done folder (D73). */
+  private reopenFeatureOf(sessionId: string): void {
+    const featureId = this.store.get(sessionId)?.featureId;
+    if (!featureId || !this.store.getFeature(featureId)?.doneAt) return;
+    this.store.setFeatureDone(featureId, false);
+    this.broadcast(this.featureList());
+  }
+
   /** Is this one of this project's features? Tells the tab when not. */
   private featureInProject(send: Send, featureId: string): boolean {
     if (this.store.getFeature(featureId)?.projectDir === this.cwd) return true;
@@ -359,8 +372,12 @@ export class SessionHub {
 
   /** A feature sessions can join: this project's, and not done (reopen it first). */
   private featureUsable(send: Send, featureId: string): boolean {
-    if (!this.featureInProject(send, featureId)) return false;
-    if (this.store.getFeature(featureId)!.doneAt === null) return true;
+    const feature = this.store.getFeature(featureId);
+    if (feature?.projectDir !== this.cwd) {
+      send({ type: "error", message: `No feature ${featureId} in this project` });
+      return false;
+    }
+    if (feature.doneAt === null) return true;
     send({ type: "error", message: "That feature is done: reopen it to add sessions to it" });
     return false;
   }

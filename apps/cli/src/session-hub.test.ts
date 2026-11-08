@@ -536,7 +536,30 @@ describe("SessionHub: features (D73)", () => {
     expect(featureOf(b.list, a.opened[0]!)).toBeNull();
 
     a.receive({ type: "prompt", text: "more", featureId: "ignored" }); // only a session's first prompt picks it
+    expect(a.seen.at(-1)).not.toMatchObject({ type: "error" }); // ignored, not refused
     expect(featureOf(b.list, a.viewing)).toBe(feature);
+  });
+
+  it("starts a one-off from Home even in a reused empty session that was in a feature", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    a.receive({ type: "prompt", text: "just this", newSession: true }); // still empty: reused
+    expect(featureOf(a.list, a.viewing)).toBeNull();
+  });
+
+  it("reopening a session of a done feature reopens the feature", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "task", featureId: feature });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "set_feature_done", id: feature, done: true });
+    a.receive({ type: "set_done", id: a.viewing, done: false });
+    expect(a.features[0]).toMatchObject({ id: feature, done: false });
   });
 
   it("renames a feature for every tab; another project's can't be", () => {

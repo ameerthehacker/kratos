@@ -116,8 +116,14 @@ export class SessionStore {
       .all();
   }
 
+  /** Rename a feature. Not work on it: its place in the list stays (`updatedAt` untouched). */
   renameFeature(featureId: string, title: string): void {
-    this.db.update(features).set({ title, updatedAt: new Date() }).where(eq(features.id, featureId)).run();
+    this.db.update(features).set({ title }).where(eq(features.id, featureId)).run();
+  }
+
+  /** A feature's sessions, most recently active first. */
+  sessionsOfFeature(featureId: string): StoredSession[] {
+    return this.db.select().from(sessions).where(eq(sessions.featureId, featureId)).orderBy(...NEWEST_FIRST).all();
   }
 
   /** Mark a feature done — and its sessions with it, the whole folder is finished (owner) — or

@@ -12,6 +12,7 @@ import { useTree } from "@headless-tree/react";
 import { Check, ChevronRight, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
 import type { FeatureSummary, SessionSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
+import { FeatureNameField } from "@/components/feature-name-field";
 import { SessionStatus, StatusDot, sessionTitle, statusLabel } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
 import { useKratos } from "@/lib/kratos-store";
@@ -48,6 +49,7 @@ export function SessionsSidebar() {
   const features = useKratos((s) => s.features);
   const tree = useMemo(() => sidebarTree(sessions, features), [sessions, features]);
   const [naming, setNaming] = useState(false);
+  const send = useKratos((s) => s.send);
   const setCollapsed = useSidebarPrefs((s) => s.setCollapsed);
   if (!open) return null;
 
@@ -89,7 +91,19 @@ export function SessionsSidebar() {
               </button>
             }
           >
-            {naming && <NewFeatureField onClose={() => setNaming(false)} />}
+            {naming && (
+              <FeatureNameField
+                icon={Package}
+                placeholder="Name the feature"
+                onDone={(title) => {
+                  setNaming(false);
+                  if (title) send({ type: "create_feature", title });
+                }}
+                className="flex items-center gap-2 rounded-lg bg-secondary py-1 pr-2 pl-2.5"
+                iconClassName="size-4 text-muted-foreground"
+                inputClassName="h-7 text-sm"
+              />
+            )}
             <SectionTree label="Working" items={tree.working} />
           </Section>
         </div>
@@ -157,7 +171,7 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
   // drop may land depends on it (`dropFeature`). Working and Done are separate trees: a drag from
   // the other one arrives as a "foreign" drag carrying the session ids.
   const hovered = useRef<{ node: TreeNode; level: number } | null>(null);
-  const land = (target: DragTarget<TreeNode>) => dropFeature(target.item.getItemData(), hovered.current);
+  const land = (target: DragTarget<TreeNode>) => dropFeature(target.item.getItemData(), hovered.current, label === "Done" ? "done" : "working");
   const dragged = (items: ItemInstance<TreeNode>[]) => items.flatMap((i) => (i.getItemData().kind === "session" ? [(i.getItemData() as { session: SessionSummary }).session] : []));
   const move = (sessions: SessionSummary[], featureId: string | null) => {
     for (const s of sessions) if (s.featureId !== featureId) send({ type: "set_session_feature", sessionId: s.id, featureId });
@@ -209,8 +223,18 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
       const featureId = land(target);
       if (featureId !== undefined) move(dragged(items), featureId);
     },
-    createForeignDragObject: (items) => ({ format: SESSIONS_DRAG, data: JSON.stringify(dragged(items).map((s) => s.id)), effectAllowed: "move" }),
-    canDragForeignDragObjectOver: (data, target) => data.types.includes(SESSIONS_DRAG) && land(target) !== undefined,
+    createForeignDragObject: (items) => {
+      dragging = dragged(items); // called as the drag starts, whichever section it lands in
+      return { format: SESSIONS_DRAG, data: JSON.stringify(dragging.map((s) => s.id)), effectAllowed: "move" };
+    },
+    // While a foreign drag is over a row, the library asks about the row itself (it can't read
+    // the drag's data yet), not the folder the drop would fall back to: ask about that instead.
+    canDragForeignDragObjectOver: (data, target) => {
+      const row = target.item.getItemData().kind;
+      const landing = (row === "session" || row === "empty") && target.item.getParent() ? { item: target.item.getParent()! } : target;
+      const featureId = land(landing);
+      return data.types.includes(SESSIONS_DRAG) && featureId !== undefined && dragging.some((s) => s.featureId !== featureId);
+    },
     canDropForeignDragObject: (data, target) => data.types.includes(SESSIONS_DRAG) && land(target) !== undefined,
     onDropForeignDragObject: (data, target) => {
       const featureId = land(target);
@@ -227,7 +251,10 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
   // lights up like a folder, a drop there making the session a one-off.
   const [overSpace, setOverSpace] = useState(false);
   useEffect(() => {
-    const off = () => setOverSpace(false);
+    const off = () => {
+      setOverSpace(false);
+      dragging = [];
+    };
     window.addEventListener("dragend", off);
     window.addEventListener("drop", off);
     return () => {
@@ -242,8 +269,8 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
       {...container}
       onDragOver={(e) => {
         hovered.current = null; // open space (rows stop their own dragover from reaching here)
-        const draggedHere = tree.getState().dnd?.draggedItems;
-        setOverSpace(draggedHere ? dragged(draggedHere).some((s) => s.featureId !== null) : e.dataTransfer.types.includes(SESSIONS_DRAG));
+        // Lit only if a drop here would change something (Done's open space never does).
+        setOverSpace(land({ item: tree.getRootItem() }) === null && dragging.some((s) => s.featureId !== null));
         container.onDragOver(e);
       }}
       onDragLeave={(e) => {
@@ -267,6 +294,9 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
 
 /** The drag's data type between the Working and Done trees: the dragged sessions' ids. */
 const SESSIONS_DRAG = "application/x-kratos-sessions";
+/** The sessions being dragged right now, from either section. The other section can't read a
+ * drag's data before the drop, but whether a drop would change anything decides its highlight. */
+let dragging: SessionSummary[] = [];
 
 /** Rows inside a folder hang off a guide line. */
 const INDENT = ["", "ml-4 border-l border-border pl-1.5"];
@@ -429,38 +459,5 @@ function FeatureDoneButton({ feature, className }: { feature: FeatureSummary; cl
     >
       <Icon className="size-3.5" />
     </button>
-  );
-}
-
-/** Naming a new feature, in place at the top of Working (D73): Enter creates it, Esc or
- * clicking away cancels. */
-function NewFeatureField({ onClose }: { onClose: () => void }) {
-  const send = useKratos((s) => s.send);
-  const [title, setTitle] = useState("");
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-secondary py-1 pr-2 pl-2.5">
-      <Package className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <input
-        autoFocus
-        value={title}
-        maxLength={80}
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={onClose}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault(); // just this field's: not also the session's Esc (stop the agent)
-            onClose();
-            return;
-          }
-          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-          e.preventDefault();
-          if (title.trim()) send({ type: "create_feature", title: title.trim() });
-          onClose();
-        }}
-        aria-label="New feature name"
-        placeholder="Name the feature"
-        className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint"
-      />
-    </div>
   );
 }

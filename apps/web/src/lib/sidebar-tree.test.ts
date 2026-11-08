@@ -89,20 +89,21 @@ describe("sidebarTree (D73)", () => {
     expect(treeNodes(allDone.working, "working").nodes.get("empty:plans")).toEqual({ kind: "empty", text: "Nothing in progress" });
   });
 
-  it("lands a drop in a working feature, or a one-off only over open space or a one-off's row (4c3)", () => {
+  it("lands a drop in a working feature, or a one-off only over Working's open space or a one-off's row (4c3)", () => {
     const working: TreeNode = { kind: "feature", feature: feature("plans", 0), count: 1, status: "idle", inDone: false };
     const finished: TreeNode = { kind: "feature", feature: feature("polish", 0, true), count: 1, status: "idle", inDone: true };
     const oneOff: TreeNode = { kind: "session", session: session("x", 0), quiet: false };
     const inFolder: TreeNode = { kind: "session", session: session("p", 0, { featureId: "plans" }), quiet: false };
     const root: TreeNode = { kind: "root" };
 
-    expect(dropFeature(working, { node: working, level: 0 })).toBe("plans");
-    expect(dropFeature(finished, { node: finished, level: 0 })).toBeUndefined(); // reopen it first
-    expect(dropFeature(root, null)).toBeNull(); // open space: a one-off
-    expect(dropFeature(root, { node: oneOff, level: 0 })).toBeNull(); // among the one-offs
+    expect(dropFeature(working, { node: working, level: 0 }, "working")).toBe("plans");
+    expect(dropFeature(finished, { node: finished, level: 0 }, "done")).toBeUndefined(); // reopen it first
+    expect(dropFeature(root, null, "working")).toBeNull(); // open space: a one-off
+    expect(dropFeature(root, null, "done")).toBeUndefined(); // not in Done: it would only drop the feature
+    expect(dropFeature(root, { node: oneOff, level: 0 }, "working")).toBeNull(); // among the one-offs
     // the folder refused (e.g. its own sessions): Headless Tree falls back to root — not a one-off
-    expect(dropFeature(root, { node: inFolder, level: 1 })).toBeUndefined();
-    expect(dropFeature(root, { node: working, level: 0 })).toBeUndefined();
-    expect(dropFeature(oneOff, { node: oneOff, level: 0 })).toBeUndefined();
+    expect(dropFeature(root, { node: inFolder, level: 1 }, "working")).toBeUndefined();
+    expect(dropFeature(root, { node: working, level: 0 }, "working")).toBeUndefined();
+    expect(dropFeature(oneOff, { node: oneOff, level: 0 }, "working")).toBeUndefined();
   });
 });

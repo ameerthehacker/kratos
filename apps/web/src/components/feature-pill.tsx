@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Check, ChevronDown, Package, PackagePlus, MessageSquare } from "lucide-react";
 import type { FeatureSummary } from "@kratos/core";
 import {
@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FeatureNameField } from "@/components/feature-name-field";
 import { cn } from "@/lib/utils";
 
 /**
@@ -48,11 +49,19 @@ export function FeaturePill({ features, value, newTitle, purpose, onChange, onCr
   }
   if (naming && onCreate) {
     return (
-      <NameField
+      // Clicking away keeps the name only on Home, where nothing is made until you send; here
+      // the feature would be made at once, and features can't be deleted yet.
+      <FeatureNameField
+        icon={PackagePlus}
+        placeholder="Name the new feature"
+        keepOnBlur={purpose === "choose"}
         onDone={(name) => {
           setNaming(false);
           if (name) onCreate(name);
         }}
+        className="inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-background px-2 ring-1 ring-ring"
+        iconClassName="size-3.5 text-primary"
+        inputClassName="text-xs"
       />
     );
   }
@@ -101,42 +110,5 @@ function Option({ icon: Icon, title, note, selected, onPick }: { icon: typeof Pa
       </span>
       {selected && <Check className="absolute top-2 right-2 size-4" aria-label="Selected" />}
     </DropdownMenuItem>
-  );
-}
-
-/** Naming a new feature in place of the pill: Enter or clicking away keeps the name (you'll often
- * click into the prompt next); Esc, or an empty name, cancels. */
-function NameField({ onDone }: { onDone: (name: string | null) => void }) {
-  const [name, setName] = useState("");
-  // Settles once: Esc closes the field, and a blur as it goes must not then keep the name.
-  const settled = useRef(false);
-  const settle = (result: string | null) => {
-    if (settled.current) return;
-    settled.current = true;
-    onDone(result);
-  };
-  return (
-    <span className="inline-flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-background px-2 ring-1 ring-ring">
-      <PackagePlus className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-      <input
-        autoFocus
-        value={name}
-        maxLength={80}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={() => settle(name.trim() || null)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault(); // just this field's: not also the session's Esc (stop the agent)
-            settle(null);
-          }
-          if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-          e.preventDefault(); // not the composer's: this Enter names, it doesn't send
-          settle(name.trim() || null);
-        }}
-        aria-label="New feature name"
-        placeholder="Name the new feature"
-        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-faint"
-      />
-    </span>
   );
 }

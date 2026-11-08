@@ -190,7 +190,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   or tree roles).
 - Gotcha: it compares `state.expandedItems` by identity: a new array each render makes it
   update its state during render, forever (React #301). The list is memoized.
-- Later: its drag-and-drop feature is the way to drag a session into a feature.
+- Drag and drop (4c3): its drag-and-drop feature, no reordering (a drop only says which
+  feature). Two catches: a folder that refuses a drop makes it fall back to the section's root,
+  which we read as "make it a one-off" — so that counts only over open space or a one-off's row
+  (`dropFeature`, by the row the drag is over); and it tracks no target over open space, so the
+  tree keeps its own "over open space" flag for the highlight. Working → Done drags go through
+  its foreign-drag path with the session ids. Headless Chrome only sends dragover when the mouse
+  moves, so a still pointer loses the highlight in tests (it clears 100 ms after a dragleave);
+  a hand never holds still, browsers repeat dragover anyway.
 - Reverse: render `sidebarTree()`'s rows directly (4b's first version did) and drop the package.
 
 ### D73. Features group sessions; a feature holds the plan (step 4, owner design)

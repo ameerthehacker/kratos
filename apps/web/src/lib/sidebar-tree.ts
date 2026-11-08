@@ -95,3 +95,16 @@ export function treeNodes(
   }
   return { nodes, children, closedByDefault };
 }
+
+/**
+ * Where sessions dropped on a section's tree land (4c3): a working feature's id, or null (a
+ * one-off) — only for the section's open space or a one-off's row; undefined where nothing may
+ * land. `hovered`: the row the drag is over (null: open space). A folder that won't take the drop
+ * (done, or where the sessions already are) makes Headless Tree fall back to the section itself;
+ * that mustn't turn into "make it a one-off" while you're over a folder's rows.
+ */
+export function dropFeature(target: TreeNode, hovered: { node: TreeNode; level: number } | null): string | null | undefined {
+  if (target.kind === "feature") return target.feature.done ? undefined : target.feature.id;
+  if (target.kind !== "root") return undefined;
+  return hovered === null || (hovered.level === 0 && hovered.node.kind === "session") ? null : undefined;
+}

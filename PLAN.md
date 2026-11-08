@@ -1082,6 +1082,21 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
   - [ ] **4i. Plan changes per session** (board §3) — at turn end a changed plan is saved as a
         revision credited to the session and shown as "Updated the plan" with its diff; the
         session log on the plan page.
+  - [x] **4c3. Drag sessions between features** (~120; owner) — drag a session onto a working
+        feature's folder to move it there, or onto open space in a section to make it a one-off;
+        a closed folder opens while you hover on it. Works within and across Working and Done
+        (two trees: across them the drag carries the session ids); a done feature takes no drops
+        (reopen it first, D73). Headless Tree's drag-and-drop, no reordering: a session's place
+        is by activity. The folder under the drag lights up, the dragged row dims. The keyboard
+        way stays the shelf's "Move to a feature". Scope: web `sessions-sidebar.tsx`,
+        `lib/sidebar-tree.ts` (where a drop may land) + test. Accept: drop-rule tests; headless
+        Chrome drags a session into a folder, between folders, out to a one-off, and from Done
+        into a working feature; a drop on a done feature does nothing; typecheck, test, build.
+        **Proof:** 217 tests pass (the drop rule), typecheck 7/7, build 5/5. Real drags in headless
+        Chrome on a copy of the dev database: into another folder (moved), out to open space
+        (one-off), Done → a Working folder (moved, the cross-tree path), onto a done feature and
+        onto a sibling in its own folder (no move). The target folder and open space light up.
+        No new package: Headless Tree's own drag-and-drop (D74). ~140 lines + ~20 of tests.
   - [ ] **4j. The gate and decisions** (board §3–4, §6) — a step Claude calls done waits for your
         tick; proposed decisions wait for Accept / Ask why; the right island shows the step in
         hand; "Mark feature done" when every step is ticked. Covers step 6.

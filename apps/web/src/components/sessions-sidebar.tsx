@@ -1,15 +1,22 @@
-import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
-import { hotkeysCoreFeature, renamingFeature, syncDataLoaderFeature, type ItemInstance } from "@headless-tree/core";
+import {
+  dragAndDropFeature,
+  hotkeysCoreFeature,
+  renamingFeature,
+  syncDataLoaderFeature,
+  type DragTarget,
+  type ItemInstance,
+} from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import { Check, ChevronRight, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
-import type { FeatureSummary } from "@kratos/core";
+import type { FeatureSummary, SessionSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
 import { SessionStatus, StatusDot, sessionTitle, statusLabel } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
 import { useKratos } from "@/lib/kratos-store";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
-import { sidebarTree, treeNodes, type SidebarItem, type TreeNode } from "@/lib/sidebar-tree";
+import { dropFeature, sidebarTree, treeNodes, type SidebarItem, type TreeNode } from "@/lib/sidebar-tree";
 import { cn } from "@/lib/utils";
 
 /** Shows or hides the sidebar: in its own header when open, in the main header when closed (3d4). */
@@ -61,8 +68,9 @@ export function SessionsSidebar() {
           taking at most half the height. Working always shows: it holds the New feature button.
           Working counts live sessions, folders' too (how much is in flight); Done counts rows. */}
       <nav className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <Section
+            grow
             label="Working"
             count={tree.working.reduce((n, item) => n + (item.kind === "session" ? 1 : item.sessions.length), 0)}
             always
@@ -96,12 +104,14 @@ export function SessionsSidebar() {
 }
 
 /** A titled, collapsible section (3d2). Hidden while empty, unless `always`. */
-function Section({ label, count, always, action, children }: { label: string; count: number; always?: boolean; action?: ReactNode; children: ReactNode }) {
+/** `grow`: fill the space below its rows (Working: room to drop a session out of a feature, 4c3). */
+function Section(props: { label: string; count: number; always?: boolean; grow?: boolean; action?: ReactNode; children: ReactNode }) {
+  const { label, count, always, action, children } = props;
   const collapsed = useSidebarPrefs((s) => s.collapsed[label] ?? false);
   const toggle = useSidebarPrefs((s) => s.toggle);
   if (count === 0 && !always) return null;
   return (
-    <section aria-label={label} className="flex flex-col gap-0.5">
+    <section aria-label={label} className={cn("flex flex-col gap-0.5", props.grow && "flex-1")}>
       <h2 className="flex items-center gap-1">
         <button
           type="button"
@@ -126,8 +136,9 @@ const nodeName = (node: TreeNode) =>
 /**
  * A section's rows as an accessible tree (Headless Tree, D74): folders open and close by click or
  * ←/→, ↑/↓ move between rows, Enter opens a session or a folder, F2 or a double-click renames a
- * feature. Which folders are open is ours: remembered in the sidebar prefs, Working's open and
- * Done's closed until you open them.
+ * feature, and a session dragged onto a feature moves there (4c3; onto open space: a one-off).
+ * Which folders are open is ours: remembered in the sidebar prefs, Working's open and Done's
+ * closed until you open them.
  */
 function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) {
   const send = useKratos((s) => s.send);
@@ -141,6 +152,16 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
   // one on every render makes it update its state during render, forever.
   const expandedKey = folders.filter((id) => !isClosed(id)).join("\n");
   const expandedItems = useMemo(() => (expandedKey ? expandedKey.split("\n") : []), [expandedKey]);
+
+  // Dragging sessions (4c3). `hovered`: the row the drag is over, null over open space — where a
+  // drop may land depends on it (`dropFeature`). Working and Done are separate trees: a drag from
+  // the other one arrives as a "foreign" drag carrying the session ids.
+  const hovered = useRef<{ node: TreeNode; level: number } | null>(null);
+  const land = (target: DragTarget<TreeNode>) => dropFeature(target.item.getItemData(), hovered.current);
+  const dragged = (items: ItemInstance<TreeNode>[]) => items.flatMap((i) => (i.getItemData().kind === "session" ? [(i.getItemData() as { session: SessionSummary }).session] : []));
+  const move = (sessions: SessionSummary[], featureId: string | null) => {
+    for (const s of sessions) if (s.featureId !== featureId) send({ type: "set_session_feature", sessionId: s.id, featureId });
+  };
 
   const tree = useTree<TreeNode>({
     rootItemId: "root",
@@ -178,35 +199,105 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
         },
       },
     },
-    features: [syncDataLoaderFeature, hotkeysCoreFeature, renamingFeature],
+    canReorder: false, // a session's place is by activity: a drop only says which feature
+    canDrag: (items) => items.every((i) => i.getItemData().kind === "session"),
+    canDrop: (items, target) => {
+      const featureId = land(target);
+      return featureId !== undefined && dragged(items).some((s) => s.featureId !== featureId);
+    },
+    onDrop: (items, target) => {
+      const featureId = land(target);
+      if (featureId !== undefined) move(dragged(items), featureId);
+    },
+    createForeignDragObject: (items) => ({ format: SESSIONS_DRAG, data: JSON.stringify(dragged(items).map((s) => s.id)), effectAllowed: "move" }),
+    canDragForeignDragObjectOver: (data, target) => data.types.includes(SESSIONS_DRAG) && land(target) !== undefined,
+    canDropForeignDragObject: (data, target) => data.types.includes(SESSIONS_DRAG) && land(target) !== undefined,
+    onDropForeignDragObject: (data, target) => {
+      const featureId = land(target);
+      const ids = new Set<string>(JSON.parse(data.getData(SESSIONS_DRAG)));
+      if (featureId !== undefined) move(useKratos.getState().sessions.filter((s) => ids.has(s.id)), featureId);
+    },
+    features: [syncDataLoaderFeature, hotkeysCoreFeature, renamingFeature, dragAndDropFeature],
   });
   // The rows changed (a session moved, a feature was made): Headless Tree re-reads them. Before
   // paint, so a row that left this section never shows its stale fallback ("No sessions yet").
   useLayoutEffect(() => tree.rebuildTree(), [tree, nodes, children]);
 
+  // Over the section's open space the library tracks no target (only rows do), so we do: it
+  // lights up like a folder, a drop there making the session a one-off.
+  const [overSpace, setOverSpace] = useState(false);
+  useEffect(() => {
+    const off = () => setOverSpace(false);
+    window.addEventListener("dragend", off);
+    window.addEventListener("drop", off);
+    return () => {
+      window.removeEventListener("dragend", off);
+      window.removeEventListener("drop", off);
+    };
+  }, []);
+  const container = tree.getContainerProps(label);
+  const overSection = overSpace || tree.getDragTarget()?.item.getId() === "root"; // a drop here: a one-off
   return (
-    <div {...tree.getContainerProps(label)} className="flex flex-col outline-none">
-      {tree.getItems().map((item) => <Row key={item.getId()} item={item} />)}
+    <div
+      {...container}
+      onDragOver={(e) => {
+        hovered.current = null; // open space (rows stop their own dragover from reaching here)
+        const draggedHere = tree.getState().dnd?.draggedItems;
+        setOverSpace(draggedHere ? dragged(draggedHere).some((s) => s.featureId !== null) : e.dataTransfer.types.includes(SESSIONS_DRAG));
+        container.onDragOver(e);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOverSpace(false);
+      }}
+      className={cn("flex min-h-8 flex-1 flex-col rounded-xl pb-4 outline-none", overSection && "bg-primary/5 ring-1 ring-primary/30")}
+    >
+      {tree.getItems().map((item) => (
+        <Row
+          key={item.getId()}
+          item={item}
+          onDragOver={() => {
+            hovered.current = { node: item.getItemData(), level: item.getItemMeta().level };
+            setOverSpace(false);
+          }}
+        />
+      ))}
     </div>
   );
 }
 
+/** The drag's data type between the Working and Done trees: the dragged sessions' ids. */
+const SESSIONS_DRAG = "application/x-kratos-sessions";
+
 /** Rows inside a folder hang off a guide line. */
 const INDENT = ["", "ml-4 border-l border-border pl-1.5"];
 
-function Row({ item }: { item: ItemInstance<TreeNode> }) {
+function Row({ item, onDragOver }: { item: ItemInstance<TreeNode>; onDragOver: () => void }) {
   const node = item.getItemData();
   const level = Math.min(item.getItemMeta().level, INDENT.length - 1);
-  // The tree item is the whole row; the look goes on the inner box so the guide line runs on.
-  const box = "rounded-lg group-focus-visible/row:outline-2 group-focus-visible/row:-outline-offset-2 group-focus-visible/row:outline-ring";
+  const props = item.getProps();
+  const beingDragged = item.getTree().getState().dnd?.draggedItems?.some((d) => d.getId() === item.getId()) ?? false;
+  // The tree item is the whole row; the look goes on the inner box so the guide line runs on. A
+  // folder a drag would land in lights up.
+  const box = cn(
+    "rounded-lg group-focus-visible/row:outline-2 group-focus-visible/row:-outline-offset-2 group-focus-visible/row:outline-ring",
+    node.kind === "feature" && item.isDragTarget() && "bg-primary/10 ring-1 ring-primary/50",
+  );
   return (
-    <div {...item.getProps()} className={cn("group/row relative pb-0.5 outline-none", INDENT[level])}>
+    <div
+      {...props}
+      onDragOver={(e) => {
+        onDragOver(); // first: where the drop lands depends on the row it's over
+        props.onDragOver(e);
+      }}
+      className={cn("group/row relative pb-0.5 outline-none", INDENT[level], beingDragged && "opacity-50")}
+    >
       {node.kind === "session" && (
         <>
           {/* A real link, so ⌘-click opens a new tab; the tree's own click would navigate too. */}
           <NavLink
             to={`/s/${node.session.id}`}
             tabIndex={-1}
+            draggable={false} // the row drags (to a feature), not the link
             onClick={(e) => {
               e.stopPropagation();
               item.setFocused();

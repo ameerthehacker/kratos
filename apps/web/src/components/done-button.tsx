@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
  * session is open, and a green "✓ Done" chip once it's done ("↺ Reopen" on hover), which reopens it.
  * Marking the session you're looking at done takes you Home: it's off your plate (owner).
  */
-export function DoneButton({ session, variant, className }: { session: SessionSummary; variant: "icon" | "header"; className?: string }) {
+/** `tabIndex`: -1 inside a tree, where ↑/↓ move between rows and Tab shouldn't stop at each. */
+export function DoneButton({ session, variant, className, tabIndex }: { session: SessionSummary; variant: "icon" | "header"; className?: string; tabIndex?: number }) {
   const send = useKratos((s) => s.send);
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -31,6 +32,7 @@ export function DoneButton({ session, variant, className }: { session: SessionSu
         onClick={toggle}
         aria-label={`${label}: ${session.title ?? "New session"}`}
         title={label}
+        tabIndex={tabIndex}
         className={cn(
           "flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
           className,

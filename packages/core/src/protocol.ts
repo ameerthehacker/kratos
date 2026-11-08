@@ -111,7 +111,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Start a feature in this project (D73). Answered with `features`. */
   z.object({ type: z.literal("create_feature"), title: z.string().trim().min(1).max(80) }),
-  /** Mark a feature done, or reopen it (D73). Its sessions keep their own done. */
+  /** Rename a feature (D73). Answered with `features`. */
+  z.object({ type: z.literal("rename_feature"), id: z.string(), title: z.string().trim().min(1).max(80) }),
+  /** Mark a feature done with its sessions (refused while one is busy), or reopen it (D73). */
   z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean() }),
   /** Move a session into a working feature, or back to a one-off with null (D73). */
   z.object({ type: z.literal("set_session_feature"), sessionId: z.string(), featureId: z.string().nullable() }),

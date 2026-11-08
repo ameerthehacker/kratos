@@ -119,8 +119,12 @@ describe("SessionStore", () => {
     expect(store.get(session.id)?.updatedAt).toEqual(session.updatedAt); // …not the session
 
     later();
+    const inB = store.create("/proj", "Claude Code");
+    store.setSessionFeature(inB.id, b.id);
     store.setFeatureDone(b.id, true);
     expect(store.getFeature(b.id)?.doneAt).not.toBeNull();
+    expect(store.get(inB.id)?.doneAt).not.toBeNull(); // its sessions are done with it
+    expect(store.get(session.id)?.doneAt).toBeNull(); // another feature's aren't
     expect(store.listFeatures("/proj")[0]?.id).toBe(b.id); // Done is newest first
     store.setFeatureDone(b.id, false);
     expect(store.getFeature(b.id)?.doneAt).toBeNull();

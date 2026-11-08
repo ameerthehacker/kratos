@@ -156,6 +156,25 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D74. The sidebar's sections are trees, drawn with Headless Tree (step 4b, owner)
+- Owner: use the best tree library rather than hand-roll the folders.
+- Decision: `@headless-tree/core` + `@headless-tree/react` (1.8.0; the successor of
+  react-complex-tree). It owns the tree's behaviour: `role="tree"` / `treeitem` with level, set
+  size and expanded state, ←/→ to close / open, ↑/↓ between rows, focus moving inside the tree.
+  We keep the markup, so the island look stays. Each section (Working, Done) is its own tree;
+  `treeNodes()` turns `sidebarTree()`'s rows into what it reads; which folders are open stays in
+  the sidebar prefs (`setExpandedItems` writes there). Enter opens a session or a folder (a
+  custom hotkey). A session row stays a real link (⌘-click opens a tab). Renaming a feature is
+  its renaming feature (F2, or double-click / the pencil calling `startRenaming`); our Enter
+  hotkey stands down while a rename is open, or it would take Enter from "finish renaming".
+- Alternatives: react-arborist (draws its own rows at one fixed height; ours are one or two
+  lines); React Aria's `Tree` (a second UI kit beside base-ui); hand-rolled folders (no keyboard
+  or tree roles).
+- Gotcha: it compares `state.expandedItems` by identity: a new array each render makes it
+  update its state during render, forever (React #301). The list is memoized.
+- Later: its drag-and-drop feature is the way to drag a session into a feature.
+- Reverse: render `sidebarTree()`'s rows directly (4b's first version did) and drop the package.
+
 ### D73. Features group sessions; a feature holds the plan (step 4, owner design)
 - Owner: plan mode should give a source-of-truth document shared across sessions, recording
   the sessions that worked on it and the decisions made, kept under the project's `.kratos`
@@ -171,8 +190,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Data (4a): a `features` table (shaped like `sessions`: project dir, title, done at,
   created / updated) and a nullable `sessions.feature_id`. Until 4f a feature is only a row:
   its folder on disk and its slug come with the plan. A done feature takes no new sessions
-  (reopen it first); marking it done leaves its sessions' own done alone. No delete yet, so no
-  `ON DELETE` rule.
+  (reopen it first). No delete yet, so no `ON DELETE` rule.
+- Done (owner, 4b review): marking a feature done marks its sessions done too (the folder is
+  finished), and is refused while any of them is working, waiting on you or has prompts
+  queued: in the collapsed Done section an ask would hide. Reopening leaves them done; new work
+  in one of them reopens it and its feature.
+- Done keeps the tree (owner, 4b): a done session sits in its feature's folder in Done, so a
+  feature with live and done sessions has a folder in each section (Working's open, Done's
+  closed by default). Replaced 4b's first "N done" fold inside the Working folder. A feature can
+  be renamed any time (`rename_feature`); the title is only a label until 4f gives it a folder.
 - Alternatives: plans as chat messages (today: an Allow / Deny ask); separate Features /
   Sessions / Done headings; a feature chip in the composer card; the agent changing the plan
   only through Kratos tools (MCP: stricter, but a second protocol and MCP-only agents); a

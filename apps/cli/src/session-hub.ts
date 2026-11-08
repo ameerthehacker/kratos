@@ -76,7 +76,12 @@ export class SessionHub {
 
   /** Sessions whose agent is mid-turn (working, or waiting on you) or has prompts queued. */
   get busyCount(): number {
-    return [...this.runtimes.values()].filter((runtime) => runtime.status !== "idle" || runtime.queuedCount > 0).length;
+    return [...this.runtimes.keys()].filter((id) => this.busy(id)).length;
+  }
+
+  private busy(sessionId: string): boolean {
+    const runtime = this.runtimes.get(sessionId);
+    return runtime !== undefined && (runtime.status !== "idle" || runtime.queuedCount > 0);
   }
 
   /** Refuse new prompts (3u5c: from installing an update to the restart), or allow them again. */
@@ -130,8 +135,13 @@ export class SessionHub {
           this.store.setSessionFeature(target.id, message.featureId);
           this.broadcast(this.featureList());
         }
-        // New work on a done session means it isn't done (owner, 3d2).
-        if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
+        // New work on a done session means it isn't done (owner, 3d2), nor is its feature (D73).
+        const stored = this.store.get(target.id);
+        if (stored?.doneAt) this.store.setDone(target.id, false);
+        if (stored?.featureId && this.store.getFeature(stored.featureId)?.doneAt) {
+          this.store.setFeatureDone(stored.featureId, false);
+          this.broadcast(this.featureList());
+        }
         target.prompt(message.text, files, { sendNow: message.sendNow });
         return;
       }
@@ -159,12 +169,25 @@ export class SessionHub {
         this.broadcast(this.featureList());
         return;
       }
-      case "set_feature_done":
+      case "rename_feature":
         if (!this.featureInProject(send, message.id)) return;
+        this.store.renameFeature(message.id, message.title);
+        this.broadcast(this.featureList());
+        return;
+      case "set_feature_done": {
+        if (!this.featureInProject(send, message.id)) return;
+        // Done takes its sessions with it, so none may still be busy: an ask would hide in Done.
+        const busy = this.store.list(this.cwd).filter((s) => s.featureId === message.id && this.busy(s.id)).length;
+        if (message.done && busy > 0) {
+          send({ type: "error", message: `${busy} of its sessions ${busy === 1 ? "is" : "are"} still working or waiting on you: finish or stop ${busy === 1 ? "it" : "them"} first` });
+          return;
+        }
         this.store.setFeatureDone(message.id, message.done);
         this.log.info({ feature: message.id, done: message.done }, message.done ? "feature marked done" : "feature reopened");
         this.broadcast(this.featureList());
+        this.broadcastSessionList();
         return;
+      }
       case "set_session_feature":
         if (!this.inProject(send, message.sessionId)) return;
         if (message.featureId && !this.featureUsable(send, message.featureId)) return;

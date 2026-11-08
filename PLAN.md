@@ -999,10 +999,31 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         migrated (11 migrations), its 15 sessions all one-offs; a feature made and a session
         moved into it there. ~160 lines of code + ~125 of tests. Also touched: the web store
         keeps `features` (else it would land in the chat log), `server.test.ts` filters it. D73.
-  - [ ] **4b. Folders in the sidebar** (board §3–4) — Working lists features as folders first
-        (open/closed remembered), their sessions nested, done ones folded into "N done"; the
-        folder button by Working names and creates a feature; a folder's menu marks it done or
-        reopens it; a done feature is one row in Done that opens to its sessions.
+  - [x] **4b. Folders in the sidebar** (~180; board §3–4) — Working lists features as folders
+        first (most recently active first), then one-offs. A folder opens and closes
+        (remembered); inside, its working sessions, and its done ones folded into "N done"
+        (closed by default). A closed folder shows its most urgent status (needs you > working),
+        so an ask can't hide in it; an empty one says "No sessions yet". The folder button by
+        Working opens a name field: Enter creates, Esc cancels. A folder's hover check marks the
+        feature done, like a session's; a done feature is one row in Done (Done mixes features
+        and one-offs, newest first) that opens to all its sessions, with ↺ to reopen. The
+        grouping is a pure function. Each section is a tree drawn with Headless Tree (owner:
+        a library, not hand-rolled; D74): tree roles, ←/→ close / open, ↑/↓ move, Enter opens.
+        Scope: web `sessions-sidebar.tsx`, `session-status.tsx` (the dot alone), new
+        `lib/sidebar-tree.ts` + test, `lib/sidebar-prefs.ts`, the package. Accept: grouping
+        tests; headless screenshots of an open folder, a closed one showing an ask, a done
+        feature, and naming one; the keyboard walks and opens rows; typecheck, test, build.
+        Review round (owner's picks): marking a feature done marks its sessions done, refused
+        while one is busy, and new work reopens it (server + tests, D73); Working counts live
+        sessions; row buttons are out of the Tab order. Then (owner): Done keeps the tree — a
+        done session moves into its feature's folder in Done (no more "N done"), so a feature
+        with live and done work has a folder in each section; features can be renamed (F2,
+        double-click or the hover pencil; `rename_feature` on the server, Headless Tree's
+        renaming in the sidebar). Board §4 updated to match.
+        **Proof:** 214 tests pass (sidebar grouping and tree shape, rename, feature done with its
+        sessions); typecheck 7/7, build 5/5. Headless Chrome on a copy of the dev database: open,
+        closed-with-an-ask, done and Done-shaped folders, naming and renaming (F2 + Enter saves,
+        Esc cancels), keyboard walk (←/→/↓/Enter), Tab enters each tree once. D73, D74.
   - [ ] **4c. The shelf's feature pill** (board §5) — a shelf under the Home composer with one
         pill: One-off (default) or a working feature; the folder's + opens Home with it preset.
         In a session the pill is a fact; a one-off's menu has "Move to feature…". The git pills

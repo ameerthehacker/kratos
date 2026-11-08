@@ -116,14 +116,21 @@ export class SessionStore {
       .all();
   }
 
-  /** Mark a feature done, or reopen it. Unlike a session's, this moves it: Done is newest first. */
+  renameFeature(featureId: string, title: string): void {
+    this.db.update(features).set({ title, updatedAt: new Date() }).where(eq(features.id, featureId)).run();
+  }
+
+  /** Mark a feature done — and its sessions with it, the whole folder is finished (owner) — or
+   * reopen it (its sessions stay done). Unlike a session's, this moves it: Done is newest first. */
   setFeatureDone(featureId: string, done: boolean): void {
     const now = new Date();
-    this.db
-      .update(features)
-      .set({ doneAt: done ? now : null, updatedAt: now })
-      .where(eq(features.id, featureId))
-      .run();
+    this.db.transaction((tx) => {
+      tx.update(features)
+        .set({ doneAt: done ? now : null, updatedAt: now })
+        .where(eq(features.id, featureId))
+        .run();
+      if (done) tx.update(sessions).set({ doneAt: now }).where(and(eq(sessions.featureId, featureId), isNull(sessions.doneAt))).run();
+    });
   }
 
   /** Give a session its title (its first prompt). Only the first call has an effect. */

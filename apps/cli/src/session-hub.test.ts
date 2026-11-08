@@ -539,6 +539,20 @@ describe("SessionHub: features (D73)", () => {
     expect(featureOf(b.list, a.viewing)).toBe(feature);
   });
 
+  it("renames a feature for every tab; another project's can't be", () => {
+    const { tab, otherProject } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "create_feature", title: "Plans" });
+    b.receive({ type: "rename_feature", id: a.features[0]!.id, title: "Plans as first-class" });
+    expect(a.features[0]?.title).toBe("Plans as first-class");
+
+    let theirs: FeatureSummary[] = [];
+    otherProject().connect((m) => void (m.type === "features" && (theirs = m.list))).receive({ type: "create_feature", title: "Not yours" });
+    a.receive({ type: "rename_feature", id: theirs[0]!.id, title: "Mine now" });
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
   it("moves a session into a feature and back to a one-off, for every tab", () => {
     const { tab } = setup();
     const a = tab();
@@ -553,18 +567,32 @@ describe("SessionHub: features (D73)", () => {
     expect(featureOf(a.list, a.viewing)).toBeNull();
   });
 
-  it("marks a feature done and reopens it; its sessions keep their own done", () => {
-    const { tab } = setup();
+  it("marks a feature done with its sessions, only once none is busy; new work reopens both", async () => {
+    const { agents, tab } = setup();
     const a = tab();
     a.receive({ type: "create_feature", title: "Plans" });
     const feature = a.features[0]!.id;
     a.receive({ type: "prompt", text: "task", featureId: feature });
+    const doneOf = () => a.list.find((s) => s.id === a.viewing)?.done;
 
+    a.receive({ type: "set_feature_done", id: feature, done: true }); // still working: refused
+    expect(a.seen.at(-1)).toMatchObject({ type: "error", message: expect.stringMatching(/still working or waiting on you/) });
+    expect(a.features[0]?.done).toBe(false);
+
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
     a.receive({ type: "set_feature_done", id: feature, done: true });
     expect(a.features[0]).toMatchObject({ id: feature, done: true });
-    expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(false);
-    a.receive({ type: "set_feature_done", id: feature, done: false });
+    expect(doneOf()).toBe(true); // the whole folder is finished
+
+    a.receive({ type: "set_feature_done", id: feature, done: false }); // reopening leaves sessions done
     expect(a.features[0]?.done).toBe(false);
+    expect(doneOf()).toBe(true);
+
+    a.receive({ type: "set_feature_done", id: feature, done: true });
+    a.receive({ type: "prompt", text: "one more thing" }); // new work: neither is done any more
+    expect(a.features[0]?.done).toBe(false);
+    expect(doneOf()).toBe(false);
   });
 
   it("refuses a feature that's unknown, another project's, or done — and starts nothing", () => {

@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
 import { hotkeysCoreFeature, renamingFeature, syncDataLoaderFeature, type ItemInstance } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
-import { Check, ChevronRight, Folder, FolderCheck, FolderPlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
+import { Check, ChevronRight, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
 import type { FeatureSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
 import { SessionStatus, StatusDot, sessionTitle, statusLabel } from "@/components/session-status";
@@ -77,7 +77,7 @@ export function SessionsSidebar() {
                 title="New feature"
                 className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <FolderPlus className="size-3.5" />
+                <PackagePlus className="size-3.5" />
               </button>
             }
           >
@@ -241,7 +241,7 @@ function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feat
   const navigate = useNavigate();
   const open = item.isExpanded();
   const canStart = !inDone && !feature.done; // a new session in it: Working's folders only
-  const Icon = feature.done ? FolderCheck : Folder;
+  const Icon = feature.done ? PackageCheck : Package;
   if (item.isRenaming()) {
     return (
       <div className={cn(box, "flex items-center gap-2 bg-secondary py-1 pr-2 pl-8")}>
@@ -348,7 +348,7 @@ function NewFeatureField({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   return (
     <div className="flex items-center gap-2 rounded-lg bg-secondary py-1 pr-2 pl-2.5">
-      <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <Package className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <input
         autoFocus
         value={title}

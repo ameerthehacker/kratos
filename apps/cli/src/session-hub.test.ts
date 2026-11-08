@@ -553,6 +553,29 @@ describe("SessionHub: features (D73)", () => {
     expect(a.seen.at(-1)).toMatchObject({ type: "error" });
   });
 
+  it("makes a feature named on the shelf when the prompt starts its session — not before, not after", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "csv export", newSession: true, newFeatureTitle: "CSV export" });
+    expect(a.features).toMatchObject([{ title: "CSV export", done: false }]);
+    expect(featureOf(a.list, a.viewing)).toBe(a.features[0]!.id);
+
+    a.receive({ type: "prompt", text: "a reply", newFeatureTitle: "Never made" }); // not a first prompt
+    expect(a.features.map((f) => f.title)).toEqual(["CSV export"]);
+  });
+
+  it("moves a session into a new feature named on its shelf", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "a one-off that grew" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, newFeatureTitle: "Reports" });
+    expect(a.features).toMatchObject([{ title: "Reports" }]);
+    expect(featureOf(a.list, a.viewing)).toBe(a.features[0]!.id);
+
+    a.receive({ type: "set_session_feature", sessionId: a.viewing }); // neither: refused
+    expect(a.seen.at(-1)).toMatchObject({ type: "error" });
+  });
+
   it("moves a session into a feature and back to a one-off, for every tab", () => {
     const { tab } = setup();
     const a = tab();

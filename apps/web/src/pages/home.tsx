@@ -17,10 +17,12 @@ export function HomePage() {
     useShallow((s) => ({ connected: s.connected, harnesses: s.harnesses, sessions: s.sessions, features: s.features, viewing: s.viewing, log: s.log, send: s.send })),
   );
   // What the new session belongs to (D73): a one-off unless picked, or preset by a folder's +
-  // (`/?feature=<id>`). Kept in the URL, so it isn't remembered for the next one; a feature
-  // that's gone or done falls back to a one-off.
+  // (`/?feature=<id>`), or a new feature named on the shelf (`?new=<name>`: the server makes it
+  // when this prompt starts the session). Kept in the URL, so it isn't remembered for the next
+  // one; a feature that's gone or done falls back to a one-off.
   const [params, setParams] = useSearchParams();
-  const featureId = features.find((f) => f.id === params.get("feature") && !f.done)?.id ?? null;
+  const newFeatureTitle = params.get("new")?.trim() || null;
+  const featureId = newFeatureTitle ? null : (features.find((f) => f.id === params.get("feature") && !f.done)?.id ?? null);
   const { choice: remembered, setChoice } = useHomeChoice();
   const choice = currentChoice(remembered, harnesses);
   const harness = harnesses.find((h) => h.id === choice?.harness);
@@ -54,6 +56,7 @@ export function HomePage() {
       effort: choice?.effort ?? undefined,
       permissionMode: permissionMode ?? undefined,
       featureId: featureId ?? undefined,
+      newFeatureTitle: newFeatureTitle ?? undefined,
       ...(attachments.length > 0 ? { attachments } : {}),
       confirmDangerous: dangerous || undefined,
     });
@@ -81,7 +84,16 @@ export function HomePage() {
               />
             </>
           }
-          shelf={<FeaturePill features={features} value={featureId} purpose="choose" onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })} />}
+          shelf={
+            <FeaturePill
+              features={features}
+              value={featureId}
+              newTitle={newFeatureTitle}
+              purpose="choose"
+              onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })}
+              onCreate={(name) => setParams({ new: name }, { replace: true })}
+            />
+          }
           onSend={start}
           attachments={harness?.attachments}
           disabled={!connected}

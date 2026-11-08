@@ -217,6 +217,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   feature with live and done sessions has a folder in each section (Working's open, Done's
   closed by default). Replaced 4b's first "N done" fold inside the Working folder. A feature can
   be renamed any time (`rename_feature`); the title is only a label until 4f gives it a folder.
+- New feature from the shelf (owner, 4c2): named in place of the pill. On Home it's made by the
+  server when the prompt starts its session (`prompt.newFeatureTitle`), so a name typed and
+  abandoned leaves no empty folder; alternative was `create_feature` at once plus a reply with
+  its id (simpler messages, but stray empty folders). From a one-off's shelf it's made and the
+  session moved in one message. The board had "A new feature" start in plan mode with the
+  folder made on approval; it's made at once now, and plan mode can join it in 4f.
+- Icon (owner, 4c2): Package (PackageCheck done, PackagePlus new), a family with all three
+  states; folders looked like files.
 - Alternatives: plans as chat messages (today: an Allow / Deny ask); separate Features /
   Sessions / Done headings; a feature chip in the composer card; the agent changing the plan
   only through Kratos tools (MCP: stricter, but a second protocol and MCP-only agents); a

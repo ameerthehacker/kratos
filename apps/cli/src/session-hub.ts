@@ -115,7 +115,7 @@ export class SessionHub {
         // Checked before anything starts: a refused mode must not start a session in another one.
         if (message.permissionMode && !this.modeAllowed(send, message.permissionMode, message.confirmDangerous)) return;
         // And for the feature (D73): one that's gone or done starts nothing.
-        if (message.featureId && !this.featureUsable(send, message.featureId)) return;
+        if (!message.newFeatureTitle && message.featureId && !this.featureUsable(send, message.featureId)) return;
         // Same for files (D55): a refused one means nothing is sent.
         const files = this.checkAttachments(send, message.attachments ?? []);
         if (!files) return;
@@ -131,8 +131,10 @@ export class SessionHub {
         if (!target.hasPrompts && message.model) target.setModel(message.model);
         if (!target.hasPrompts && message.effort) target.setEffort(message.effort);
         if (!target.hasPrompts && message.permissionMode) target.setPermissionMode(message.permissionMode);
-        if (!target.hasPrompts && message.featureId) {
-          this.store.setSessionFeature(target.id, message.featureId);
+        // Its feature, new or picked (D73) — only when this prompt starts the session.
+        const featureId = target.hasPrompts ? undefined : message.newFeatureTitle ? this.newFeature(message.newFeatureTitle) : message.featureId;
+        if (featureId) {
+          this.store.setSessionFeature(target.id, featureId);
           this.broadcast(this.featureList());
         }
         // New work on a done session means it isn't done (owner, 3d2), nor is its feature (D73).
@@ -163,12 +165,10 @@ export class SessionHub {
         this.log.info({ session: message.id, done: message.done }, message.done ? "marked done" : "reopened");
         this.broadcastSessionList();
         return;
-      case "create_feature": {
-        const feature = this.store.createFeature(this.cwd, message.title);
-        this.log.info({ feature: feature.id }, "new feature");
+      case "create_feature":
+        this.newFeature(message.title);
         this.broadcast(this.featureList());
         return;
-      }
       case "rename_feature":
         if (!this.featureInProject(send, message.id)) return;
         this.store.renameFeature(message.id, message.title);
@@ -188,14 +188,20 @@ export class SessionHub {
         this.broadcastSessionList();
         return;
       }
-      case "set_session_feature":
+      case "set_session_feature": {
         if (!this.inProject(send, message.sessionId)) return;
-        if (message.featureId && !this.featureUsable(send, message.featureId)) return;
-        this.store.setSessionFeature(message.sessionId, message.featureId);
-        this.log.info({ session: message.sessionId, feature: message.featureId }, "session moved");
+        if (!message.newFeatureTitle && message.featureId === undefined) {
+          send({ type: "error", message: "Say which feature to move the session to" });
+          return;
+        }
+        if (!message.newFeatureTitle && message.featureId && !this.featureUsable(send, message.featureId)) return;
+        const featureId = message.newFeatureTitle ? this.newFeature(message.newFeatureTitle) : message.featureId!;
+        this.store.setSessionFeature(message.sessionId, featureId);
+        this.log.info({ session: message.sessionId, feature: featureId }, "session moved");
         this.broadcast(this.featureList());
         this.broadcastSessionList();
         return;
+      }
       case "interrupt":
         // Stop with a queue stops everything; the dropped prompts' text comes back to this tab (D56).
         viewing.interrupt((text) => send({ type: "prompts_returned", text }));
@@ -335,6 +341,13 @@ export class SessionHub {
     if (this.ours(sessionId)) return true;
     send({ type: "error", message: `No session ${sessionId} in this project` });
     return false;
+  }
+
+  /** A new feature in this project; its id. Callers tell the tabs. */
+  private newFeature(title: string): string {
+    const feature = this.store.createFeature(this.cwd, title);
+    this.log.info({ feature: feature.id }, "new feature");
+    return feature.id;
   }
 
   /** Is this one of this project's features? Tells the tab when not. */

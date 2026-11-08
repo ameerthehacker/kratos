@@ -1051,6 +1051,21 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         in the browser, so no real `claude` ran); "Move to a feature" sent
         `set_session_feature` and the session showed in Plans, its pill now the feature's name.
         ~75 lines + the new `feature-pill.tsx` (~90).
+  - [x] **4c2. New feature from the shelf** (~120; owner) — the pill's menu gets "New feature…":
+        the pill becomes a name field (Enter or clicking away keeps it, Esc cancels). On Home
+        the name rides on the prompt (`newFeatureTitle`, also kept in the URL as `?new=`) and
+        the server makes the feature when the prompt starts the session, so an abandoned name
+        leaves no empty folder; a one-off's shelf makes it and moves the session at once
+        (`set_session_feature` with `newFeatureTitle`). Features get their own icon (owner
+        picked Package: Package, PackageCheck done, PackagePlus new). Scope: core
+        `protocol.ts`, `session-hub.ts` + tests, `feature-pill.tsx`, `home.tsx`, `session.tsx`,
+        `sessions-sidebar.tsx` (icons). Accept: hub tests (made only by a session's first
+        prompt; move into a new one; neither → error); live: Esc cancels, clicking away keeps,
+        the prompt carries the name, a one-off moves into a new feature; typecheck, test, build.
+        **Proof:** 216 tests pass (2 new hub tests), typecheck 7/7, build 5/5. Headless Chrome on
+        a copy of the dev database: Esc left One-off (no `?new=`), clicking into the prompt kept
+        the name, Enter sent `newFeatureTitle` (held back: no real `claude`), a one-off moved into
+        a new "Reports" feature; Package icons throughout. ~175 lines incl. tests.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's
@@ -1058,8 +1073,8 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         a mode change).
   - [ ] **4f. Plans saved in features** (board §2, §6–7) — approving makes a feature (or fills
         the one the session is in) and writes `.kratos/features/<slug>/plan.md`; Approve, build
-        later; the folder's Plan item opens the plan page, read-only; the pill's "A new feature"
-        starts in plan mode.
+        later; the folder's Plan item opens the plan page, read-only; a new feature from the
+        shelf can start in plan mode (4c2 makes it without a plan).
   - [ ] **4g. Edit before approving** (board §2) — Read / Edit in the review card; your edits go
         back to Claude as the approved plan (`updatedInput`).
   - [ ] **4h. Continue a plan in a new session** (board §3, §5) — the first prompt tells the agent

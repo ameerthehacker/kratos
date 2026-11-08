@@ -68,6 +68,9 @@ export const ChangedFile = z.object({
 });
 export type ChangedFile = z.infer<typeof ChangedFile>;
 
+/** A feature's name (D73): as the owner typed it, trimmed, 1–80 characters. */
+const FeatureTitle = z.string().trim().min(1).max(80);
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
@@ -89,6 +92,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
     confirmDangerous: z.boolean().optional(),
     /** The feature the session it starts belongs to (D73); none = a one-off. */
     featureId: z.string().optional(),
+    /** Or a new feature, named on the shelf: made when the prompt starts its session, so a name
+     * typed and then abandoned leaves no empty folder (D73). Wins over `featureId`. */
+    newFeatureTitle: FeatureTitle.optional(),
   }),
   /** View another session in this tab: answered with `session` + that session's replay. */
   z.object({ type: z.literal("open_session"), id: z.string() }),
@@ -110,13 +116,19 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Mark any session of this project done, or reopen it (3d2). Answered with `sessions`. */
   z.object({ type: z.literal("set_done"), id: z.string(), done: z.boolean() }),
   /** Start a feature in this project (D73). Answered with `features`. */
-  z.object({ type: z.literal("create_feature"), title: z.string().trim().min(1).max(80) }),
+  z.object({ type: z.literal("create_feature"), title: FeatureTitle }),
   /** Rename a feature (D73). Answered with `features`. */
-  z.object({ type: z.literal("rename_feature"), id: z.string(), title: z.string().trim().min(1).max(80) }),
+  z.object({ type: z.literal("rename_feature"), id: z.string(), title: FeatureTitle }),
   /** Mark a feature done with its sessions (refused while one is busy), or reopen it (D73). */
   z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean() }),
-  /** Move a session into a working feature, or back to a one-off with null (D73). */
-  z.object({ type: z.literal("set_session_feature"), sessionId: z.string(), featureId: z.string().nullable() }),
+  /** Move a session into a working feature, back to a one-off with null, or into a new feature
+   * named here (`newFeatureTitle`, which wins) (D73). */
+  z.object({
+    type: z.literal("set_session_feature"),
+    sessionId: z.string(),
+    featureId: z.string().nullable().optional(),
+    newFeatureTitle: FeatureTitle.optional(),
+  }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
   z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
   /** Answer to a `question_request`; the first valid answer from any tab wins (D54). */

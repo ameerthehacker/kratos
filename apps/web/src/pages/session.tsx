@@ -178,6 +178,7 @@ export function SessionPage() {
                   value={session.featureId}
                   purpose={session.featureId ? undefined : "move"}
                   onChange={(featureId) => send({ type: "set_session_feature", sessionId: session.id, featureId })}
+                  onCreate={(newFeatureTitle) => send({ type: "set_session_feature", sessionId: session.id, newFeatureTitle })}
                 />
               )
             }

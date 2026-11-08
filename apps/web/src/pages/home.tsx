@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { AttachmentUpload, Harness } from "@kratos/core";
 import { AgentPicker, type AgentChoice } from "@/components/agent-picker";
@@ -7,6 +7,8 @@ import { FeaturePill } from "@/components/feature-pill";
 import { PermissionPicker } from "@/components/permission-picker";
 import { askToNotify } from "@/hooks/use-attention";
 import { PromptCard } from "@/components/prompt-card";
+import { Shortcut } from "@/components/shortcut";
+import { PROMPT_KEYS } from "@/lib/shortcuts";
 import { RecentList } from "@/components/recent-list";
 import { useHomeChoice } from "@/lib/home-choice";
 import { useKratos } from "@/lib/kratos-store";
@@ -44,8 +46,26 @@ export function HomePage() {
     }
   }, [log, viewing, navigate]);
 
-  const start = (text: string, attachments: AttachmentUpload[]) => {
-    pending.current = { text, viewing, seen: log.length };
+  // ⌘↵ (3z5): start it but stay here, the box cleared and focused for the next one. A new feature
+  // it named is made by the server: the pill then picks it, so the next ones join it.
+  const awaitedFeature = useRef<string | null>(null);
+  useEffect(() => {
+    const title = awaitedFeature.current;
+    const made = title && features.find((f) => f.title === title && !f.done); // newest first
+    if (!made) return;
+    awaitedFeature.current = null;
+    setParams({ feature: made.id }, { replace: true });
+  }, [features, setParams]);
+  // Landing here (New session, its shortcut, opening Kratos) puts the cursor in the box.
+  const { key } = useLocation();
+  useEffect(() => document.getElementById("prompt")?.focus(), [key]);
+
+  const start = (text: string, attachments: AttachmentUpload[], { mod: stay }: { mod: boolean }) => {
+    if (!stay) pending.current = { text, viewing, seen: log.length }; // go to it once it lands
+    else if (newFeatureTitle) {
+      awaitedFeature.current = newFeatureTitle;
+      setParams({}, { replace: true }); // not a second one with the same name
+    }
     askToNotify(); // once, from this click: so Kratos can tell you when the agent needs you
     send({
       type: "prompt",
@@ -85,14 +105,21 @@ export function HomePage() {
             </>
           }
           shelf={
-            <FeaturePill
-              features={features}
-              value={featureId}
-              newTitle={newFeatureTitle}
-              purpose="choose"
-              onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })}
-              onCreate={(name) => setParams({ new: name }, { replace: true })}
-            />
+            <>
+              <FeaturePill
+                features={features}
+                value={featureId}
+                newTitle={newFeatureTitle}
+                purpose="choose"
+                onChange={(id) => setParams(id ? { feature: id } : {}, { replace: true })}
+                onCreate={(name) => setParams({ new: name }, { replace: true })}
+              />
+              {/* ⌘↵ isn't something you'd guess: said where you type (3z5). */}
+              <span className="ml-auto flex items-center gap-1.5 pr-1 text-xs text-faint max-sm:hidden">
+                <Shortcut hotkey={PROMPT_KEYS.startAndStay} variant="faint" />
+                start and stay here
+              </span>
+            </>
           }
           onSend={start}
           attachments={harness?.attachments}

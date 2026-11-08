@@ -22,7 +22,9 @@ import { cn } from "@/lib/utils";
 export function PromptCard(props: {
   /** The chips on the left of the bottom row: AgentPicker and PermissionPicker. */
   chips: ReactNode;
-  onSend: (text: string, attachments: AttachmentUpload[], options: { now: boolean }) => void;
+  /** `now`: ⌘↵ while the agent works — send now, past the queue (D56). `mod`: ⌘↵ at all (Home:
+   * start the session but stay, 3z5). */
+  onSend: (text: string, attachments: AttachmentUpload[], options: { now: boolean; mod: boolean }) => void;
   /** What the harness accepts (D55); without it, no "+" and no dropping files. */
   attachments?: AttachmentPolicy;
   placeholder: string;
@@ -52,7 +54,7 @@ export function PromptCard(props: {
   const submit = (event?: FormEvent, now = false) => {
     event?.preventDefault();
     if (!canSend) return;
-    props.onSend(text.trim(), files.take(), { now: now && working });
+    props.onSend(text.trim(), files.take(), { now: now && working, mod: now });
     setText("");
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {

@@ -1023,6 +1023,21 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       spreadsheet download" in 1.8 s; Rename… → "CSV download for reports" in the header and the
       sidebar. Typecheck 7/7, build 5/5. D78. The in-place name field is now general
       (`name-field.tsx`).
+- [x] **3z5. Start a session and stay** (~60; owner, 2026-11-08) — landing on Home (New session,
+      its shortcut, opening Kratos) puts the cursor in the prompt. On Home, ⌘↵ starts the session
+      but leaves you there, the box cleared and focused, to start the next; the shelf says so
+      ("⌘ ↵ start and stay here") and the shortcuts sheet lists it. A new feature named on the
+      shelf is made by the first ⌘↵, then the pill picks it, so the next ones join it rather than
+      making another. In a session ⌘↵ stays "send now". Scope: web `prompt-card.tsx`,
+      `pages/home.tsx`, `lib/shortcuts.ts`. Accept: in headless Chrome, New session focuses the
+      box; ⌘↵ sends a new-session prompt, stays on Home, box empty and focused, twice in a row;
+      with a new feature named, both land in one feature; Enter still goes to the session;
+      typecheck, test, build.
+      **Proof:** headless Chrome on the streaming stand-in: opening Kratos focused the box; ⌘↵
+      twice stayed at `/`, box empty and focused, 2 sessions started; "Reports" named on the
+      shelf + ⌘↵ twice: one Reports feature holding both, the pill on it; Enter went to the
+      session; New session from a session: Home, box focused. 225 tests, typecheck 7/7, build
+      5/5. ~60 lines.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

@@ -37,7 +37,7 @@ export const SCOPES = { session: "session", review: "review", sheet: "shortcuts-
 
 /** Keys a focused widget handles itself (the prompt box, a question card): not app shortcuts, but
  * the hints and the shortcuts sheet show them from here too. */
-export const PROMPT_KEYS = { send: "Enter", newLine: "Shift+Enter", sendNow: "Mod+Enter" } as const satisfies Record<string, Hotkey>;
+export const PROMPT_KEYS = { send: "Enter", newLine: "Shift+Enter", sendNow: "Mod+Enter", startAndStay: "Mod+Enter" } as const satisfies Record<string, Hotkey>;
 
 /** What the sheet lists besides the app shortcuts: a hotkey, or literal caps for a range. */
 export type SheetRow = { name: string; when?: string; hotkey?: Hotkey; keys?: string[] };
@@ -46,6 +46,7 @@ export const LOCAL_ROWS: Array<SheetRow & { group: string }> = [
   { group: "In the prompt", name: "Send", hotkey: PROMPT_KEYS.send },
   { group: "In the prompt", name: "New line", hotkey: PROMPT_KEYS.newLine },
   { group: "In the prompt", name: "Send now", when: "while working", hotkey: PROMPT_KEYS.sendNow },
+  { group: "In the prompt", name: "Start, stay on Home", when: "on Home", hotkey: PROMPT_KEYS.startAndStay },
   { group: "Questions", name: "Pick an option", keys: ["1–9"] },
   { group: "Questions", name: "Next / send", hotkey: "Enter" },
   { group: "Questions", name: "Skip", hotkey: "Escape" },

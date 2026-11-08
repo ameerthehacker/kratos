@@ -1126,6 +1126,37 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         stopped (idle) and the session was done. Same for a feature ("1 of its sessions is still
         working…"): the folder stayed as it was on Keep working; confirm left feature and session
         done, agent idle. Typecheck 7/7, build 5/5.
+  - [ ] **4m. The agent manages features** (owner, 2026-11-08) — Kratos gives the agent tools of
+        its own: read the features and what its session belongs to; create a feature, move its
+        own session into a feature (or back to a one-off), mark its session done, mark its
+        feature done. Owner's calls: every change asks first, an Allow / Deny card with the exact
+        change, in every permission mode, Bypass and Auto too (reads never ask); only its own
+        session (other sessions are the owner's); a gentle nudge to offer filing or finishing
+        work; spike first. Mechanism: Claude Code's in-process MCP server over the control
+        protocol we already speak (the Agent SDK's "sdk" servers; today we answer `mcp_message`
+        with "unsupported"), so nothing new listens on the network and each call knows its
+        session. Slices, each specified when picked up:
+    - [x] **4m1. Spike: one tool, end to end** (~100, throwaway allowed) — with the real `claude`
+          (2.1.308, Haiku: cents): how an in-process server is declared (`--mcp-config` with
+          `type: "sdk"`, the `initialize` request), what `mcp_message` carries (JSON-RPC
+          `initialize`, `tools/list`, `tools/call`), the tool's name as the agent sees it, and
+          whether its call goes through `can_use_tool`. Accept: a run where the agent calls
+          `list_features` and answers from its result; findings logged (D77).
+          **Proof:** a throwaway script (scratch, not in the repo) drove the real CLI: handshake
+          (`initialize`, `notifications/initialized`, `tools/list`) before the prompt; `system/init`
+          listed `kratos` connected; the agent loaded `mcp__kratos__list_features` with ToolSearch,
+          Kratos got `can_use_tool` for it, then `tools/call`; it answered "Only 'Plans as
+          first-class' is not done", from our result. $0.008. Found: Bypass skips `can_use_tool`,
+          so the always-ask must live in `tools/call` (D77).
+    - [ ] **4m2. Host tools in the adapter interface** — core: tools Kratos offers an agent (name,
+          description, zod input, handler with the session); the Claude adapter serves them
+          over `mcp_message`; the fake `claude` can call one, for tests.
+    - [ ] **4m3. Kratos's tools** — the read and change tools above on the hub; changes wait for
+          the owner's answer, whatever the mode; only the calling session.
+    - [ ] **4m4. The change card** — the ask in the chat says the change in words ("Create the
+          feature CSV export and move this session into it").
+    - [ ] **4m5. The nudge** — once per session, the agent is told it can offer to file the work
+          in a feature or mark it done, and must ask.
   - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
         the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
   - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's

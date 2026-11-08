@@ -156,6 +156,30 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D77. Kratos serves the agent its own tools in-process, over the control protocol (step 4m, owner)
+- Owner: the agent should be able to manage features and sessions — create a feature, move its
+  session into one, mark its session or feature done — always asking first. Owner's calls: every
+  change asks, in every permission mode; only its own session; a gentle nudge; spike first.
+- Decision: Claude Code's in-process ("sdk") MCP server, the Agent SDK's mechanism, over the
+  stream-json control protocol we already speak (D23). Nothing new listens on the network, and a
+  call arrives on the session's own process, so it knows its session.
+- Spike (4m1, real `claude` 2.1.308, Haiku, $0.008), how it works:
+  - Declared with `--mcp-config '{"mcpServers":{"kratos":{"type":"sdk","name":"kratos"}}}'` and
+    an `initialize` control request listing it: `{subtype: "initialize", sdkMcpServers: ["kratos"]}`.
+  - The CLI then sends `control_request` `mcp_message` `{server_name, message}` with JSON-RPC:
+    `initialize` (protocol 2025-11-25), `notifications/initialized`, `tools/list` — before the
+    first prompt — and `tools/call` when used (with `_meta["claudecode/toolUseId"]`). We answer
+    `{mcp_response: <JSON-RPC reply>}`; a notification gets `{jsonrpc: "2.0", result: {}, id: 0}`.
+  - `system/init` lists it (`source: "sdk"`, connected); the agent sees `mcp__kratos__<tool>`.
+    Such tools are deferred: the agent first loaded it with `ToolSearch`, then called it.
+  - Its call goes through `can_use_tool` first, like any tool. But that ask is skipped in Bypass
+    (and Auto may allow it), so "always ask" must be enforced in `tools/call` itself: Kratos
+    holds the call until the owner answers. Reads can be allowed at `can_use_tool`.
+- Alternatives: an HTTP MCP endpoint on the Kratos server (`--mcp-config` with a URL: a network
+  surface to guard, 3y1, and calls must say which session they're from); a stdio MCP subprocess
+  (another process per session, and it needs a way back to the hub).
+- Reverse: stop declaring the server; we answer `mcp_message` with "unsupported" again.
+
 ### D76. The chat sticks to the bottom with use-stick-to-bottom (step 3z3, owner) — **replaces D71's following, keeps D75's jump**
 - Bug (reopened after D75): with a stand-in `claude` streaming a real-looking turn, even a small
   prompt left the view at the prompt and the reply out of sight, 6 of 6 rounds. D75's jump lines

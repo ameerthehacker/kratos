@@ -918,12 +918,18 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           the chat mounts once, drawn at ~255 ms. On its own, the single replay made the first
           mount *slower* (~410 ms): the agent's name and `cwd` arrived after the replay and
           re-rendered the whole chat. Fixed by sending those first / waiting for `pong`. D70.
-    - [ ] **3y6c. Draw only what's near** (~120; after 3y6a's numbers) — draw the newest ~40
+    - [x] **3y6c. Draw only what's near** (~120; after 3y6a's numbers) — draw the newest ~40
           items and more as you scroll up (keeping your place), or full virtualization
           (react-virtuoso, which handles variable heights and sticking to the bottom; it would
           replace use-stick-to-bottom). Windowing first: simpler, keeps find-in-page for what's
           drawn. Owner: is draw time still a problem after 3y6a? What's "fast enough" (e.g. a
-          session opens in under 200 ms)?
+          session opens in under 200 ms)? → Owner: go on. Windowing was built and measured, then
+          the owner chose a library: react-virtuoso, "it works everywhere" (D71).
+          **Proof (headless Chrome, 957-message session, warm):** switching to it 168 → ~80 ms
+          (6,100 → ~50 elements in the chat); a link settles at the bottom in ~290 ms, as before
+          (Virtuoso's measure passes cost what not drawing saves); wheel-scrolling reaches the
+          first item, 0 remounts of items on screen, 2–6 jumps; a live turn follows the agent and
+          leaves you in place (0 px) when you have scrolled up.
     - [ ] **3y6d. Server memory and snapshots** (~60) — evict runtimes with no tab, no agent and
           nothing open; warn when a turn's snapshot is slow (synthetic 5,000-message session, big
           repo). Accept: before / after memory and snapshot numbers.

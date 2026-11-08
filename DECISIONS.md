@@ -156,6 +156,40 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D71. The chat is virtualized with react-virtuoso (step 3y6c, owner)
+- After 3y6a/b, drawing the whole chat was most of what was left: 334 items, ~6,100 elements,
+  ~90 ms of a 168 ms session switch.
+- Decision (owner: a library, "it works everywhere"): react-virtuoso's `Virtuoso` (MIT; the
+  commercial part is its separate message-list package). It draws only the items on screen plus
+  a margin, measures their heights as they're drawn, and keeps your place itself rather than
+  relying on the browser's scroll anchoring, which Safari doesn't have. It replaces
+  use-stick-to-bottom: `initialTopMostItemIndex: LAST` opens at the newest item, `followOutput`
+  follows new ones while you're at the bottom. Header and footer (the working indicator) are
+  module-level components that read props through Virtuoso's `context`, so they never remount.
+- Measured against the alternatives (production build, the 957-message session, warm):
+  | | everything drawn (3y6b) | windowing hook, newest 40 | Virtuoso |
+  |---|---|---|---|
+  | open from a link, settled at the bottom | ~285 ms | ~190 ms | ~290 ms |
+  | switch to it | 168 ms | ~90 ms | ~80 ms |
+  | wheel to the top, Chrome | – | 0 jumps | 3–6 jumps, 380–870 px |
+  | wheel to the top, anchoring off (Safari) | – | ~10 shifts, 50–100 px | 2 jumps, 380–690 px |
+  | live turn follows the agent | yes | yes | yes, closer |
+  Virtuoso's opening time goes to its measure passes (it draws, measures, repositions, over a few
+  frames). Its jumps come from items above you that change height after being drawn (code
+  highlighting arrives late). A `defaultItemHeight` estimate opened faster but jumped more (14).
+- Alternatives: the hand-rolled windowing hook above (faster here, but ours to maintain, and
+  everything you scroll through stays drawn); @tanstack/react-virtual (headless: the
+  bottom-anchored chat behaviour would be ours to write); CSS `content-visibility: auto` (React
+  still builds every element, which is the cost here).
+- Following: `followOutput` follows new items; for growth without one (the working indicator
+  appearing, a step added to the last group) `autoscrollToBottom()` runs on every change, which
+  only scrolls when the view was at the bottom. Measured with a scripted live turn: without it, a
+  turn's start lagged ~0.5 s once; scrolled up 1,600 px, what you read moves 0 px either way.
+- Costs: find-in-page (Cmd+F) only finds what's drawn (a few items). Items scrolled away are
+  unmounted, so scrolling back redraws them (markdown, highlighting).
+- Reverse: render `items.map(…)` inside use-stick-to-bottom again (commit 566cf90's
+  `conversation.tsx`) and remove the package.
+
 ### D70. A tab connects to its own session (step 3y6b, owner)
 - Found in 3y6a: a link to a session replayed the latest session, then its own twice. Connecting
   showed the latest; `SessionPage` asked for its own as soon as the socket opened, and again when
@@ -1016,7 +1050,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Libraries (owner: "don't reinvent"): Streamdown for replies (markdown, safe by default) with its
   official `@streamdown/code` plugin (Shiki) for code blocks; `react-shiki` (Shiki) for the raw
   `$ command`, same github-dark theme; `use-stick-to-bottom` to keep the view pinned to new
-  messages. AI Elements (from the earlier plan) is not installed: its look isn't this design,
+  messages (replaced by react-virtuoso, D71). AI Elements (from the earlier plan) is not installed: its look isn't this design,
   and the two libraries above are what it uses underneath. A hand-rolled command tokenizer
   written first was replaced by Shiki on the owner's request.
 - Layout: viewport-high; each page scrolls its own content, and the session composer sits below

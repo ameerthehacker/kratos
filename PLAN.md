@@ -1049,6 +1049,24 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       if none runs. **Proof:** 226 tests (a new hub test: rename during naming, empty session);
       typecheck 7/7, build 5/5; live on the stand-in: header ✓ while working → Home after done;
       naming on the shelf keeps focus; ⌘↵ twice with a new name → one feature, both sessions.
+- [x] **3z7. Editor icons in the binary** (~40; owner, 2026-11-09: a fresh install on another Mac
+      shows a broken image in the project pill) — inside the single binary pkg's SEA bootstrap
+      wraps `child_process.execFile` without `util.promisify.custom`, so `promisify(execFile)`
+      gives the output string, not `{ stdout }`: `editorIcon` throws, the route swallows it and
+      answers 404. Hidden here by `~/.kratos/cache/editor-icons`, filled by source runs; fixed for
+      the updater in 3u5c but not here. Fix: the updater's plain-callback `run` moves to a shared
+      `src/run.ts`, used by both; the icon route logs why a conversion failed; `EditorIcon` falls
+      back to its generic icon when the image fails; a test fails on `promisify(execFile)` in
+      `src/`. Scope: cli `run.ts` (new), `editors.ts`, `updater/install.ts`, `server.ts`, a test;
+      web `project-menu.tsx`. Accept: the built binary with an empty home answers 200 for every
+      editor icon; tests, typecheck, build.
+      **Proof:** before, the binary with an empty `HOME` answered 404 for VS Code, Xcode and
+      Finder while the same bundle under plain `node` answered 200; pkg's `sea-bootstrap` wraps
+      `execFile` with no `promisify.custom` (its classic bootstrap re-adds it). After, the rebuilt
+      binary with an empty `HOME`: 200 and a 64×64 PNG for all three, the cache filled, an unknown
+      id still 404. Every `/editor-icons/*` forced to 404 in headless Chrome → the pill shows the
+      generic code icon, no broken image. The guard test fails on the old `editors.ts`. 268 tests,
+      typecheck 7/7, build 5/5. ~45 lines + a test.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

@@ -53,7 +53,15 @@ export async function startServer(options: {
   // Editors' own app icons (3d3): only ids from the detected list, converted once and cached.
   app.get<{ Params: { id: string } }>("/editor-icons/:id.png", async (request, reply) => {
     const editor = editors.find((e) => e.id === request.params.id);
-    const png = editor && options.iconCacheDir ? await editorIcon(editor, options.iconCacheDir).catch(() => null) : null;
+    const png =
+      editor && options.iconCacheDir
+        ? await editorIcon(editor, options.iconCacheDir).catch((err) => {
+            // Said once per page load at most (the browser caches the 404 a while); a broken icon
+            // with nothing in the log is how 3z7 hid.
+            log.warn({ editor: editor.id, err }, "could not make the editor's icon");
+            return null;
+          })
+        : null;
     if (!png) return reply.code(404).send("Not found");
     return reply.type("image/png").header("cache-control", "max-age=86400").send(createReadStream(png));
   });

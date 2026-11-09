@@ -1,12 +1,11 @@
-import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import open from "open";
 import { PNG } from "pngjs";
 import which from "which";
 import type { Editor } from "@kratos/core";
+import { run } from "./run.js";
 
 /** Editors Kratos knows how to open a folder in (3d3): macOS app name, and CLI elsewhere. */
 const KNOWN: Array<{ id: string; label: string; macApp: string; cli: string }> = [
@@ -58,8 +57,6 @@ export function detectEditors(probe: Probe = realProbe): DetectedEditor[] {
 /** What tabs see: no local app paths. */
 export const publicEditors = (editors: DetectedEditor[]): Editor[] => editors.map(({ appPath: _, ...editor }) => editor);
 
-const run = promisify(execFile);
-
 /**
  * An editor's own app icon as a 64px PNG, made once and cached: macOS's built-in `plutil` (which
  * icon file the app names) and `sips` (.icns → PNG, and the final resize); in between the
@@ -72,8 +69,7 @@ export async function editorIcon(editor: DetectedEditor, cacheDir: string): Prom
   const png = join(cacheDir, `${editor.id}-trimmed.png`);
   if (existsSync(png)) return png;
   const plist = join(editor.appPath, "Contents", "Info.plist");
-  const { stdout } = await run("plutil", ["-extract", "CFBundleIconFile", "raw", plist]).catch(() => ({ stdout: "" }));
-  const name = stdout.trim();
+  const name = (await run("plutil", ["-extract", "CFBundleIconFile", "raw", plist]).catch(() => "")).trim();
   if (!name) return null;
   const icns = join(editor.appPath, "Contents", "Resources", name.endsWith(".icns") ? name : `${name}.icns`);
   if (!existsSync(icns)) return null;

@@ -1,8 +1,10 @@
-import { execFile } from "node:child_process";
 import { chmod, copyFile, rename, rm } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { isSea } from "node:sea";
+import { run, type Run } from "../run.js";
 import type { Downloaded } from "./download.js";
+
+export type { Run };
 
 /** Kratos's Homebrew formula (3u4, D57). */
 export const FORMULA = "ameerthehacker/kratos/kratos";
@@ -24,20 +26,6 @@ export function howInstalled(execPath = process.execPath, packaged = isSea()): I
   const prefix = /^(.*)\/Cellar\/kratos\/[^/]+\/bin\/kratos$/.exec(real)?.[1];
   return prefix ? { kind: "brew", brew: `${prefix}/bin/brew`, bin: `${prefix}/bin/kratos` } : { kind: "binary", path: execPath };
 }
-
-/** Runs a program (no shell) and gives its output; throws with its stderr if it fails. */
-export type Run = (file: string, args: string[], env?: Record<string, string>) => Promise<string>;
-
-// A plain callback, not `promisify(execFile)`: inside the packaged binary pkg patches
-// child_process and execFile loses the promise form that gives `{ stdout }` (3u5c, found end to end).
-export const run: Run = (file, args, env) =>
-  new Promise((resolve, reject) => {
-    execFile(file, args, { env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024, timeout: 10 * 60_000 }, (err, stdout, stderr) => {
-      if (!err) return resolve(String(stdout));
-      const why = (String(stderr ?? "") || err.message).trim().split("\n").slice(-3).join(" ");
-      reject(new Error(`${[file, ...args].join(" ")} failed: ${why}`));
-    });
-  });
 
 /**
  * Installs the downloaded release `version` the way this Kratos was installed; returns the binary

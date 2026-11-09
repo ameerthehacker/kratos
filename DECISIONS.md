@@ -791,6 +791,9 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   - Commands run with Node's `execFile` and a plain callback: in the packaged binary pkg patches
     `child_process`, and `promisify(execFile)` there resolves to the output string, not
     `{ stdout }` — found by the end-to-end run, invisible to unit tests (unpackaged).
+    3z7: the editor icons still used the promise form and broke the same way on fresh installs
+    (a cache filled by source runs hid it here). `run` is now `src/run.ts`, the only way `src/`
+    runs a command for its output, and a test fails on the promise form anywhere in `src/`.
   - Downloads of the running version and older are removed when Kratos starts (not right after
     installing: a restart that fails would leave "Try again" with nothing to install).
   - Checked: a binary built from this code as 0.4.9 updated itself to the real v0.5.0 (same PID

@@ -1,4 +1,5 @@
 import copyToClipboard from "copy-to-clipboard";
+import { useState } from "react";
 import { ChevronDown, Code, Copy, FolderOpen } from "lucide-react";
 import type { Editor } from "@kratos/core";
 import {
@@ -109,9 +110,13 @@ export function ProjectMenu({ cwd, editors, connected }: { cwd: string; editors:
   );
 }
 
-/** The app's own icon from the server when there is one; else a generic code / folder icon. */
+/** The app's own icon from the server when there is one; else, or when it fails to load, a generic
+ * code / folder icon — never a broken image (3z7). */
 function EditorIcon({ editor }: { editor: Editor }) {
-  if (editor.icon) return <img src={editor.icon} alt="" className="size-4 shrink-0 rounded-sm" draggable={false} />;
+  const [failed, setFailed] = useState<string>();
+  if (editor.icon && failed !== editor.icon) {
+    return <img src={editor.icon} alt="" className="size-4 shrink-0 rounded-sm" draggable={false} onError={() => setFailed(editor.icon)} />;
+  }
   const Fallback = editor.id === "files" ? FolderOpen : Code;
   return <Fallback className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
 }

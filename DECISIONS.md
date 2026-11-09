@@ -262,6 +262,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   the page notices a change under you and offers Load theirs / Save over it. Saved during an
   agent's turn on that plan, your text becomes the turn's starting text: what you save is yours,
   including what you kept of the agent's changes.
+- Plan mode (4p6a): a proposed plan is its own agent-neutral action (`ToolAction` `plan`, its
+  Markdown); the Claude adapter maps `ExitPlanMode` to it. The ask dock shows it as a card: the
+  plan, what approving makes (`approvedPlan` in core, one rule for both sides: a one-off's own
+  plan or "Make it a feature"; a feature without a plan gets it, or "Just this session"; a
+  feature with one gets "a plan for this session" — never overwritten from plan mode), Keep
+  planning / Approve, build later / Approve and build here. `permission_decision.savePlanAs`
+  saves it first (your write, in line, a running turn's base); build here allows with a word to
+  the agent — where it was saved and to work from it — carried by a new generic `message` on
+  allow (Claude: appended to the approved plan its result quotes back; agents that can't, drop
+  it); build later denies with where it was saved. Found live: Claude Code's plan mode wants the
+  model to write the plan into its own plan file, which the CLI then attaches to the ask — so the
+  instructions say "in plan mode, write it only where plan mode tells you", not into Kratos's
+  files (told "write no plan file", it sent an empty ask; told nothing, it wrote ours and a
+  second copy). An empty plan is never saved; the card offers only Keep planning. Board §2 drew
+  a wide island beside the chat; a card in the ask dock is this slice.
 - The plans island (4p5a): a third island the layout adds beside the main one on `/s/:id`, only
   when the session has a plan to show (its feature's, its own, or both): the feature plan's
   progress and its steps waiting for you / in hand (with Tick / Not yet) or the next to do, and

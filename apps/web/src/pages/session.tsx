@@ -48,6 +48,7 @@ export function SessionPage() {
     })),
   );
   const session = sessions.find((s) => s.id === sessionId);
+  const feature = useKratos((s) => (session?.featureId ? s.features.find((f) => f.id === session.featureId) : undefined));
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
   const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
   const rememberMode = useHomeChoice((s) => s.rememberMode);
@@ -142,7 +143,12 @@ export function SessionPage() {
             }}
             onRemove={(id) => send({ type: "remove_queued", id })}
           />
-          <AskDock asks={openAsks(items)} agent={agentName} onDecide={(id, decision) => send({ type: "permission_decision", id, decision })} />
+          <AskDock
+            asks={openAsks(items)}
+            agent={agentName}
+            where={{ inFeature: !!feature, featureHasPlan: feature?.hasPlan ?? false, featureTitle: feature?.title }}
+            onDecide={(id, decision, savePlanAs) => send({ type: "permission_decision", id, decision, ...(savePlanAs ? { savePlanAs } : {}) })}
+          />
           <PromptCard
             chips={
               <>

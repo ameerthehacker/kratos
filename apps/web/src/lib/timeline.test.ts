@@ -272,3 +272,17 @@ describe("buildTimeline: plan updates (4p3a)", () => {
     expect(items.map((i) => (i.type === "steps" ? `${i.by ?? "agent"}:${i.steps.length}` : i.type))).toEqual(["prompt", "agent:1", "kratos:1", "agent:1"]);
   });
 });
+
+describe("buildTimeline: a proposed plan (4p6a)", () => {
+  it("is a plan step carrying the plan, its ask the review card's", () => {
+    const plan = "# Sketchpad\n\n## Steps\n- [ ] **P1. Draw**\n";
+    const items = buildTimeline([
+      { type: "user_prompt", text: "plan it" },
+      { type: "agent_event", event: { kind: "tool_call", id: "p1", tool: "ExitPlanMode", input: { plan }, action: { type: "plan", plan } } },
+      { type: "permission_request", id: "ask1", request: { tool: "ExitPlanMode", input: { plan }, toolCallId: "p1", action: { type: "plan", plan } } },
+    ]);
+    const [step] = items[1]!.type === "steps" ? items[1]!.steps : [];
+    expect(step).toMatchObject({ kind: "plan", title: "Proposed a plan", intent: "Get your OK on its plan", plan, ask: { id: "ask1" } });
+    expect(openAsks(items)[0]?.plan).toBe(plan);
+  });
+});

@@ -59,6 +59,22 @@ export const PlanAction = z.discriminatedUnion("kind", [
 ]);
 export type PlanAction = z.infer<typeof PlanAction>;
 
+/** Where an approved plan is saved (4p6a): this session's own plan, or its feature's. */
+export const PlanSave = z.enum(["session", "feature"]);
+export type PlanSave = z.infer<typeof PlanSave>;
+
+/**
+ * What approving a proposed plan makes (D79, board §8), from where the session is, and the one
+ * switch there is: a one-off's plan is its own (or "Make it a feature"); in a feature without a
+ * plan it's the feature's (or "Just this session"); in a feature with one, it's this session's
+ * plan for its step — the feature's isn't overwritten from plan mode.
+ */
+export function approvedPlan(where: { inFeature: boolean; featureHasPlan: boolean }): { save: PlanSave; or?: PlanSave } {
+  if (!where.inFeature) return { save: "session", or: "feature" };
+  if (!where.featureHasPlan) return { save: "feature", or: "session" };
+  return { save: "session" };
+}
+
 export const Plan = z.object({
   title: z.string(),
   /** `## Intent` (a session plan may call it `## Approach`). */

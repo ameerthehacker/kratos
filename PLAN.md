@@ -1687,23 +1687,77 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             first prompt "Work on P3 of the plan: <title>"; the island's Now is then that step.
       - [ ] **4p5c. Progress on the folder** (~40) — a feature's folder shows `n/m` ticked
             (`FeatureSummary.progress`, read from its plan).
-    - [ ] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) —
-          `ExitPlanMode` shows the plan in a review island beside the chat, titled with what
-          approving makes (feature plan / session plan / plan for P2), with the switch where
-          there is one ("Make it a feature", "Just this session"); Approve and build here /
-          Approve, build later / Keep planning with your note; editable before approving, your
-          edits go back as the approved plan (`updatedInput`). "Make it a feature" also on a
-          one-off's session plan page. Claude entering plan mode by itself is a line in the chat
-          with Skip planning. Probably three slices; the first is finding out what
-          `EnterPlanMode` / `ExitPlanMode` send us.
-          Found (owner's playground test, 2026-11-09, claude 2.1.308): `ExitPlanMode` reaches us
-          as an ordinary `can_use_tool` ask (today: the generic Allow / Deny card with raw JSON)
-          with input `{plan, planFilePath}` — the plan as Markdown, and Claude Code's own copy in
-          `~/.claude/plans/<random-name>.md`. Allow → its tool result says "User has approved your
-          plan… saved to <planFilePath>" and the mode drops out of plan (to the mode it had). The
-          plan is free-form: its steps were `### Step 1: Scaffold` headings with Goal / Scope /
-          Accept bullets, not our task list, so 4p0 reads no steps from it — the format has to
-          reach Claude before it plans (4p2's instructions), or the reader learns that shape too.
+    - [ ] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) — split:
+      - [x] **4p6a. The plan review card** (~300 + tests) — a proposed plan is its own kind of ask,
+            agent-neutral: `ToolAction` gets `plan` (the plan's Markdown); the Claude adapter maps
+            `ExitPlanMode` to it. The ask dock shows it as a document card instead of raw JSON:
+            "<agent> has a plan: <title>", the plan rendered (scrolls), what approving makes —
+            a session plan (a one-off), the feature plan (a feature without one), "a plan for this
+            session" (a feature that has one) — with the switch where there is one ("Make it a
+            feature" on a one-off, "Just this session" in a feature without a plan), and Keep
+            planning (an optional note) / Approve, build later / Approve and build here (⌘↵).
+            `permission_decision` gets `savePlanAs: "session" | "feature"`: the hub writes the plan
+            there (as your change, in line, a running turn's base — it's mid-turn by nature),
+            "feature" on a one-off making a feature named from the plan's title and moving the
+            session in first; a feature that has a plan isn't overwritten (refused). Build here:
+            allow. Build later: deny with "approved and saved at <path>; stop here". Keep
+            planning: deny with your note, nothing saved. The rule of what approving makes is one
+            function in core, used by both sides. Board §2 drew the plan in a wide island beside
+            the chat; a card in the ask dock is the first slice (the plans island is narrow and
+            already beside the chat). Scope: core `agent.ts`, `plan.ts`, `protocol.ts`; adapter
+            `tool-action.ts` + test; cli `session-runtime.ts` (an open ask's request),
+            `session-hub.ts` + tests; web `lib/timeline.ts` + test, `components/conversation/
+            {ask-dock,step-group}.tsx`, new `plan-review.tsx`, `pages/session.tsx`. Accept:
+            adapter test; hub tests (each outcome: saved where, the agent's answer, nothing saved
+            on Keep planning; a one-off made a feature; a feature's plan never overwritten);
+            timeline test; live with the real `claude` in plan mode: the card, then each of build
+            here (saved, it builds), build later (saved, it stops), make it a feature; typecheck,
+            test, build.
+            **Proof:** 8 hub tests (build here: the one-off's plan, allowed with where it went;
+            build later: saved, denied with the path; Keep planning: your note, nothing saved;
+            make it a feature: named from the plan, the session in it, its plan; a feature without
+            a plan gets it, one with a plan is never replaced and the ask stays open; an empty plan
+            isn't saved, not even its feature made; the approved plan isn't the turn's edit),
+            adapter tests (`ExitPlanMode` → `plan`; an allow's word lands after the approved plan,
+            dropped elsewhere), timeline test. 305 pass, typecheck 7/7, build 5/5. Live, real
+            `claude` (Haiku) in plan mode on throwaway repos: the plan in our format; Keep planning
+            "add a --utc flag step" → a revised plan with P3, nothing saved; Approve, build later →
+            saved, "I haven't created hello.js… stopping here", no code; Make it a feature + build
+            here → feature "today.js — print today's date", its plan saved, the agent built from it
+            and marked P1 / P2 `[?]` with Proof in the feature plan, no second copy. Getting there,
+            the live runs found: the agent didn't know where its approved plan went (wrote a
+            second copy as its session plan) → the word with the allow; "write no plan file" made
+            Claude send an empty ask (its plan mode attaches its own plan file) → "write it only
+            where plan mode tells you"; an empty plan was saved → refused; the card's buttons
+            wrapped → the note on its own row; "today.js —" slugged to `todayjs--…` → one dash.
+            ~330 lines + ~170 of tests.
+            **Review round** (owner): 10 findings, 10 handled — two answers to one plan ask could
+            both save (a feature made and the plan written twice, or Keep planning told while a
+            save ran): answers to an ask being saved are ignored now; "a feature's plan is never
+            replaced" checked a cached text outside the plan's line: it reads the file in line
+            now, deciding and writing together; the card showed the tool call's plan, the server
+            saved the ask's (Claude attaches its plan file to the ask): both use the ask's; ⌘↵
+            approved an empty plan its buttons refused; the Keep planning note carried over to the
+            next plan and ⌘⌫ ignored it (one message, per ask now); the open ask's request kept
+            with it, not found by scanning the log; a dead label. Mine, from what it skipped: a
+            refused or failed approval left the card disabled for good with the error only in the
+            console — the tab now keeps the server's last refusal, and an ask refused since you
+            answered opens again, saying why. Left: a "Make it a feature" whose plan write fails
+            keeps the new feature (a disk error). 306 pass, typecheck 7/7, build 5/5; live again
+            (Haiku, plan mode): build later saved exactly the ask's plan, a second answer sent
+            during the save made no feature, no code written.
+      - [ ] **4p6b. Edit before approving** (board §2) — Read / Edit in the card; your edits go
+            back to the agent as the approved plan (`updatedInput`, built by the adapter).
+      - [ ] **4p6c. The agent switches to plan by itself** (board §1) — a line in the chat with
+            its reason and Skip planning.
+            Found (owner's playground test, 2026-11-09, claude 2.1.308): `ExitPlanMode` reaches us
+            as an ordinary `can_use_tool` ask (today: the generic Allow / Deny card with raw JSON)
+            with input `{plan, planFilePath}` — the plan as Markdown, and Claude Code's own copy in
+            `~/.claude/plans/<random-name>.md`. Allow → its tool result says "User has approved your
+            plan… saved to <planFilePath>" and the mode drops out of plan (to the mode it had). The
+            plan is free-form: its steps were `### Step 1: Scaffold` headings with Goal / Scope /
+            Accept bullets, not our task list, so 4p0 reads no steps from it — the format has to
+            reach Claude before it plans (4p2's instructions), or the reader learns that shape too.
     - [ ] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
           the step's Scope are flagged with Show diff / Add to scope (Add edits the plan). The
           first piece of step 5's scope fence.

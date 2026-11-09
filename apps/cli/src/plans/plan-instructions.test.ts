@@ -23,6 +23,8 @@ describe("planInstructions (4p2, D79)", () => {
     expect(text).toContain("Never write [x] on it yourself.");
     expect(text).toContain('A step the owner sent back is [~] again with a "Not yet:" line'); // 4p4a
     expect(text).toContain('The owner\'s questions to you (like "Why D2 (…)?")');
+    expect(text).toContain("In plan mode, write it only where plan mode itself tells you to"); // 4p6a: the CLI attaches that to its ask
+    expect(text).toContain("don't write the plan files above while planning");
   });
 
   it("in a feature: both plans, and new steps and decisions go to the feature's", () => {

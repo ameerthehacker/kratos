@@ -2136,3 +2136,118 @@ describe("SessionHub: you edit the plan (4p4b, D79)", () => {
     expect(a.seen.some((m) => m.type === "plan_updated")).toBe(false); // the turn changed nothing of its own
   });
 });
+
+describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
+  const PLAN = "# Freehand sketchpad\n\n## Steps\n- [ ] **P1. Draw with the pen**\n";
+  const proposal = { tool: "ExitPlanMode", input: { plan: PLAN }, action: { type: "plan" as const, plan: PLAN } };
+  /** A session whose agent, mid-turn, proposes PLAN and waits for the answer. */
+  async function proposing(featureTitle?: string, featurePlan?: string) {
+    const ctx = setup();
+    const a = ctx.tab();
+    if (featureTitle) {
+      a.receive({ type: "create_feature", title: featureTitle });
+      a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+      if (featurePlan) ctx.plans.edit(`features/${featureTitle.toLowerCase()}`, featurePlan);
+    }
+    a.receive({ type: "prompt", text: "plan a sketchpad" });
+    const asked = ctx.agents[0]!.ask(proposal);
+    await tick();
+    return { ...ctx, a, asked, askId: a.lastAskId() };
+  }
+
+  it("build here: saved as the one-off's own plan, and allowed with word of where", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "session" });
+    expect(await asked.decision).toEqual({
+      decision: "allow",
+      message: `Kratos saved this approved plan as this session's plan, at .kratos/sessions/${a.viewing}/plan.md. Work from that file: mark its steps there as the plan rules say, and don't write the plan again anywhere else.`,
+    });
+    expect(plans.text(`sessions/${a.viewing}`)).toBe(PLAN);
+  });
+
+  it("build later: saved, and the agent told where and to stop", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "deny", message: "later" }, savePlanAs: "session" });
+    expect(await asked.decision).toEqual({
+      decision: "deny",
+      message: `The owner approved your plan and Kratos saved it to .kratos/sessions/${a.viewing}/plan.md. Don't start building now: stop here, the owner will start the work later.`,
+    });
+    expect(plans.text(`sessions/${a.viewing}`)).toBe(PLAN);
+  });
+
+  it("keep planning: your note to the agent, nothing saved", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "deny", message: "add an eraser step" } });
+    expect(await asked.decision).toEqual({ decision: "deny", message: "add an eraser step" });
+    expect(plans.text(`sessions/${a.viewing}`)).toBeUndefined();
+  });
+
+  it("make it a feature: a one-off becomes a feature named from the plan, holding it", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "feature" });
+    expect(await asked.decision).toMatchObject({
+      decision: "allow",
+      message: expect.stringContaining("as the feature plan of “Freehand sketchpad”, at .kratos/features/freehand-sketchpad/plan.md. This session is now part of the feature “Freehand sketchpad”."),
+    });
+    expect(a.features.map((f) => f.title)).toEqual(["Freehand sketchpad"]);
+    expect(a.list.find((s) => s.id === a.viewing)!.featureId).toBe(a.features[0]!.id);
+    expect(plans.text("features/freehand-sketchpad")).toBe(PLAN);
+    expect(plans.text(`sessions/${a.viewing}`)).toBeUndefined();
+  });
+
+  it("a feature without a plan gets this one; a feature's plan is never replaced from plan mode", async () => {
+    const first = await proposing("Sketch");
+    first.a.receive({ type: "permission_decision", id: first.askId, decision: { decision: "allow" }, savePlanAs: "feature" });
+    await first.asked.decision;
+    expect(first.plans.text("features/sketch")).toBe(PLAN);
+
+    const second = await proposing("Sketch", "# Ours\n");
+    let answered = false;
+    void second.asked.decision.then(() => (answered = true));
+    second.a.receive({ type: "permission_decision", id: second.askId, decision: { decision: "allow" }, savePlanAs: "feature" });
+    await tick();
+    await tick();
+    expect(second.a.seen.at(-1)).toEqual({ type: "error", message: "“Sketch” already has a plan, and plan mode doesn't replace it. Save this one as the session's plan." });
+    expect(answered).toBe(false); // the ask stays open: choose again
+    expect(second.plans.text("features/sketch")).toBe("# Ours\n");
+    second.a.receive({ type: "permission_decision", id: second.askId, decision: { decision: "allow" }, savePlanAs: "session" });
+    expect(await second.asked.decision).toMatchObject({ decision: "allow" });
+    expect(second.plans.text(`sessions/${second.a.viewing}`)).toBe(PLAN);
+  });
+
+  it("a plan presented without its text isn't saved: the ask stays open for Keep planning", async () => {
+    const ctx = setup();
+    const a = ctx.tab();
+    a.receive({ type: "prompt", text: "plan it" });
+    const asked = ctx.agents[0]!.ask({ tool: "ExitPlanMode", input: {}, action: { type: "plan" } });
+    await tick();
+    let answered = false;
+    void asked.decision.then(() => (answered = true));
+    a.receive({ type: "permission_decision", id: a.lastAskId(), decision: { decision: "allow" }, savePlanAs: "feature" });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "The plan came without its text, so there's nothing to save. Keep planning and ask for the whole plan." });
+    expect(answered).toBe(false);
+    expect(a.features).toEqual([]); // not even the feature it would have gone to
+  });
+
+  it("while an approval saves, other answers to it are ignored: one save, one feature, its answer", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "feature" });
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "feature" }); // another tab
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "deny", message: "add an eraser step" } });
+    expect(await asked.decision).toMatchObject({ decision: "allow" });
+    expect(a.features.map((f) => f.title)).toEqual(["Freehand sketchpad"]);
+    expect(plans.text("features/freehand-sketchpad")).toBe(PLAN);
+  });
+
+  it("the approved plan is yours: the turn's end doesn't count it as the agent's edit", async () => {
+    const { a, agents, asked, askId, plans } = await proposing();
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "session" });
+    await asked.decision;
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(a.seen.some((m) => m.type === "plan_updated")).toBe(false);
+    expect(plans.text(`sessions/${a.viewing}`)).toBe(PLAN);
+  });
+});

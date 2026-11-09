@@ -44,6 +44,10 @@ describe("toEvents: assistant messages", () => {
       type: "run", command: "pnpm test", description: "Run tests",
     });
     expect(action("Grep", { pattern: "TODO" })).toEqual({ type: "search", target: "TODO" });
+    // Plan mode's end, as the real CLI sends it (4p6a): its own copy's path isn't Kratos's business.
+    expect(action("ExitPlanMode", { plan: "# Plan\n\n## Steps\n", planFilePath: "/Users/x/.claude/plans/a.md" })).toEqual({
+      type: "plan", plan: "# Plan\n\n## Steps\n",
+    });
     expect(action("SomethingNew", {})).toEqual({ type: "other" });
   });
 

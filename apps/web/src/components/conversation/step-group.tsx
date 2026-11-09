@@ -1,4 +1,4 @@
-import { Ellipsis, Eye, Globe, GitFork, Hand, MessageCircleQuestion, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
+import { Ellipsis, Eye, GitFork, Globe, Hand, ListTodo, MessageCircleQuestion, Pencil, Search, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
 import { ToolImages } from "@/components/attachments";
 import { Preview } from "@/components/conversation/preview";
 import type { Chip, Step } from "@/lib/timeline";
@@ -12,6 +12,7 @@ const LOOK: Record<Step["kind"], { icon: LucideIcon; tint: string }> = {
   search: { icon: Search, tint: "text-muted-foreground" },
   web: { icon: Globe, tint: "text-run" },
   task: { icon: GitFork, tint: "text-primary" },
+  plan: { icon: ListTodo, tint: "text-run" },
   think: { icon: Ellipsis, tint: "text-faint" },
   question: { icon: MessageCircleQuestion, tint: "text-muted-foreground" },
   other: { icon: Wrench, tint: "text-muted-foreground" },

@@ -15,7 +15,7 @@ import { z } from "zod";
  * Claude calls them `Read` and `Bash`.
  */
 export const ToolAction = z.object({
-  type: z.enum(["read", "edit", "run", "search", "web", "task", "other"]),
+  type: z.enum(["read", "edit", "run", "search", "web", "task", "plan", "other"]),
   /** What it acts on: a file path, search pattern, URL or query. */
   target: z.string().optional(),
   /** For `run`: the shell command. */
@@ -30,6 +30,8 @@ export const ToolAction = z.object({
    * file). Each side is capped; `truncated` says the preview is partial (the call itself isn't).
    */
   edits: z.array(z.object({ before: z.string(), after: z.string(), truncated: z.boolean().optional() })).optional(),
+  /** For `plan`: the plan the agent proposes for your approval, as Markdown (4p6a). */
+  plan: z.string().optional(),
 });
 export type ToolAction = z.infer<typeof ToolAction>;
 
@@ -97,8 +99,10 @@ export const PermissionRequest = z.object({
 export type PermissionRequest = z.infer<typeof PermissionRequest>;
 
 export const PermissionDecision = z.discriminatedUnion("decision", [
-  /** Run it. `updatedInput` lets the owner edit e.g. a command before it runs. */
-  z.object({ decision: z.literal("allow"), updatedInput: z.unknown().optional() }),
+  /** Run it. `updatedInput` lets the owner edit e.g. a command before it runs. `message`: a word
+   * to the agent with the go-ahead, where its agent can carry one (4p6a: where Kratos saved the
+   * plan it approved); others drop it. */
+  z.object({ decision: z.literal("allow"), updatedInput: z.unknown().optional(), message: z.string().optional() }),
   /** Don't run it. `message` is shown to the agent so it can change course. */
   z.object({ decision: z.literal("deny"), message: z.string() }),
 ]);

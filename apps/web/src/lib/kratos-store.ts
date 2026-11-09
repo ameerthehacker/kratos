@@ -31,6 +31,9 @@ type KratosState = {
   ready: boolean;
   /** Text of queued prompts that Stop dropped, for this tab's composer (D56); the composer takes it. */
   returned?: string;
+  /** The server's last refusal to this tab, and when (4p6a: an answer to an ask it couldn't take
+   * — the ask stays open and says why). */
+  lastError?: { message: string; at: number };
   /** Kratos's own update status (3u5); shown by the UI in 3u5d. */
   update?: UpdateStatus;
   /** The owner's settings (3w), as Kratos keeps them; until the server says, none. */
@@ -120,7 +123,8 @@ export const useKratos = create<KratosState>((set, get) => ({
       case "viewed": // after `changes`, and whenever any tab marks a file (3v3)
         return set((state) => ({ viewed: { ...state.viewed, [message.sessionId]: message.files } }));
       case "error":
-        return clientLog("warn", `server error: ${message.message}`);
+        clientLog("warn", `server error: ${message.message}`);
+        return set({ lastError: { message: message.message, at: performance.now() } });
       default:
         if (!get().ready) return void replay.push(message); // part of a replay: in at `session_ready`
         return set((state) => ({ log: [...state.log, message] }));

@@ -274,7 +274,8 @@ function startSession(
       { tool, input, reason: request.decision_reason, toolCallId: request.tool_use_id, action: toolAction(tool, input) },
       { signal },
     );
-    return d.decision === "allow" ? { behavior: "allow", updatedInput: d.updatedInput ?? input } : { behavior: "deny", message: d.message };
+    if (d.decision === "deny") return { behavior: "deny", message: d.message };
+    return { behavior: "allow", updatedInput: withMessage(tool, (d.updatedInput ?? input) as Record<string, unknown>, d.message) };
   }
 
   /**
@@ -415,4 +416,14 @@ function startSession(
       await proc.stop();
     },
   };
+}
+
+/**
+ * An allow's word to the agent (4p6a), where Claude can hear one: an approved plan's result
+ * quotes the plan back to the agent ("## Approved Plan: …"), so the word goes after it there.
+ * Claude's allow carries no message of its own; other tools drop it.
+ */
+function withMessage(tool: string, input: Record<string, unknown>, message: string | undefined): Record<string, unknown> {
+  if (!message || tool !== "ExitPlanMode" || typeof input.plan !== "string") return input;
+  return { ...input, plan: `${input.plan.replace(/\s+$/, "")}\n\n---\n${message}` };
 }

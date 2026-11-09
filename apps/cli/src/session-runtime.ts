@@ -53,7 +53,8 @@ type Turn =
  * status/title change via `onChange`; the SessionHub routes them.
  */
 export class SessionRuntime {
-  private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
+  /** Open asks: what each asks, and how to answer it. */
+  private readonly pending = new Map<string, { request: PermissionRequest; resolve: (decision: PermissionDecision) => void }>();
   /** Prompts sent while the agent works that it hasn't read yet (D56), in the order sent: their
    * files (to send again) and the id the agent knows them by (a new one after a re-queue), and the
    * notes that went with them (sent again with them; kept for the next prompt if they're never read). */
@@ -375,6 +376,12 @@ export class SessionRuntime {
     );
   }
 
+  /** One of this session's open asks: what it asks (4p6a: a proposed plan is approved by saving it
+   * first); undefined when it isn't (or no longer) ours. */
+  openAsk(askId: string): PermissionRequest | undefined {
+    return this.pending.get(askId)?.request;
+  }
+
   /** Answer one of this session's asks. Returns false if the ask isn't (or no longer) ours. */
   decide(askId: string, decision: PermissionDecision): boolean {
     return this.settle(askId, decision.decision === "allow" ? "allowed" : "denied", decision);
@@ -663,7 +670,7 @@ export class SessionRuntime {
   /** Called by the adapter before a tool runs: publish the ask, wait for a tab (or a withdrawal). */
   private ask(request: PermissionRequest, signal: AbortSignal): Promise<PermissionDecision> {
     const askId = randomUUID();
-    const decision = new Promise<PermissionDecision>((resolve) => this.pending.set(askId, resolve));
+    const decision = new Promise<PermissionDecision>((resolve) => this.pending.set(askId, { request, resolve }));
     this.logger.debug({ ask: askId, tool: request.tool }, "permission asked");
     this.publish({ type: "permission_request", id: askId, request });
     this.deps.onChange();
@@ -704,7 +711,7 @@ export class SessionRuntime {
 
   /** Resolve an ask once; unknown or already-settled ids are ignored (first decision wins). */
   private settle(askId: string, outcome: Outcome, decision: PermissionDecision, options?: { activity: false }): boolean {
-    const resolve = this.pending.get(askId);
+    const resolve = this.pending.get(askId)?.resolve;
     if (!resolve) return false;
     this.pending.delete(askId);
     this.logger.debug({ ask: askId, outcome }, "permission settled");

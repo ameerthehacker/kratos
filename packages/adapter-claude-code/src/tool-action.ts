@@ -45,6 +45,8 @@ export function toolAction(tool: string, input: unknown): ToolAction {
     case "Task":
     case "Agent":
       return { type: "task", description: str("description") };
+    case "ExitPlanMode": // plan mode's end: the plan, for approval (4p6a)
+      return { type: "plan", plan: str("plan") };
     default:
       return { type: "other" };
   }

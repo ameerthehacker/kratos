@@ -9,6 +9,7 @@ import {
   type Harness,
   type PlanAction,
   type PlanOwner,
+  type PlanSave,
   type ServerMessage,
 } from "@kratos/core";
 import { slug } from "github-slugger";
@@ -43,6 +44,29 @@ interface LiveTurn {
   ending: boolean;
 }
 
+/** Where an approved plan went (4p6a). `moved`: the session became part of the feature for it. */
+interface SavedPlan {
+  path: string;
+  as: PlanSave;
+  feature?: string;
+  moved: boolean;
+}
+
+/** The agent's word with "Approve and build here" (4p6a): Kratos saved the plan, where, and it's the
+ * one to work from — its instructions may predate it (a one-off made a feature just now). */
+const buildHere = ({ path, as, feature, moved }: SavedPlan) =>
+  [
+    `Kratos saved this approved plan as ${as === "feature" ? `the feature plan of “${feature}”` : "this session's plan"}, at ${path}.`,
+    moved ? `This session is now part of the feature “${feature}”.` : "",
+    "Work from that file: mark its steps there as the plan rules say, and don't write the plan again anywhere else.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+/** The agent's answer to "Approve, build later" (4p6a): saved, but not now. */
+const buildLater = (path: string) =>
+  `The owner approved your plan and Kratos saved it to ${path}. Don't start building now: stop here, the owner will start the work later.`;
+
 /** A plan's file, relative to the project, from its folder under `.kratos/`. */
 const planFile = (folder: string) => `.kratos/${folder}/plan.md`;
 
@@ -73,6 +97,9 @@ export class SessionHub {
   /** Changes to each plan, one after another (4p4a: yours; 4p3: a turn's end): each reads what the
    * one before wrote. */
   private readonly planActions = new Map<string, Promise<void>>();
+  /** Proposed plans being saved for their approval (4p6a): no other answer to them meanwhile —
+   * the first decision wins, and a second one mustn't save it again or answer under the save. */
+  private readonly approving = new Set<string>();
 
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
@@ -299,10 +326,28 @@ export class SessionHub {
         if (problem) send({ type: "error", message: `Couldn't send your answer: ${problem}` });
         return;
       }
-      case "permission_decision":
+      case "permission_decision": {
         // Ask ids are unique across sessions: let the owner take it (first decision wins).
-        for (const runtime of this.runtimes.values()) if (runtime.decide(message.id, message.decision)) return;
+        if (this.approving.has(message.id)) return;
+        const runtime = [...this.runtimes.values()].find((r) => r.openAsk(message.id));
+        const request = runtime?.openAsk(message.id);
+        if (!runtime || !request) return;
+        if (!message.savePlanAs || request.action?.type !== "plan") return void runtime.decide(message.id, message.decision);
+        // A proposed plan, approved (4p6a): saved first, then the agent's answer says so.
+        const build = message.decision.decision === "allow";
+        this.approving.add(message.id);
+        this.approvePlan(send, runtime.id, request.action.plan ?? "", message.savePlanAs)
+          .then((saved) => {
+            if (!saved) return; // refused: the ask stays open
+            runtime.decide(message.id, build ? { decision: "allow", message: buildHere(saved) } : { decision: "deny", message: buildLater(saved.path) });
+          })
+          .catch((err) => {
+            this.log.warn({ err, session: runtime.id }, "could not save the approved plan");
+            send({ type: "error", message: `Could not save the plan: ${err instanceof Error ? err.message : err}` });
+          })
+          .finally(() => this.approving.delete(message.id));
         return;
+      }
       case "get_changes":
         if (!this.inProject(send, message.sessionId)) return;
         void this.changes(message.sessionId)
@@ -544,9 +589,12 @@ export class SessionHub {
   /** Runs changes to one plan one after another: each reads what the one before wrote. Two quick
    * clicks both read the file before either wrote it, and the second undid the first; a turn's end
    * and your change likewise mustn't write over each other. */
-  private inLine(folder: string, change: () => Promise<void>): Promise<void> {
+  private inLine<T>(folder: string, change: () => Promise<T>): Promise<T> {
     const run = (this.planActions.get(folder) ?? Promise.resolve()).then(change);
-    const settled = run.catch(() => {});
+    const settled = run.then(
+      () => {},
+      () => {},
+    );
     this.planActions.set(folder, settled);
     void settled.then(() => this.planActions.get(folder) === settled && this.planActions.delete(folder));
     return run;
@@ -590,14 +638,58 @@ export class SessionHub {
     if (text === undefined) return send({ type: "error", message: "This plan hasn't been started" });
     if (text !== base) return send({ type: "error", message: "The plan changed while you were editing; nothing was saved" });
     if (markdown === text) return;
+    await this.writeYours(folder, markdown);
+    this.log.info({ owner }, "you edited the plan");
+  }
+
+  /** A whole plan text of yours (an edit, an approved plan): written, and the base of any turn on
+   * that plan from now on — what you save is yours. Call it in line (`inLine`). */
+  private async writeYours(folder: string, markdown: string): Promise<void> {
     for (const turn of this.turnsOn(folder)) turn.base = turn.shown = markdown;
     await this.plans.write(folder, markdown);
-    this.log.info({ owner }, "you edited the plan");
+  }
+
+  /**
+   * A plan the agent proposed, approved (4p6a): saved as this session's plan or its feature's
+   * (`approvedPlan` says which by default). "feature" on a one-off makes the feature first, named
+   * from the plan's title, and moves the session in; a feature that has a plan keeps it (refused:
+   * it isn't overwritten from plan mode). Mid-turn by nature (the agent waits on it): yours, so
+   * the turn's end doesn't take it for the agent's edit. Gives the plan's path, or undefined when
+   * refused (the tab is told).
+   */
+  private async approvePlan(send: Send, sessionId: string, markdown: string, as: PlanSave): Promise<SavedPlan | undefined> {
+    // An agent can present a plan with no text (it wrote it somewhere instead): nothing to save,
+    // and an empty file would read as a plan with nothing in it.
+    if (!markdown.trim()) {
+      send({ type: "error", message: "The plan came without its text, so there's nothing to save. Keep planning and ask for the whole plan." });
+      return undefined;
+    }
+    const session = this.store.get(sessionId)!;
+    const moved = as === "feature" && !session.featureId;
+    if (moved) {
+      const title = (parsePlan(markdown, "feature").title || session.title || "New feature").replace(/\s+/g, " ").trim().slice(0, 80);
+      this.moveSession(sessionId, this.newFeature(title), "owner");
+    }
+    const { session: own, feature } = this.planFolders(sessionId);
+    const folder = as === "feature" ? feature!.folder : own;
+    // Checked in line, on disk: the agent (or an edit queued before this) may have just written it.
+    const saved = await this.inLine(folder, async () => {
+      if (as === "feature" && (await this.plans.refresh(folder)) !== undefined) return false;
+      await this.writeYours(folder, markdown);
+      return true;
+    });
+    if (!saved) {
+      send({ type: "error", message: `“${feature!.title}” already has a plan, and plan mode doesn't replace it. Save this one as the session's plan.` });
+      return undefined;
+    }
+    this.log.info({ session: sessionId, as, folder }, "approved plan saved");
+    return { path: planFile(folder), as, ...(as === "feature" ? { feature: feature!.title } : {}), moved };
   }
 
   /** A folder name for a feature's plan: its title as a slug, `-2`, `-3`… when that's taken. */
   private freePlanDir(title: string): string {
-    const base = slug(title).slice(0, 60).replace(/-+$/, "") || "feature";
+    // "today.js — print the date" slugs to "todayjs--print-the-date": one dash is enough.
+    const base = slug(title).replace(/-{2,}/g, "-").slice(0, 60).replace(/^-+|-+$/g, "") || "feature";
     for (let n = 1; ; n++) {
       const name = n === 1 ? base : `${base}-${n}`;
       if (!this.store.featureByPlanDir(this.cwd, name) && !this.plans.taken(`features/${name}`)) return name;

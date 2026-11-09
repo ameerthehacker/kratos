@@ -1,43 +1,82 @@
 import { useState } from "react";
 import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
-import type { PermissionDecision } from "@kratos/core";
+import { approvedPlan, type PermissionDecision, type PlanSave } from "@kratos/core";
+import { keepPlanning, PlanReview, type PlanWhere } from "@/components/conversation/plan-review";
 import { Preview } from "@/components/conversation/preview";
 import { Shortcut } from "@/components/shortcut";
+import { useKratos } from "@/lib/kratos-store";
 import type { Step } from "@/lib/timeline";
 
-/** Answer a permission ask (the hub routes it to the session that asked; first answer wins). */
-export type Decide = (askId: string, decision: PermissionDecision) => void;
+/** Answer a permission ask (the hub routes it to the session that asked; first answer wins).
+ * `savePlanAs`: a proposed plan, approved, saved there (4p6a). */
+export type Decide = (askId: string, decision: PermissionDecision, savePlanAs?: PlanSave) => void;
 
 /**
  * The open permission ask, docked above the composer (owner's option C, 3c3): "Claude Code wants
  * to write notes.txt", a readable preview of exactly what will happen, Deny / Allow. With several
  * open asks the oldest comes first. The step in the chat just says "Waiting for you".
- * ⌘↵ allows and ⌘⌫ denies (3k3), their keys inside the buttons (the design).
+ * ⌘↵ allows and ⌘⌫ denies (3k3), their keys inside the buttons (the design). A proposed plan is
+ * its own card (4p6a): ⌘↵ approves it to build here, ⌘⌫ keeps planning.
  */
-export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide }) {
-  const [sent, setSent] = useState<string | null>(null); // until the server settles it
+export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; where: PlanWhere }) {
+  const [sent, setSent] = useState<{ askId: string; at: number } | null>(null); // until the server settles it
   const step = props.asks[0];
   const askId = step?.ask?.id;
-  const busy = sent === askId;
-  const decide = (decision: PermissionDecision) => {
+  // Refused since you answered (a plan it couldn't save, 4p6a): the ask is open again, saying why.
+  const lastError = useKratos((s) => s.lastError);
+  const refused = sent && sent.askId === askId && lastError && lastError.at > sent.at ? lastError.message : undefined;
+  const busy = sent?.askId === askId && !refused;
+  const decide = (decision: PermissionDecision, savePlanAs?: PlanSave) => {
     if (!askId) return;
-    setSent(askId);
-    props.onDecide(askId, decision);
+    setSent({ askId, at: performance.now() });
+    props.onDecide(askId, decision, savePlanAs);
   };
+  // A plan: where approving saves it, by default or as you switched it (this ask only).
+  const isPlan = step?.kind === "plan";
+  const goes = approvedPlan(props.where);
+  const [switched, setSwitched] = useState<string | null>(null);
+  const saveAs = switched === askId && goes.or ? goes.or : goes.save;
+  const other = saveAs === goes.save ? goes.or : goes.save;
+  // Your note for Keep planning, for this ask only (a revised plan starts without the last one's).
+  const [note, setNote] = useState({ askId: "", text: "" });
+  const planNote = note.askId === askId ? note.text : "";
+  // A plan presented without its text: nothing to approve, only Keep planning.
+  const emptyPlan = isPlan && !step?.plan?.trim();
   const appHotkeys = useAppHotkeys();
   // ⌘↵ in the prompt with text to send is the prompt's "send now": it handles it first.
-  useHotkey(appHotkeys["ask.allow"], () => decide({ decision: "allow" }), { enabled: !!askId && !busy, ignoreDefaultPrevented: true });
+  useHotkey(appHotkeys["ask.allow"], () => decide({ decision: "allow" }, isPlan ? saveAs : undefined), {
+    enabled: !!askId && !busy && !emptyPlan,
+    ignoreDefaultPrevented: true,
+  });
   // ⌘⌫ while typing deletes the line, as always; we only take it when there's nothing to delete.
   useHotkey(
     appHotkeys["ask.deny"],
     (event) => {
       if (typing(event.target)) return;
       event.preventDefault();
-      decide(DENY);
+      decide(isPlan ? keepPlanning(planNote, emptyPlan) : DENY);
     },
     { enabled: !!askId && !busy, preventDefault: false },
   );
   if (!step?.ask) return null;
+  if (isPlan) {
+    return (
+      <PlanReview
+        step={step}
+        agent={props.agent}
+        where={props.where}
+        busy={busy}
+        refused={refused}
+        empty={emptyPlan}
+        note={planNote}
+        onNote={(text) => setNote({ askId: askId ?? "", text })}
+        saveAs={saveAs}
+        other={other}
+        onSwitch={() => setSwitched(switched === askId ? null : (askId ?? null))}
+        decide={decide}
+      />
+    );
+  }
 
   return (
     <div role="group" aria-label={`${props.agent} needs your OK`} className="mb-2 flex flex-col gap-2 rounded-2xl bg-card py-2.5 pr-2.5 pl-3.5 ring-1 ring-border">

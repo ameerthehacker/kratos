@@ -638,6 +638,13 @@ describe("Claude Code adapter: host tools (D77)", () => {
     });
   });
 
+  it("an allow's word to the agent goes after an approved plan, where Claude quotes it back; elsewhere it's dropped (4p6a)", async () => {
+    const plan = answerSeenByCli(await runTurn("planask", async () => ({ decision: "allow", message: "Saved at .kratos/x/plan.md." })));
+    expect(plan.response).toEqual({ behavior: "allow", updatedInput: { plan: "1. do it\n\n---\nSaved at .kratos/x/plan.md.", planFilePath: "/x/plan.md" } });
+    const write = answerSeenByCli(await runTurn("ask", async () => ({ decision: "allow", message: "ignored" })));
+    expect(write.response).toEqual({ behavior: "allow", updatedInput: WRITE_INPUT });
+  });
+
   it("declares nothing without tools", async () => {
     const events = await runTurn("args", async () => ({ decision: "allow" }));
     const args = events.flatMap((e) => (e.kind === "tool_result" ? [e.output] : []))[0]!;

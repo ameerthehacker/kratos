@@ -28,6 +28,8 @@ export type Step = {
   finished?: boolean;
   /** Cut short by Send now (D56): shown as "Stopped running the tests", not as a failure. */
   stopped?: boolean;
+  /** For a proposed plan (4p6a): the plan's Markdown, for the review card. */
+  plan?: string;
   /** Images the tool returned, as the agent saw them (3z): a screenshot it read. */
   images?: AttachmentRef[];
 };
@@ -88,6 +90,9 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
         addStep(step);
       }
       step.ask = { id: message.id, reason: message.request.reason };
+      // A proposed plan (4p6a): the ask's plan is what approving saves (the CLI may attach it to
+      // the ask only), so the card shows that one.
+      if (request.action?.type === "plan") step.plan = request.action.plan ?? step.plan ?? "";
       asks.set(message.id, step);
     } else if (message.type === "permission_resolved") {
       const step = asks.get(message.id);
@@ -260,6 +265,11 @@ function describe(call: ToolCall, cwd: string): Step {
       intent = `Hand off: ${action.description ?? "a sub-task"}`;
       doing = `Working on ${action.description ?? "a sub-task"}`;
       break;
+    case "plan": // plan mode's end (4p6a): the ask is the review card
+      title = "Proposed a plan";
+      intent = "Get your OK on its plan";
+      doing = "Planning";
+      break;
     default:
       // Kratos's own tools say what they do in words (4m3): "Move this session into …".
       title = action.description ?? `Used ${call.tool}`;
@@ -268,7 +278,8 @@ function describe(call: ToolCall, cwd: string): Step {
   }
   const raw = action.type === "run" && action.command ? { command: action.command } : { call: `${call.tool} ${compact(call.input)}` };
   const edit = action.type === "edit" && action.edits ? { path: path ?? "", changes: action.edits } : undefined;
-  return { id: call.id, kind: action.type, title, intent, doing, chips, raw, edit, tool: call.tool };
+  const plan = action.type === "plan" ? { plan: action.plan ?? "" } : {};
+  return { id: call.id, kind: action.type, title, intent, doing, chips, raw, edit, tool: call.tool, ...plan };
 }
 
 function addResult(step: Step, output: string, isError: boolean): void {

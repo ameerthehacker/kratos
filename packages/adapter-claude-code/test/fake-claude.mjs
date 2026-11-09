@@ -191,6 +191,13 @@ const turns = {
     report(mode);
     finish();
   },
+  // A plan for approval (4p6a); report exactly what the adapter answered.
+  async planask() {
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "ExitPlanMode", input: { plan: "1. do it\n" } }] }, parent_tool_use_id: null });
+    const response = await ask({ subtype: "can_use_tool", tool_name: "ExitPlanMode", input: { plan: "1. do it\n", planFilePath: "/x/plan.md" }, tool_use_id: "t1" });
+    report(JSON.stringify(response), response.response?.behavior === "deny");
+    finish();
+  },
   // Ask the owner questions like the real CLI (AskUserQuestion, D54); report what came back.
   async question() {
     const input = {

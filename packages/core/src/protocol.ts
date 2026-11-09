@@ -11,7 +11,7 @@ import {
   QuestionReply,
   QuestionRequest,
 } from "./agent.js";
-import { Plan, PlanAction, PlanKind } from "./plan.js";
+import { Plan, PlanAction, PlanKind, PlanSave } from "./plan.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -152,7 +152,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
     newFeatureTitle: Title.optional(),
   }),
   /** Answer to a `permission_request`; the first answer from any tab wins (D32). */
-  z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision }),
+  /** `savePlanAs` (4p6a), on a proposed plan only: approve it — save it there, allowed (build here)
+   * or denied (build later: Kratos says where it was saved); without it a deny is Keep planning. */
+  z.object({ type: z.literal("permission_decision"), id: z.string(), decision: PermissionDecision, savePlanAs: PlanSave.optional() }),
   /** Answer to a `question_request`; the first valid answer from any tab wins (D54). */
   z.object({ type: z.literal("question_answer"), id: z.string(), reply: QuestionReply }),
   /** Open the project folder in one of the editors listed in `pong` (3d3). */

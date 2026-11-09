@@ -148,6 +148,10 @@ describe("parsePlan (D79)", () => {
     expect(template).toBe("# CSV export\n\n## Intent\n\n## Steps\n\n## Decisions\n\n## Open questions\n");
     expect(parsePlan(template, "feature")).toMatchObject({ title: "CSV export", steps: [], notes: [] });
     expect(planTemplate("Fix it", "session")).toBe("# Fix it\n\n## Approach\n\n## Steps\n");
+    // A session's title is its whole first prompt until it's named: one line, a title's length.
+    const prompt = `Fix the export\n\n## Steps\n- ${"long ".repeat(30)}`;
+    expect(planTemplate(prompt, "session").split("\n")[0]).toBe(`# ${prompt.replace(/\s+/g, " ").slice(0, 80).trim()}`);
+    expect(parsePlan(planTemplate(prompt, "session"), "session").steps).toEqual([]);
   });
 });
 
@@ -256,6 +260,9 @@ describe("your side from the plan page (4p4a)", () => {
     expect(parsePlan(sent, "feature").steps[1]).toMatchObject({ id: "P2", mark: "doing", notYet: "the date filter is ignored" });
     const again = sendBack(sent, "P2", "still ignored")!;
     expect(again).toBe(sent.replace("Not yet: the date filter is ignored", "Not yet: still ignored"));
+    // A Not yet that runs over lines (as someone wrapped it) is replaced whole, up to the next field.
+    const wrapped = sent.replace("Not yet: the date filter is ignored", "Not yet: the date\n  filter is ignored\n  Proof: ran it");
+    expect(parsePlan(sendBack(wrapped, "P2", "still ignored")!, "feature").steps[1]).toMatchObject({ notYet: "still ignored", proof: "ran it" });
     expect(sendBack(FEATURE, "P9", "x")).toBeUndefined();
   });
 

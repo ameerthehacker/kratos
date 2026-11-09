@@ -186,7 +186,9 @@ function planStep(message: Extract<LogMessage, { type: "plan_updated" }>, n: num
   const [before, after] = [message.before ?? "", message.after ?? ""];
   let added = 0;
   let removed = 0;
-  for (const part of diffLines(before, after)) {
+  // Counted as the preview draws it (diff-rows) and the server counts (D65): a missing final
+  // newline isn't a changed line.
+  for (const part of diffLines(before, after, { ignoreNewlineAtEof: true })) {
     if (part.added) added += part.count ?? 0;
     if (part.removed) removed += part.count ?? 0;
   }

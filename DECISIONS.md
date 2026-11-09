@@ -240,9 +240,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   Not yet → `[~]` with a `Not yet:` line (a new step field); Ask why → an open question "Why D2
   (<title>)? <note>" for the agent to answer (its answer stays a suggestion you can take). Your
   actions on one plan run one after another (two quick clicks both read the file before either
-  wrote, and the second undid the first — found by a test); one made during an agent's turn on
-  that plan is applied to the turn's starting text too, so its end doesn't take your tick for
-  the agent's. Alternatives: the note as a prompt to a session (Kratos no longer knows which
+  wrote, and the second undid the first — found by a test), and in line with a turn's end on it
+  (else either could write over the other). One made during an agent's turn on that plan first
+  holds the agent's edit so far (as the turn's end would), then goes on top, and that is what the
+  turn's end holds the rest against: so its end doesn't take your tick for the agent's, even on a
+  step it added or a decision it reworded this turn (applying yours to the turn's starting text
+  couldn't: they weren't in it). A turn that starts while the last one's edit is still unheld (a
+  queued prompt's, at once) has that edit held in its starting text too. Alternatives: the note
+  as a prompt to a session (Kratos no longer knows which
   claimed a step; a guess at the feature's latest is wrong as often as not).
 - Editing (4p4b, 4p4c): the plan's raw Markdown in CodeMirror 6 — `@uiw/react-codemirror` (the
   common React wrapper) with `@codemirror/lang-markdown` in GFM mode (so `[ ]` / `[x]` are task

@@ -51,10 +51,12 @@ export function parsePlan(markdown: string, kind: PlanKind): Plan {
   return locate(markdown, kind).plan;
 }
 
-/** A new plan's file: the sections to fill. */
+/** A new plan's file: the sections to fill. The title on one line (a session's is its whole first
+ * prompt until the agent names it), cut to a title's length. */
 export function planTemplate(title: string, kind: PlanKind): string {
   const sections = kind === "feature" ? ["Intent", "Steps", "Decisions", "Open questions"] : ["Approach", "Steps"];
-  return `# ${title}\n\n${sections.map((s) => `## ${s}\n`).join("\n")}`;
+  const line = title.replace(/\s+/g, " ").trim().slice(0, 80).trim() || (kind === "feature" ? "Feature plan" : "Session plan");
+  return `# ${line}\n\n${sections.map((s) => `## ${s}\n`).join("\n")}`;
 }
 
 /** Sets a step's mark; undefined when there's no step with that id. */
@@ -278,9 +280,16 @@ function readStep(md: string, item: ListItem, found: Located) {
   const [first, ...rest] = lines;
   const withId = ID_HEAD.exec(first!.text);
   const plain = withId ? undefined : PLAIN_HEAD.exec(first!.text);
-  // Your `Not yet:` line (4p4a): from right after the colon to its end, to replace.
-  const back = rest.find((l) => /^Not yet:/i.test(l.text));
-  const notYet = back && { start: back.at + back.text.indexOf(":") + 1, end: back.at + back.text.length };
+  // Your `Not yet:` field (4p4a): from right after the colon to the end of its last line (it runs
+  // until the next field, as `gather` reads it), to replace.
+  const at = rest.findIndex((l) => /^Not yet:/i.test(l.text));
+  let notYet: Span | undefined;
+  if (at >= 0) {
+    const back = rest[at]!;
+    const fieldAfter = rest.slice(at + 1).findIndex((l) => FIELD.test(l.text));
+    const last = rest[fieldAfter < 0 ? rest.length - 1 : at + fieldAfter]!;
+    notYet = { start: back.at + back.text.indexOf(":") + 1, end: last.at + last.text.length };
+  }
   const step: PlanStep = {
     id: withId?.[1],
     title: (withId?.[2] ?? plain?.[1] ?? first!.text).trim(),

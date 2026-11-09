@@ -1654,6 +1654,33 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             typecheck 7/7, build 5/5 (no unit tests: it draws what 4p0 read; its actions are
             4p4a's, tested there). Not checked: whether Chrome lets ⌥⌘B through (its bookmark
             manager's key on a Mac; synthetic keys can't tell). ~250 lines (half of it moved).
+      - [x] **4p-r. Review and end-to-end test of 4p0–4p5a** (owner, 2026-11-09: "an elaborate
+            code review and testing of the plan feature, fix the findings") — 14 findings, 13
+            fixed: your tick / accept / answer mid-turn on a step the agent added or reworded
+            that turn was undone at its end (a change of yours now holds the agent's edit so far
+            first and goes on top — D79); a queued prompt's turn recorded its start before the
+            last turn's corrections were written, so an agent's `[x]` became "yours"; a turn's
+            end and your change could write over each other (every change to a plan now runs in
+            one line, `inLine`); the plan page kept its editor across plans (keyed per plan now:
+            a save could have gone to the other plan); a session moved into a feature mid-turn
+            didn't have that feature's plan held; Kratos's notes to the agent rode on a queued
+            prompt and were lost if it was removed (each queued prompt keeps its own; Send now
+            re-sends them); Start a plan mid-turn was taken for the turn's edit; a session's
+            first prompt as a template title; a wrapped Not yet line half replaced; a listener
+            removed twice removed another; line counts that disagreed with the diff; row keys
+            that could repeat; display paths taken apart with regexes. Left: `get_plan` sent up
+            to three times per plan when a session opens. **Proof:** 7 new hub tests and 2 edit
+            tests, each failing before the fix; 296 pass, typecheck 7/7, build 5/5. End to end,
+            real `claude` (Haiku) through Kratos on a fresh git repo: it planned "Greeting CLI"
+            in the format (2 steps, 2 decisions, 0 notes); did P1, proved it ("Hello, Ada!",
+            exit 0) and marked it `[?]` with a Proof ("I did not tick it [x]"); your Not yet →
+            `[~]` with the note; it addressed it, `[?]` again with new proof, the Not yet line
+            gone — and flagged that your note contradicts P2 / D2 instead of rewriting them; a
+            second session in the feature told the plan's state unprompted; your tick and an edit
+            adding P3 read back clean; the project's `git status` showed only `greet.js`. Seen:
+            each turn that edits the plan shows the agent's "Edited plan.md" and then "Kratos ·
+            Updated the plan" — the second repeats the first when nothing was put back (owner's
+            call: keep, or show it only when something was put back).
       - [ ] **4p5b. Steps start sessions** (~150) — "Start in new session" on a step (plan page,
             island's Up next) and Home's "Up next" chips for a picked feature (board §5): a new
             session in the feature, tagged with its step (`sessions.step_id` + migration), its

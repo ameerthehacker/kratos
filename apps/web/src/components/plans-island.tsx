@@ -90,8 +90,8 @@ function FeaturePart({ feature, plan, from, act }: { feature: FeatureSummary; pl
       {steps.length > 0 && <Progress steps={steps} />}
       {now.length > 0 ? (
         <Group label="Now">
-          {now.map((step) => (
-            <StepRow key={step.id} step={step} act={act} compact />
+          {now.map((step, i) => (
+            <StepRow key={`${i}:${step.id}`} step={step} act={act} compact />
           ))}
         </Group>
       ) : next ? (
@@ -152,9 +152,9 @@ const Group = ({ label, children }: { label: string; children: ReactNode }) => (
 function Progress({ steps }: { steps: PlanStep[] }) {
   return (
     <div className="flex gap-0.75" aria-hidden="true">
-      {steps.map((step) => (
+      {steps.map((step, i) => (
         <span
-          key={step.id}
+          key={`${i}:${step.id}`} // two steps may share an id (the plan's notes say so)
           className={cn(
             "h-1 flex-1 rounded-full",
             step.mark === "ticked" ? "bg-add" : step.mark === "claimed" ? "bg-wait" : step.mark === "doing" ? "bg-run" : "bg-input",

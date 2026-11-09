@@ -21,6 +21,15 @@ import type { SessionStore } from "./store/store.js";
 
 type Outcome = "allowed" | "denied" | "cancelled";
 
+/** What Kratos tells the agent with a prompt (4p2, 4p3a): its plans moved, what it put back. */
+type Notes = { moved?: string; agent: string[] };
+
+/** The prompt as the agent gets it: the notes first, when there are any. */
+const withNotes = (text: string, { moved, agent }: Notes): string => {
+  const notes = [moved, ...agent].filter(Boolean);
+  return notes.length > 0 ? `${notes.join("\n")}\n\n${text}` : text;
+};
+
 /**
  * The agent's turn (D68): idle, or running with the steps (tool calls) it has run so far. Step
  * ids only mean something while their turn runs, so they live in it and go when it ends.
@@ -46,8 +55,9 @@ type Turn =
 export class SessionRuntime {
   private readonly pending = new Map<string, (decision: PermissionDecision) => void>();
   /** Prompts sent while the agent works that it hasn't read yet (D56), in the order sent: their
-   * files (to send again) and the id the agent knows them by (a new one after a re-queue). */
-  private readonly queue = new Map<string, { text: string; files: readonly AgentAttachment[]; agentId: string }>();
+   * files (to send again) and the id the agent knows them by (a new one after a re-queue), and the
+   * notes that went with them (sent again with them; kept for the next prompt if they're never read). */
+  private readonly queue = new Map<string, { text: string; files: readonly AgentAttachment[]; agentId: string; notes: Notes }>();
   /** Agent id → Kratos prompt id, for prompts re-queued under a new agent id (Send now). */
   private readonly agentIds = new Map<string, string>();
   private turn: Turn = { state: "idle" };
@@ -170,13 +180,13 @@ export class SessionRuntime {
     const attachments = refs.length > 0 ? { attachments: refs } : {};
     if (this.session && this.turn.state === "running") {
       const id = randomUUID();
-      this.queue.set(id, { text, files, agentId: id });
+      const notes = this.takeNotes();
+      this.queue.set(id, { text, files, agentId: id, notes });
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
       const session = this.session;
-      const forAgent = this.withPlansNote(text);
       this.toAgent(() => {
-        session.send(forAgent, files, { id });
+        session.send(withNotes(text, notes), files, { id });
         if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
       });
       this.deps.onChange();
@@ -188,7 +198,7 @@ export class SessionRuntime {
     this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     const session = (this.session ??= this.start());
-    const forAgent = this.withPlansNote(text); // after start: a fresh start already knows
+    const forAgent = withNotes(text, this.takeNotes()); // after start: a fresh start already knows
     this.toAgent(() => session.send(forAgent, files));
     this.deps.onChange();
     if (first) void this.name(text);
@@ -416,13 +426,20 @@ export class SessionRuntime {
     this.publish(message);
   }
 
-  /** The prompt as the agent gets it: with the plans note first when there is one, once. The log
-   * and the chat keep the prompt as typed. */
-  private withPlansNote(text: string): string {
-    const notes = [this.plansNote, ...this.agentNotes].filter(Boolean);
+  /** The notes waiting for the next prompt, taken for it: said once. The log and the chat keep the
+   * prompt as typed. */
+  private takeNotes(): Notes {
+    const notes = { moved: this.plansNote, agent: this.agentNotes };
     this.plansNote = undefined;
     this.agentNotes = [];
-    return notes.length > 0 ? `${notes.join("\n")}\n\n${text}` : text;
+    return notes;
+  }
+
+  /** A queued prompt's notes, never read by the agent (removed, stopped, or its agent gone): they
+   * wait for the next prompt again, before any newer ones. */
+  private giveBack({ moved, agent }: Notes): void {
+    this.plansNote ??= moved;
+    this.agentNotes.unshift(...agent);
   }
 
   private start(): AgentSession {
@@ -538,6 +555,7 @@ export class SessionRuntime {
     } else {
       const stopped = this.stopping?.ids.delete(id) ?? false;
       if (stopped) this.stopping!.texts.push(queued.text);
+      this.giveBack(queued.notes);
       this.publish({ type: "prompt_removed", id, reason: stopped ? "stopped" : "removed" });
       this.logger.info({ prompt: id, stopped }, "queued prompt removed");
     }
@@ -557,7 +575,7 @@ export class SessionRuntime {
       if (!queued || !this.session) continue;
       queued.agentId = randomUUID();
       this.agentIds.set(queued.agentId, id);
-      this.session.send(queued.text, queued.files, { id: queued.agentId });
+      this.session.send(withNotes(queued.text, queued.notes), queued.files, { id: queued.agentId });
     }
     this.logger.info({ requeued: now.holding.size }, "send now: the rest queued again");
   }
@@ -571,8 +589,9 @@ export class SessionRuntime {
 
   /** The agent ended (or Kratos shuts down) with prompts still queued: they'll never be read. */
   private dropQueue(options?: { activity: false }): void {
-    for (const [id, { text }] of this.queue) {
+    for (const [id, { text, notes }] of this.queue) {
       if (this.stopping?.ids.delete(id)) this.stopping.texts.push(text);
+      this.giveBack(notes);
       this.publish({ type: "prompt_removed", id, reason: "stopped" }, options);
     }
     if (this.queue.size === 0) return;

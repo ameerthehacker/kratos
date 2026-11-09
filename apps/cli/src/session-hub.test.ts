@@ -1832,6 +1832,31 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
     expect(a.seen.filter((m) => m.type === "user_prompt").map((m) => (m as { text: string }).text)).toEqual(["first", "second"]);
   });
 
+  it("the note on a queued prompt the agent never reads waits for the next prompt; sent again with one re-queued", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const ids = () => a.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    a.receive({ type: "prompt", text: "never mind" }); // queued, with the note
+    const [removed] = ids();
+    a.receive({ type: "remove_queued", id: removed! });
+    agents[0]!.emit({ kind: "prompt_state", id: removed!, state: "cancelled" });
+    await tick();
+    agents[0]!.emit({ kind: "tool_call", id: "t1", tool: "Bash", input: {} });
+    a.receive({ type: "prompt", text: "B" }); // queued: the note goes with this one now
+    a.receive({ type: "prompt", text: "C" });
+    const [, b, c] = ids();
+    expect(agents[0]!.prompts.at(-2)).toMatch(/^\[Kratos\] This session is now part of the feature “Reports”.*\n\nB$/s);
+    a.receive({ type: "send_now", id: c! });
+    await tick();
+    agents[0]!.emit({ kind: "prompt_state", id: b!, state: "cancelled" });
+    agents[0]!.emit({ kind: "prompt_state", id: c!, state: "started" });
+    await tick();
+    expect(agents[0]!.prompts.at(-1)).toMatch(/^\[Kratos\] This session is now part of the feature “Reports”.*\n\nB$/s); // B again, with it
+  });
+
   it("moved while no agent runs: no note, the next start has the new instructions", async () => {
     const { agents, tab } = setup();
     const a = tab();
@@ -1962,6 +1987,112 @@ describe("SessionHub: you decide, from the plan page (4p4a, D79)", () => {
     expect(plans.text(folder)).toContain("- [~] **P2. Filters**");
     const update = a.seen.findLast((m) => m.type === "plan_updated") as Extract<ServerMessage, { type: "plan_updated" }>;
     expect(update.undone).toEqual([]);
+  });
+
+  it("your tick on a step the agent added this turn, and your accept of a decision it reworded, survive the turn's end", async () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+    a.receive({ type: "prompt", text: "work" });
+    plans.edit(folder, plans.text(folder)!.replace("- [ ] **P2. Filters**", "- [ ] **P2. Filters**\n- [?] **P3. New**").replace("— simple.", "— simple, and fast.")); // the agent
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P3" } }); // you, mid-turn
+    a.receive({ type: "plan_action", owner, action: { kind: "accept", decisionId: "D1" } });
+    await tick();
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(plans.text(folder)).toContain("- [x] **P3. New**");
+    expect(plans.text(folder)).toContain("**D1. CSV** (accepted) — simple, and fast.");
+    const update = a.seen.findLast((m) => m.type === "plan_updated") as Extract<ServerMessage, { type: "plan_updated" }>;
+    expect(update.undone).toEqual([]);
+  });
+
+  it("the agent's [x] put back mid-turn, when you change the plan, is said at the turn's end", async () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+    a.receive({ type: "prompt", text: "work" });
+    plans.edit(folder, plans.text(folder)!.replace("- [ ] **P2.", "- [x] **P2.")); // the agent
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } }); // you
+    await tick();
+    expect(plans.text(folder)).toContain("- [?] **P2. Filters**");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    const update = a.seen.findLast((m) => m.type === "plan_updated") as Extract<ServerMessage, { type: "plan_updated" }>;
+    expect(update.undone).toEqual(["P2: only you tick a step; marked [?] for you to check."]);
+  });
+
+  it("your change while a turn's end is being settled isn't written over, nor does it undo the hold", async () => {
+    const memory = memoryPlans();
+    // A slow disk: the turn's end and your change both read before either writes, unless in line.
+    const plans = { ...memory, refresh: async (folder: string) => (await tick(), memory.refresh(folder)) };
+    const { agents, tab } = setup(undefined, plans);
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    memory.edit(folder, PLAN);
+    a.receive({ type: "prompt", text: "work" });
+    memory.edit(folder, memory.text(folder)!.replace("- [ ] **P2.", "- [x] **P2.")); // the agent
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await Promise.resolve();
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } }); // you, as it ends
+    for (let i = 0; i < 6; i++) await tick();
+    expect(memory.text(folder)).toContain("- [x] **P1. Export**");
+    expect(memory.text(folder)).toContain("- [?] **P2. Filters**");
+  });
+});
+
+describe("SessionHub: a turn's plans, whatever happens during it (4p3, D79)", () => {
+  const queuedIds = (t: { seen: ServerMessage[] }) => t.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+
+  it("the next turn, started before the last one's edit is held, doesn't take the agent's [x] for yours", async () => {
+    const memory = memoryPlans();
+    const plans = { ...memory, refresh: async (folder: string) => (await tick(), memory.refresh(folder)) };
+    const { agents, tab } = setup(undefined, plans);
+    const a = tab();
+    const folder = `sessions/${a.viewing}`;
+    memory.edit(folder, "# Plan\n\n## Steps\n- [ ] **S1. One**\n");
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "prompt", text: "next" }); // queued
+    const [queued] = queuedIds(a);
+    memory.edit(folder, "# Plan\n\n## Steps\n- [x] **S1. One**\n"); // the agent
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    agents[0]!.emit({ kind: "prompt_state", id: queued!, state: "started" }); // the agent starts turn 2 at once
+    for (let i = 0; i < 4; i++) await tick();
+    expect(memory.text(folder)).toContain("- [?] **S1. One**");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    for (let i = 0; i < 4; i++) await tick();
+    expect(memory.text(folder)).toContain("- [?] **S1. One**"); // not "you ticked it"
+  });
+
+  it("moved into a feature mid-turn: the feature plan its agent writes is held at the turn's end", async () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "prompt", text: "work" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    plans.edit("features/reports", "# Reports\n\n## Steps\n- [x] **P1. A**\n"); // the agent
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(plans.text("features/reports")).toBe("# Reports\n\n## Steps\n- [?] **P1. A**\n");
+  });
+
+  it("a plan you start while a turn runs isn't that turn's edit", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "work" });
+    a.receive({ type: "start_plan", owner: { kind: "session", id: a.viewing } });
+    await tick();
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(a.seen.some((m) => m.type === "plan_updated")).toBe(false);
   });
 });
 

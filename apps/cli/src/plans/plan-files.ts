@@ -149,13 +149,19 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
       notify(folder, markdown);
       return true;
     },
-    onChange: (listener) => {
-      listeners.push(listener);
-      return () => void listeners.splice(listeners.indexOf(listener), 1);
-    },
+    onChange: (listener) => listen(listeners, listener),
     close: async () => watcher?.close(),
     /** Resolves once the watcher has started (tests: an outside edit before then isn't seen). */
     ready: () => watching,
+  };
+}
+
+/** Adds a listener; the function it gives removes it, once (a second call removes nothing). */
+function listen(listeners: PlanListener[], listener: PlanListener): () => void {
+  listeners.push(listener);
+  return () => {
+    const i = listeners.indexOf(listener);
+    if (i >= 0) listeners.splice(i, 1);
   };
 }
 
@@ -177,10 +183,7 @@ export function memoryPlans(): PlanFiles & { edit(folder: string, markdown: stri
     refresh: async (folder) => plans.get(folder),
     write: async (folder, markdown) => edit(folder, markdown),
     create: async (folder, markdown) => !plans.has(folder) && (edit(folder, markdown), true),
-    onChange: (listener) => {
-      listeners.push(listener);
-      return () => void listeners.splice(listeners.indexOf(listener), 1);
-    },
+    onChange: (listener) => listen(listeners, listener),
     close: async () => {},
     edit,
   };

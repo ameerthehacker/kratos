@@ -29,6 +29,12 @@ export type PlanFrom = { from?: string; label?: string };
 export function PlanPage({ kind }: { kind: PlanKind }) {
   const params = useParams();
   const id = kind === "feature" ? params.featureId : params.sessionId;
+  // One page per plan: going from one plan to another (the sidebar's links) mustn't carry an open
+  // editor, with the first plan's text and base, over to the second, where Save would write it.
+  return <PlanView key={`${kind}:${id}`} kind={kind} id={id} />;
+}
+
+function PlanView({ kind, id }: { kind: PlanKind; id: string | undefined }) {
   const plan = usePlan(kind, id);
   const feature = useKratos((s) => s.features.find((f) => f.id === (kind === "feature" ? id : s.sessions.find((x) => x.id === id)?.featureId)));
   const session = useKratos((s) => (kind === "session" ? s.sessions.find((x) => x.id === id) : undefined));
@@ -176,8 +182,8 @@ function PlanBody({ plan, kind, context, feature, act }: { plan: Plan; kind: Pla
 
       {plan.questions.length > 0 && (
         <Section title="Open questions">
-          {plan.questions.map((q) => (
-            <QuestionRow key={q.text} question={q} act={act} />
+          {plan.questions.map((q, i) => (
+            <QuestionRow key={`${i}:${q.text}`} question={q} act={act} />
           ))}
         </Section>
       )}

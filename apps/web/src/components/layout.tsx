@@ -1,6 +1,7 @@
-import { Link, Outlet, useNavigate } from "react-router";
+import { Link, Outlet, useMatch, useNavigate } from "react-router";
 import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { KratosLogo } from "@/components/kratos-logo";
+import { PlansIsland, useSessionPlans } from "@/components/plans-island";
 import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { QuickSettings } from "@/components/quick-settings";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
@@ -9,6 +10,7 @@ import { VersionPill } from "@/components/version-pill";
 import { useAttention } from "@/hooks/use-attention";
 import { useKratosConnection } from "@/hooks/use-kratos-connection";
 import { useKratos } from "@/lib/kratos-store";
+import { usePlansPrefs } from "@/lib/plans-prefs";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
 import { useTheme } from "@/lib/themes";
 
@@ -36,6 +38,10 @@ export function Layout() {
   // Here, not in SidebarToggle: that one renders in two places (3k1).
   useHotkey(appHotkeys["sidebar.toggle"], () => useSidebarPrefs.getState().setOpen(!useSidebarPrefs.getState().open));
   useHotkey(appHotkeys["session.new"], () => navigate("/"));
+  // A session's plans island (4p5a): beside the main island, only where there's a plan to show.
+  const sessionId = useMatch("/s/:sessionId")?.params.sessionId;
+  const { offered } = useSessionPlans(sessionId);
+  useHotkey(appHotkeys["plans.toggle"], () => usePlansPrefs.getState().setOpen(!usePlansPrefs.getState().open), { enabled: offered });
   // Home and a session both have the box (#prompt); "/" while typing stays a "/" (the library).
   useHotkey(appHotkeys["prompt.focus"], () => document.getElementById("prompt")?.focus());
 
@@ -65,6 +71,7 @@ export function Layout() {
         </header>
         <Outlet />
       </div>
+      {sessionId && <PlansIsland sessionId={sessionId} />}
     </div>
   );
 }

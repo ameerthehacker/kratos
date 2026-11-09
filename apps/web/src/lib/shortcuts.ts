@@ -11,6 +11,9 @@ import { defineAppHotkeys, type Hotkey } from "@tanstack/react-hotkeys";
  */
 export const appHotkeys = defineAppHotkeys({
   "sidebar.toggle": { hotkey: "Mod+B", meta: { name: "Show / hide sessions", group: "General" } },
+  // The board's ⌥⌘B (4p5a). Chrome on a Mac keeps ⌥⌘B for its bookmark manager, so it may never
+  // reach the page there; if so, this one line changes it.
+  "plans.toggle": { hotkey: "Mod+Alt+B", meta: { name: "Show / hide plans", description: "in a session with a plan", group: "General" } },
   "session.new": { hotkey: "Mod+Shift+O", meta: { name: "New session", group: "General" } },
   "settings.open": { hotkey: "Mod+,", meta: { name: "Quick settings", group: "General" } },
   "shortcuts.open": { hotkey: "Mod+/", meta: { name: "Keyboard shortcuts", group: "General" } },

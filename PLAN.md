@@ -1626,13 +1626,40 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             covers a whole list, not its marks): only the marks are styled now. Seen: our `[~]` /
             `[?]` aren't GFM, so they show as link brackets. 289 pass, typecheck 7/7, build 5/5.
             ~120 lines (the editor moved to `components/plan-editor.tsx`).
-    - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the
-          right island in a session, shown or hidden with ⌥⌘B or the header's panel button (like
-          ⌘B for sessions; remembered), not offered without a plan: the feature plan's step in
-          hand with your tick on top, this session's plan as a checklist under it, ⤢ to open
-          either whole. "Up next" step chips on Home for a picked feature, "Start in new
-          session" on a step; the session is tagged with its step (`sessions.step_id`) and the
-          folder shows `n/m` ticked.
+    - [ ] **4p5. The plan drives the work** (board §3, §5, §8) — split (~400 lines in one go):
+      - [x] **4p5a. The plans island** (~250) — in a session, a right island (an island like the
+            others: rounded, on the canvas, `w-80`, hidden below `lg`) beside the main one, made
+            by the layout for `/s/:id`: "Plans", its keys and ×; the feature plan (when the
+            session is in a feature that has one): its name and `n/m` ticked, a progress bar, ⤢ to
+            open it whole (named back link), then **Now** — the steps waiting for you (`[?]`, with
+            Tick / Not yet, as on the page) and in hand (`[~]`) — or, with none, **Up next**: the
+            first to do; this session's plan (when it has one): "How · this session" `n/m`, ⤢,
+            its steps as a short checklist. Neither plan: not offered. Shown or hidden with ⌥⌘B
+            (board) or the panel button at the right of the session header, remembered per
+            browser (open by default). The plan page's step row, mark, note field and actions
+            move to `components/plan-parts.tsx` and are shared. Scope: web `components/layout.tsx`,
+            `pages/session.tsx` (the button), new `components/plans-island.tsx`,
+            `components/plan-parts.tsx`, `pages/plan.tsx`, `lib/shortcuts.ts`, new
+            `lib/plans-prefs.ts`. Accept: headless: a feature session with both plans (a `[?]`
+            ticked from the island lands in the file), a one-off with only its own, a session
+            with none (no button, ⌥⌘B does nothing), hidden and shown again after a reload;
+            typecheck, test, build.
+            **Proof:** headless (1440 wide, Kratos Dark) on the 4p1b project, a one-off and a
+            plan-less session added to its database: the feature session's island read "Feature
+            plan · CSV export 1/4", a bar per step, Now: P2 (`[?]`, Tick P2 / Not yet) and P3 (in
+            hand), then "How · this session 2/4" and its checklist; Tick P2 there → `[x] **P2.`
+            in the file, the island at 2/4 with P3 alone in Now; the one-off showed only its own
+            plan (Tick S1); the plan-less session had no island and no button, ⌥⌘B did nothing;
+            ⌥⌘B hid it, a reload kept it hidden, the header button showed it again. 289 pass,
+            typecheck 7/7, build 5/5 (no unit tests: it draws what 4p0 read; its actions are
+            4p4a's, tested there). Not checked: whether Chrome lets ⌥⌘B through (its bookmark
+            manager's key on a Mac; synthetic keys can't tell). ~250 lines (half of it moved).
+      - [ ] **4p5b. Steps start sessions** (~150) — "Start in new session" on a step (plan page,
+            island's Up next) and Home's "Up next" chips for a picked feature (board §5): a new
+            session in the feature, tagged with its step (`sessions.step_id` + migration), its
+            first prompt "Work on P3 of the plan: <title>"; the island's Now is then that step.
+      - [ ] **4p5c. Progress on the folder** (~40) — a feature's folder shows `n/m` ticked
+            (`FeatureSummary.progress`, read from its plan).
     - [ ] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) —
           `ExitPlanMode` shows the plan in a review island beside the chat, titled with what
           approving makes (feature plan / session plan / plan for P2), with the switch where

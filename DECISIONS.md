@@ -257,6 +257,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   the page notices a change under you and offers Load theirs / Save over it. Saved during an
   agent's turn on that plan, your text becomes the turn's starting text: what you save is yours,
   including what you kept of the agent's changes.
+- The plans island (4p5a): a third island the layout adds beside the main one on `/s/:id`, only
+  when the session has a plan to show (its feature's, its own, or both): the feature plan's
+  progress and its steps waiting for you / in hand (with Tick / Not yet) or the next to do, and
+  the session's checklist; ⤢ opens either whole. Shown or hidden with ⌥⌘B (the board's) or a
+  header button, remembered per browser, shown by default. Hidden below `lg` (the chat needs the
+  width). The plan page's step parts moved to `components/plan-parts.tsx`, shared. Known risk:
+  Chrome on a Mac keeps ⌥⌘B for its bookmark manager, so the key may not reach the page there —
+  one line in `lib/shortcuts.ts` changes it.
 - Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
   sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
   route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own

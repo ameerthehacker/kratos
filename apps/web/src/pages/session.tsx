@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, FileCode, LoaderCircle, Pencil, Sparkles } from "lucide-react";
+import { ChevronDown, FileCode, LoaderCircle, PanelRight, Pencil, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
@@ -11,6 +11,8 @@ import { askToNotify } from "@/hooks/use-attention";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { DoneButton } from "@/components/done-button";
+import { useSessionPlans } from "@/components/plans-island";
+import { Hint } from "@/components/shortcut";
 import { Counts } from "@/components/review/counts";
 import { useChanges } from "@/hooks/use-changes";
 import { SessionStatus, sessionTitle } from "@/components/session-status";
@@ -20,6 +22,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { PromptCard } from "@/components/prompt-card";
 import { useKratos, type LogMessage } from "@/lib/kratos-store";
 import { clientLog } from "@/lib/log";
+import { cn } from "@/lib/utils";
+import { usePlansPrefs } from "@/lib/plans-prefs";
 import { SCOPES } from "@/lib/shortcuts";
 import { buildTimeline, openAsks, openQuestions, openQueue } from "@/lib/timeline";
 import { QueueCard } from "@/components/conversation/queue-card";
@@ -239,7 +243,33 @@ function SessionHeader({ session }: { session: SessionSummary }) {
       {/* Open: live status + a quiet check icon; done: the green "Done" chip, which reopens (3d7). */}
       {!session.done && <SessionStatus status={session.status} queued={session.queued} />}
       <DoneButton session={session} variant="header" />
+      <PlansToggle sessionId={session.id} />
     </div>
+  );
+}
+
+/** Shows or hides the plans island (4p5a, ⌥⌘B), at the header's right end like the sidebar's
+ * button at its left; only when the session has a plan to show. */
+function PlansToggle({ sessionId }: { sessionId: string }) {
+  const { offered } = useSessionPlans(sessionId);
+  const open = usePlansPrefs((s) => s.open);
+  const setOpen = usePlansPrefs((s) => s.setOpen);
+  if (!offered) return null;
+  return (
+    <Hint label={open ? "Hide plans" : "Show plans"} id="plans.toggle">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-label={open ? "Hide plans" : "Show plans"}
+        aria-pressed={open}
+        className={cn(
+          "hidden size-8 shrink-0 items-center justify-center rounded-full hover:bg-accent hover:text-foreground lg:flex",
+          open ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        <PanelRight className="size-4" />
+      </button>
+    </Hint>
   );
 }
 

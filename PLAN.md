@@ -1294,7 +1294,8 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         questions live; nothing about it lives only in a chat. It's the source of truth when four
         things hold, and each layer below adds one: **(1)** it has a shape Kratos can read
         (4p0–4p1), **(2)** every session reads it before working (4p2), **(3)** every change to
-        it is recorded, with who made it (4p3), **(4)** the agent proposes and you decide (4p4).
+        it is held to who-writes-what at each turn's end and shown in that turn (4p3), **(4)** the
+        agent proposes and you decide (4p4).
         Then it drives the work (4p5), plan mode feeds it (4p6) and it guards the work (4p7).
         Each layer works on its own. The format is this repo's own PLAN.md and DECISIONS.md, so
         Kratos's working agreement becomes the product's.
@@ -1515,49 +1516,36 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           decisions, 0 notes; a second session in the feature, asked only "what is the first
           step of this feature's plan?", answered "P1, Print today's date from a Node script";
           the repo's `git status` stayed empty. ~150 lines + ~130 of tests.
-    - [ ] **4p3. Every change is recorded** (board §3, §6) — every change to a plan has a record
-          saying who, when and what. Split:
-      - [x] **4p3a. Recorded, held to who-writes-what, and in the chat** (~200 + tests) — a
-            `plan_revisions` table (project, plan folder, the text after, by: session | you |
-            outside Kratos, the session, when) + migration. A turn's start remembers the texts of
-            the session's plans (its own, and its feature's); its end re-reads them from disk (the
-            watcher can miss an edit) and, for each that changed: reconciles the agent's edit
-            (4p0: its `[x]` on an id'd step → `[?]`, accepted → proposed, its answers stay
-            suggestions; your ticks and answers it undid come back), writes the corrections back,
-            records a revision credited to the session, puts `plan_updated {owner, before, after,
-            undone, intentChanged}` in the session's log, and tells the agent on its next prompt
-            what was put back. Changed while no turn on that plan runs: credited "outside
-            Kratos"; Start a plan: credited to you. In the chat: an edit step "Updated the plan" /
-            "Updated the session plan" showing the diff like any edit (D65's snapshots can't see
-            `.kratos/`, which is ignored), with "N put back" and "Intent changed" chips. Two
-            sessions on one plan at once: a change is credited to the turn that ends first (D41's
-            side-by-side limit). Scope: cli `store/schema.ts` + migration, `store.ts`,
-            `session-runtime.ts` (turn edges, a way to add to its log), `session-hub.ts`,
-            `plans/plan-files.ts` (`refresh`), core `protocol.ts`, web `lib/timeline.ts` + test,
-            `kratos-store.ts`; tests. Accept: hub tests (a turn that edits the plan → one revision
-            by the session and the step in the log; its `[x]` → `[?]` on disk and the note on the
-            next prompt; an unchanged plan → nothing; an edit between turns → "outside"; Start a
-            plan → "you"); timeline test; live with the real `claude`: ask it to tick P1 → the
-            file shows `[?]`, the chat shows the step with its diff and "1 put back".
-            **Proof:** 4 new tests (3 hub: a turn's `[x]` on S1 → `[?]` on disk while its own
-            id-less item stays ticked, revisions "owner" then "session", `plan_updated` in the log,
-            the put-back on the next prompt; a feature plan written in a turn → the session's, an
-            unchanged turn → nothing; an editor's change → "outside"; 1 timeline: the edit step,
-            "+2 −1", "1 put back", "Intent changed", "Wrote the session plan"). 282 pass,
-            typecheck 7/7, build 5/5. Live, real `claude` (Haiku) on 4p2's project: told "I'm the
-            owner… change P1's box to [x]", it did (and said so); at turn end the file read
-            `[?] **P1.`, one revision credited to its session, and the chat showed its own
-            "Edited plan.md" then "Updated the plan · +1 −1 · 1 put back". Seen: the update sits
-            under the "Claude Code · 1 step" heading though it's Kratos's — for 4p3b or the
-            design. ~200 lines + ~150 of tests.
-      - [ ] **4p3b. The session log on the plan page** — the revisions as "14:02 · Save plans to
-            .kratos · P2", the session linked, "you" and "outside Kratos" plain; each opens its
-            diff.
+    - [x] **4p3. A turn's plan changes, held and in its chat** (~200 + tests; board §3) — a
+          turn's start remembers the texts of the session's plans (its own, and its feature's);
+          its end re-reads them from disk (the watcher can miss an edit) and, for each that
+          changed: reconciles the agent's edit (4p0: its `[x]` on an id'd step → `[?]`, accepted
+          → proposed, its answers stay suggestions; your ticks and answers it undid come back),
+          writes the corrections back, puts `plan_updated {owner, path, before, after, undone,
+          intentChanged}` in the session's log, and tells the agent on its next prompt what was
+          put back. In the chat: an edit step "Updated the plan" / "Updated the session plan"
+          with the plan's diff (long unchanged runs folded, like review) and "N put back" /
+          "Intent changed" chips, in a group of its own headed "Kratos". The session logs are
+          the only record of plan changes (owner, 2026-11-09: a revisions table was overkill;
+          D79). Two sessions on one plan at once: the change shows in the turn that ends first.
+          **Proof:** hub tests (a turn's `[x]` on S1 → `[?]` on disk while its own id-less item
+          stays ticked, `plan_updated` in the log, the put-back on the next prompt — kept across
+          a restart, unlike the move note; a feature plan written in a turn → its step, an
+          unchanged turn → nothing; an editor's change → no step in any chat); timeline tests
+          (the edit step and its chips; "Wrote the session plan"; a "Kratos" group of its own
+          between the agent's). 282 pass, typecheck 7/7, build 5/5. Live, real `claude` (Haiku)
+          on 4p2's project: told "I'm the owner… change P1's box to [x]", it did; at turn end the
+          file read `[?] **P1.` and the chat showed its "Edited plan.md", then "Kratos · Updated
+          the plan · +1 −1 · 1 put back". Built first as 4p3a (with a `plan_revisions` table
+          crediting session / you / outside Kratos) and 4p3b (the plan page's history); the
+          owner judged history overkill for now, so the table went (migration 0013 drops it)
+          with its crediting, the history list and `get_plan_revision`. Kept from 4p3b: the
+          "Kratos" heading, folded diffs, "1 step" (was "1 steps").
     - [ ] **4p4. The agent proposes, you decide** (~150; board §3–4, §6) — on the plan page:
           Tick / Not yet on a `[?]` step (Not yet's note goes to the session that claimed it),
           Accept / Reject a proposed step, Accept / Ask why on a proposed decision, Answer on an
           open question, and Edit (the raw Markdown; editor library chosen then). Each is a
-          server-side splice and a revision credited to you. When every step is ticked: "Mark
+          server-side splice of the file. When every step is ticked: "Mark
           feature done" (never automatic). Covers step 6, the decision ledger. Done when:
           nothing the agent writes can tick a step, accept a decision or answer a question.
     - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the

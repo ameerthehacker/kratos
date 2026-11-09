@@ -76,6 +76,7 @@ export const Title = z.string().trim().min(1).max(80);
 export const PlanOwner = z.object({ kind: PlanKind, id: z.string() });
 export type PlanOwner = z.infer<typeof PlanOwner>;
 
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new

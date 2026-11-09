@@ -115,22 +115,3 @@ export const viewedFiles = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.path] })],
 );
-
-/** Every change to a plan file (4p3a, D79): its text after, and who made it — a session's turn,
- * you (from Kratos), or someone outside Kratos (an editor). Keyed by the plan's folder under
- * `.kratos/` ("features/csv-export", "sessions/<id>"), which never moves. */
-export const planRevisions = sqliteTable(
-  "plan_revisions",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    projectDir: text("project_dir").notNull(),
-    folder: text("folder").notNull(),
-    /** The plan's text after the change; null = the file was removed. */
-    markdown: text("markdown"),
-    by: text("by", { enum: ["session", "owner", "outside"] }).notNull(),
-    /** The session whose turn made it, when `by` is "session". */
-    sessionId: text("session_id").references(() => sessions.id),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  },
-  (t) => [index("plan_revisions_by_plan").on(t.projectDir, t.folder, t.id)],
-);

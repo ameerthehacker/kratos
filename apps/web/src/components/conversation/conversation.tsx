@@ -131,7 +131,8 @@ function Item({ item, context }: { item: TimelineItem; context: Context }) {
         </Streamdown>
       );
     case "steps":
-      return <StepGroup agent={context.agent} steps={item.steps} raw={context.raw} onToggleRaw={context.onToggleRaw} />;
+      // Kratos's own steps (a plan it held to who-writes-what, 4p3b) are headed as its, not the agent's.
+      return <StepGroup agent={item.by === "kratos" ? "Kratos" : context.agent} steps={item.steps} raw={context.raw} onToggleRaw={context.onToggleRaw} />;
     case "event":
       return (
         <div className="flex items-center gap-2.5 text-sm text-muted-foreground">

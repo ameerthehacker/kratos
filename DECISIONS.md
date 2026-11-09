@@ -223,16 +223,17 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   paths. Alternatives: a prompt prefix on every prompt (repeats it in every turn, costs tokens);
   a Kratos tool the agent calls to read its plan (another step it can skip; files are already
   readable); restarting the agent on a move (drops its in-memory context).
-- Recorded (4p3a): a `plan_revisions` table, one row per change with the text after and who
-  made it. Who is decided by when: a change to a plan a running turn started with is that
-  turn's (settled at its end: re-read from disk, reconciled, corrections written back, the
-  revision credited to the session, `plan_updated` in its log, the put-back said to the agent
-  with its next prompt — kept across a restart, unlike the move note); Kratos's own writes are
-  whoever asked (Start a plan: you); anything else is "outside Kratos". Limit: two sessions on
-  one plan at once — the change goes to the turn that ends first (D41). In the chat it's an
-  edit step with the file's diff, so it needed no new view. Alternatives: a diff per file write
-  from the watcher (finer, but an editor's autosave makes dozens; the turn is what you review);
-  revisions as git commits in a hidden repo (history for free, but another repository to keep).
+- A turn's plan changes (4p3): at a turn's end, each of its session's plans that changed is
+  re-read from disk, reconciled, corrections written back, kept as `plan_updated` in that
+  session's log (the chat's "Updated the plan" with the diff, headed "Kratos"), and the put-back
+  is said to the agent with its next prompt (kept across a restart, unlike the move note). The
+  session logs are the only record of plan changes. Built first with a `plan_revisions` table
+  crediting every change to a session, you or "outside Kratos", and a history on the plan page
+  (4p3a/b); owner: overkill for now — and it was the trickiest part of the plan code
+  (telling writers apart). Removed, migration 0013 drops the table. Limit: two sessions on one
+  plan at once — the change shows in the turn that ends first (D41). Reverse / if history is
+  wanted: derive a plan's session history from the `plan_updated` messages first; add a table
+  only if your own or an editor's changes need recording.
 - Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
   sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
   route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own

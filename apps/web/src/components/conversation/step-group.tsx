@@ -31,7 +31,7 @@ const CHIP: Record<Chip["tone"], string> = {
 export function StepGroup(props: { agent: string; steps: Step[]; raw: boolean; onToggleRaw: () => void }) {
   const count = props.steps.length;
   return (
-    <section aria-label={`${props.agent}: ${count} steps`} className="flex flex-col gap-3.5">
+    <section aria-label={`${props.agent}: ${count} ${count === 1 ? "step" : "steps"}`} className="flex flex-col gap-3.5">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>
           {props.agent} · {count} {count === 1 ? "step" : "steps"}

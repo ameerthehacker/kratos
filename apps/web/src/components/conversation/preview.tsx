@@ -1,5 +1,5 @@
-import { diffLines } from "diff";
 import { Command } from "@/components/conversation/command";
+import { diffLinesOf, foldRows } from "@/lib/diff-rows";
 import type { Step } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
 
@@ -32,16 +32,21 @@ function EditDiff({ edit }: { edit: NonNullable<Step["edit"]> }) {
       {edit.changes.map((change, i) => (
         <div key={i}>
           {i > 0 && <div className="text-faint">⋯</div>}
-          {diffLines(change.before, change.after).map((part, j) =>
-            lines(part.value).map((line, k) => (
-              <div
-                key={`${j}-${k}`}
-                className={cn(part.added ? "text-add" : part.removed ? "text-destructive" : "text-muted-foreground")}
-              >
-                {part.added ? "+ " : part.removed ? "− " : "  "}
-                {line}
+          {/* Long unchanged runs fold to a count, as in review (3v): a plan's change is a whole file (4p3b). */}
+          {foldRows(diffLinesOf(change.before, change.after)).map((row, j) =>
+            row.type === "fold" ? (
+              <div key={`fold-${row.id}`} className="text-faint">
+                ⋯ {row.count} unchanged {row.count === 1 ? "line" : "lines"}
               </div>
-            )),
+            ) : (
+              <div
+                key={j}
+                className={cn(row.line.kind === "add" ? "text-add" : row.line.kind === "del" ? "text-destructive" : "text-muted-foreground")}
+              >
+                {row.line.kind === "add" ? "+ " : row.line.kind === "del" ? "− " : "  "}
+                {row.line.text}
+              </div>
+            ),
           )}
           {change.truncated && <div className="text-faint">… preview cut short</div>}
         </div>
@@ -49,6 +54,3 @@ function EditDiff({ edit }: { edit: NonNullable<Step["edit"]> }) {
     </>
   );
 }
-
-/** A diff part's text as lines (jsdiff keeps the trailing newline on each part). */
-const lines = (text: string) => text.replace(/\n$/, "").split("\n");

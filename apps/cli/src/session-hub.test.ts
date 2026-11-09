@@ -1843,12 +1843,11 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
   });
 });
 
-describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
+describe("SessionHub: a turn's plan changes, held and in its chat (4p3, D79)", () => {
   const updates = (seen: ServerMessage[]) => seen.filter((m): m is Extract<ServerMessage, { type: "plan_updated" }> => m.type === "plan_updated");
-  const revisions = (store: SessionStore, folder: string) => store.planRevisions("/projects/demo", folder).map((r) => [r.by, r.sessionId]);
 
-  it("a turn's edit: held to who-writes-what, written back, credited to the session, in its chat, told to the agent", async () => {
-    const { agents, tab, plans, store } = setup();
+  it("a turn's edit: held to who-writes-what, written back, in its chat, told to the agent", async () => {
+    const { agents, tab, plans } = setup();
     const a = tab();
     const id = a.viewing;
     const folder = `sessions/${id}`;
@@ -1861,10 +1860,6 @@ describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
     await tick();
 
     expect(plans.text(folder)).toBe("# Session plan\n\n## Steps\n- [?] **S1. One**\n- [x] my own item\n"); // its own item stays ticked
-    expect(revisions(store, folder)).toEqual([
-      ["owner", null], // Start a plan
-      ["session", id], // the turn (not "outside": it was that turn's)
-    ]);
     expect(updates(a.seen)).toEqual([
       {
         type: "plan_updated",
@@ -1882,8 +1877,8 @@ describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
     );
   });
 
-  it("a feature plan the turn wrote is credited to the session; an unchanged one isn't recorded", async () => {
-    const { agents, tab, plans, store } = setup();
+  it("a feature plan the turn wrote is in its chat; an unchanged one isn't", async () => {
+    const { agents, tab, plans } = setup();
     const a = tab();
     a.receive({ type: "create_feature", title: "Reports" });
     const feature = a.features[0]!.id;
@@ -1892,7 +1887,6 @@ describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
     agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await tick();
     await tick();
-    expect(revisions(store, "features/reports")).toEqual([["session", a.viewing]]);
     expect(updates(a.seen)).toMatchObject([{ owner: { kind: "feature", id: feature }, before: null, undone: [] }]);
 
     a.receive({ type: "prompt", text: "just talk" });
@@ -1900,20 +1894,15 @@ describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
     await tick();
     await tick();
     expect(updates(a.seen)).toHaveLength(1);
-    expect(revisions(store, "features/reports")).toHaveLength(1);
   });
 
-  it("an edit while no turn on that plan runs is credited to someone outside Kratos", async () => {
-    const { tab, plans, store } = setup();
+  it("an edit while no turn on that plan runs isn't a turn's: nothing in any chat", async () => {
+    const { tab, plans } = setup();
     const a = tab();
     const folder = `sessions/${a.viewing}`;
     a.receive({ type: "start_plan", owner: { kind: "session", id: a.viewing } });
     await tick();
     plans.edit(folder, "# Edited in an editor\n");
-    expect(revisions(store, folder)).toEqual([
-      ["owner", null],
-      ["outside", null],
-    ]);
-    expect(updates(a.seen)).toEqual([]); // not a turn's: nothing in the chat
+    expect(updates(a.seen)).toEqual([]);
   });
 });

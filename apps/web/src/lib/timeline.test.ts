@@ -242,6 +242,7 @@ describe("buildTimeline: plan updates (4p3a)", () => {
       },
     ]);
     expect(prompt).toMatchObject({ type: "prompt" });
+    expect(group).toMatchObject({ type: "steps", by: "kratos" }); // headed "Kratos", not the agent (4p3b)
     const step = group!.type === "steps" ? group!.steps[0]! : undefined;
     expect(step).toMatchObject({
       kind: "edit",
@@ -259,5 +260,15 @@ describe("buildTimeline: plan updates (4p3a)", () => {
       { type: "plan_updated", owner: { kind: "session", id: "s" }, path: "p", before: null, after: "# S\n", undone: [], intentChanged: false },
     ]);
     expect(written!.type === "steps" && written!.steps[0]!.title).toBe("Wrote the session plan");
+
+    // Between the agent's steps: a group of its own, the agent's next steps another.
+    const read = (id: string) => ({ type: "agent_event" as const, event: { kind: "tool_call" as const, id, tool: "Read", input: { file_path: "a" }, action: { type: "read" as const, path: "a" } } });
+    const items = buildTimeline([
+      { type: "user_prompt", text: "go" },
+      read("r1"),
+      { type: "plan_updated", owner: { kind: "session", id: "s" }, path: "p", before: "a\n", after: "b\n", undone: [], intentChanged: false },
+      read("r2"),
+    ]);
+    expect(items.map((i) => (i.type === "steps" ? `${i.by ?? "agent"}:${i.steps.length}` : i.type))).toEqual(["prompt", "agent:1", "kratos:1", "agent:1"]);
   });
 });

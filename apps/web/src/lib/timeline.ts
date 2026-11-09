@@ -41,7 +41,7 @@ export type OpenAsk = { id: string; reason?: string };
 export type TimelineItem =
   | { type: "prompt"; text: string; attachments?: AttachmentRef[]; read?: ReadMark }
   | { type: "reply"; text: string }
-  | { type: "steps"; steps: Step[] }
+  | { type: "steps"; steps: Step[]; by?: "kratos" }
   | { type: "event"; text: string };
 
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
@@ -143,7 +143,9 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       step.question = { id: message.id, request };
       questions.set(message.id, step);
     } else if (message.type === "plan_updated") {
-      addStep(planStep(message, plans++));
+      // Kratos's, not the agent's: a group of its own, and the agent's next steps start another.
+      breakGroup();
+      items.push({ type: "steps", steps: [planStep(message, plans++)], by: "kratos" });
     } else if (message.type === "question_resolved") {
       const step = questions.get(message.id);
       if (step?.question) {

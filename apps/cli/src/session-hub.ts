@@ -16,7 +16,7 @@ import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
-import { parsePlan, planTemplate } from "./plans/plan-file.js";
+import { parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
 import { movedNote, planInstructions, type PlanPaths } from "./plans/plan-instructions.js";
 import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
@@ -44,6 +44,11 @@ export class SessionHub {
   private readonly views = new Map<Send, string>();
   /** Stops the hub hearing plan changes (D79), at close. */
   private readonly unwatchPlans: () => void;
+  /** Each running turn's plans as they were when it started (4p3a): folder → text. A change to
+   * one of these is the turn's, settled when it ends; any other is someone else's. */
+  private readonly turnPlans = new Map<string, Map<string, string | undefined>>();
+  /** Plan folders Kratos itself is writing right now: not "outside Kratos". */
+  private readonly writingPlans = new Set<string>();
 
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
@@ -467,7 +472,10 @@ export class SessionHub {
       title = feature.title;
     } else title = this.store.get(owner.id)!.title ?? "Session plan";
     const folder = this.planFolder(owner)!;
-    if (await this.plans.create(folder, planTemplate(title, owner.kind))) this.log.info({ owner }, "plan started");
+    const template = planTemplate(title, owner.kind);
+    if (!(await this.writingPlan(folder, () => this.plans.create(folder, template)))) return;
+    this.store.addPlanRevision({ projectDir: this.cwd, folder, markdown: template, by: "owner" });
+    this.log.info({ owner }, "plan started");
   }
 
   /** A folder name for a feature's plan: its title as a slug, `-2`, `-3`… when that's taken. */
@@ -482,15 +490,74 @@ export class SessionHub {
   /** A plan file changed, from anywhere: every tab gets it, and, when a plan appeared or went, the
    * list that says who has one. */
   private planChanged(folder: string, markdown: string | undefined, existed: boolean): void {
-    const [kind, name = ""] = folder.split("/");
-    let owner: PlanOwner | undefined;
-    if (kind === "sessions" && this.ours(name)) owner = { kind: "session", id: name };
-    const feature = kind === "features" ? this.store.featureByPlanDir(this.cwd, name) : undefined;
-    if (feature) owner = { kind: "feature", id: feature.id };
+    const owner = this.ownerOfPlan(folder);
     if (!owner) return; // a folder Kratos didn't make: made by hand, or another project's database
+    // Not Kratos's write, not a running turn's: someone outside Kratos (an editor) changed it.
+    const turns = [...this.turnPlans.values()];
+    if (!this.writingPlans.has(folder) && !turns.some((plans) => plans.has(folder))) {
+      this.store.addPlanRevision({ projectDir: this.cwd, folder, markdown: markdown ?? null, by: "outside" });
+    }
     this.broadcast(this.planOf(owner, markdown));
     if (existed === (markdown !== undefined)) return; // an edit: who has a plan is unchanged
     this.broadcast(owner.kind === "session" ? this.sessionList() : this.featureList());
+  }
+
+  /** Whose plan a folder under `.kratos/` holds; undefined for one Kratos doesn't know. */
+  private ownerOfPlan(folder: string): PlanOwner | undefined {
+    const [kind, name = ""] = folder.split("/");
+    if (kind === "sessions") return this.ours(name) ? { kind: "session", id: name } : undefined;
+    const feature = kind === "features" ? this.store.featureByPlanDir(this.cwd, name) : undefined;
+    return feature && { kind: "feature", id: feature.id };
+  }
+
+  /** Kratos writes a plan: its change is credited by the caller, not to "outside Kratos". */
+  private async writingPlan<T>(folder: string, write: () => Promise<T>): Promise<T> {
+    this.writingPlans.add(folder);
+    try {
+      return await write();
+    } finally {
+      this.writingPlans.delete(folder);
+    }
+  }
+
+  /** A turn starts (4p3a): remember its session's plans as they are, its own and its feature's. */
+  private planTurnStarted(sessionId: string): void {
+    const { session, feature } = this.planPaths(sessionId);
+    const folders = [session, ...(feature ? [feature.path] : [])].map((path) => path.replace(/^\.kratos\//, "").replace(/\/plan\.md$/, ""));
+    this.turnPlans.set(sessionId, new Map(folders.map((folder) => [folder, this.plans.text(folder)])));
+  }
+
+  /**
+   * A turn ended (4p3a): each of its plans that changed is the turn's edit. Read from disk (the
+   * watcher can miss one), held to who-writes-what (4p0: what isn't the agent's to do is put back
+   * and written), recorded as the session's revision, shown in its chat, and what was put back is
+   * said to the agent with its next prompt.
+   */
+  private async planTurnEnded(sessionId: string): Promise<void> {
+    const started = this.turnPlans.get(sessionId);
+    if (!started) return;
+    try {
+      for (const [folder, before] of started) {
+        const after = await this.plans.refresh(folder);
+        const owner = this.ownerOfPlan(folder);
+        if (after === before || !owner) continue;
+        let final = after;
+        const { markdown, undone, intentChanged } = after === undefined ? { markdown: after, undone: [], intentChanged: false } : reconcileAgentEdit(before ?? "", after);
+        if (markdown !== undefined && markdown !== after) {
+          await this.writingPlan(folder, () => this.plans.write(folder, markdown));
+          final = markdown;
+        }
+        this.store.addPlanRevision({ projectDir: this.cwd, folder, markdown: final ?? null, by: "session", sessionId });
+        const runtime = this.runtimes.get(sessionId);
+        runtime?.addToLog({ type: "plan_updated", owner, path: `.kratos/${folder}/plan.md`, before: before ?? null, after: final ?? null, undone, intentChanged: before !== undefined && intentChanged });
+        if (undone.length > 0) runtime?.tellAgentNext(`[Kratos] In ${owner.kind === "feature" ? "the feature plan" : "this session's plan"} (.kratos/${folder}/plan.md) I put back what isn't yours to do: ${undone.join(" ")}`);
+        this.log.info({ session: sessionId, folder, undone: undone.length }, "plan changed in a turn");
+      }
+    } catch (err) {
+      this.log.warn({ err, session: sessionId }, "could not settle the turn's plan changes");
+    } finally {
+      if (this.turnPlans.get(sessionId) === started) this.turnPlans.delete(sessionId);
+    }
   }
 
   /** Is this one of this project's features? Tells the tab when not. */
@@ -605,6 +672,7 @@ export class SessionHub {
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
         features: this.featureOps(sessionId),
+        onTurn: (edge) => (edge === "start" ? this.planTurnStarted(sessionId) : void this.planTurnEnded(sessionId)),
         instructions: () => {
           void this.plans.prepare().catch((err) => this.log.warn({ err }, "could not prepare .kratos/ for plans"));
           return planInstructions(this.planPaths(sessionId));

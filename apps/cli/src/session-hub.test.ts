@@ -1842,3 +1842,78 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
     expect(agents[0]!.options.instructions).toContain(".kratos/features/reports/plan.md");
   });
 });
+
+describe("SessionHub: every plan change is recorded (4p3a, D79)", () => {
+  const updates = (seen: ServerMessage[]) => seen.filter((m): m is Extract<ServerMessage, { type: "plan_updated" }> => m.type === "plan_updated");
+  const revisions = (store: SessionStore, folder: string) => store.planRevisions("/projects/demo", folder).map((r) => [r.by, r.sessionId]);
+
+  it("a turn's edit: held to who-writes-what, written back, credited to the session, in its chat, told to the agent", async () => {
+    const { agents, tab, plans, store } = setup();
+    const a = tab();
+    const id = a.viewing;
+    const folder = `sessions/${id}`;
+    a.receive({ type: "start_plan", owner: { kind: "session", id } });
+    await tick();
+    a.receive({ type: "prompt", text: "work" });
+    plans.edit(folder, "# Session plan\n\n## Steps\n- [x] **S1. One**\n- [x] my own item\n"); // the agent, mid-turn
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+
+    expect(plans.text(folder)).toBe("# Session plan\n\n## Steps\n- [?] **S1. One**\n- [x] my own item\n"); // its own item stays ticked
+    expect(revisions(store, folder)).toEqual([
+      ["owner", null], // Start a plan
+      ["session", id], // the turn (not "outside": it was that turn's)
+    ]);
+    expect(updates(a.seen)).toEqual([
+      {
+        type: "plan_updated",
+        owner: { kind: "session", id },
+        path: `.kratos/${folder}/plan.md`,
+        before: "# Session plan\n\n## Approach\n\n## Steps\n",
+        after: "# Session plan\n\n## Steps\n- [?] **S1. One**\n- [x] my own item\n",
+        undone: ["S1: only you tick a step; marked [?] for you to check."],
+        intentChanged: false,
+      },
+    ]);
+    a.receive({ type: "prompt", text: "next" });
+    expect(agents[0]!.prompts[1]).toBe(
+      `[Kratos] In this session's plan (.kratos/${folder}/plan.md) I put back what isn't yours to do: S1: only you tick a step; marked [?] for you to check.\n\nnext`,
+    );
+  });
+
+  it("a feature plan the turn wrote is credited to the session; an unchanged one isn't recorded", async () => {
+    const { agents, tab, plans, store } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "plan it", newSession: true, featureId: feature });
+    plans.edit("features/reports", "# Reports\n\n## Steps\n- [ ] **P1. A**\n");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(revisions(store, "features/reports")).toEqual([["session", a.viewing]]);
+    expect(updates(a.seen)).toMatchObject([{ owner: { kind: "feature", id: feature }, before: null, undone: [] }]);
+
+    a.receive({ type: "prompt", text: "just talk" });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(updates(a.seen)).toHaveLength(1);
+    expect(revisions(store, "features/reports")).toHaveLength(1);
+  });
+
+  it("an edit while no turn on that plan runs is credited to someone outside Kratos", async () => {
+    const { tab, plans, store } = setup();
+    const a = tab();
+    const folder = `sessions/${a.viewing}`;
+    a.receive({ type: "start_plan", owner: { kind: "session", id: a.viewing } });
+    await tick();
+    plans.edit(folder, "# Edited in an editor\n");
+    expect(revisions(store, folder)).toEqual([
+      ["owner", null],
+      ["outside", null],
+    ]);
+    expect(updates(a.seen)).toEqual([]); // not a turn's: nothing in the chat
+  });
+});

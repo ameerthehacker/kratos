@@ -1,4 +1,5 @@
 import type { AgentEvent, AttachmentRef, QuestionAnswer, QuestionRequest, ToolAction } from "@kratos/core";
+import { diffLines } from "diff";
 import type { LogMessage } from "@/lib/kratos-store";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
@@ -62,6 +63,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
   const queued = new Map<string, Extract<LogMessage, { type: "prompt_queued" }>>(); // by prompt id (D56)
   let group: Step[] | null = null;
   let thoughts = 0; // thinking has no id of its own
+  let plans = 0; // nor does a plan update (4p3a)
   const addStep = (step: Step) => {
     if (!group) items.push({ type: "steps", steps: (group = []) });
     group.push(step);
@@ -140,6 +142,8 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       step.doing = step.title;
       step.question = { id: message.id, request };
       questions.set(message.id, step);
+    } else if (message.type === "plan_updated") {
+      addStep(planStep(message, plans++));
     } else if (message.type === "question_resolved") {
       const step = questions.get(message.id);
       if (step?.question) {
@@ -171,6 +175,34 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
     }
   }
   return items;
+}
+
+/** A turn's change to a plan (4p3a), as an edit step: its diff like any file's, and what Kratos put
+ * back of the agent's edit. */
+function planStep(message: Extract<LogMessage, { type: "plan_updated" }>, n: number): Step {
+  const which = message.owner.kind === "feature" ? "the plan" : "the session plan";
+  const [before, after] = [message.before ?? "", message.after ?? ""];
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(before, after)) {
+    if (part.added) added += part.count ?? 0;
+    if (part.removed) removed += part.count ?? 0;
+  }
+  const chips: Chip[] = [{ text: `+${added} −${removed}`, tone: "muted" }];
+  if (message.undone.length > 0) chips.push({ text: `${message.undone.length} put back`, tone: "wait" });
+  if (message.intentChanged) chips.push({ text: "Intent changed", tone: "wait" });
+  const verb = message.after === null ? "Removed" : message.before === null ? "Wrote" : "Updated";
+  return {
+    id: `plan-${n}`,
+    kind: "edit",
+    title: `${verb} ${which}`,
+    intent: `Update ${which}`,
+    doing: `Updating ${which}`,
+    chips,
+    raw: message.undone.length > 0 ? { output: `Put back by Kratos:\n${message.undone.join("\n")}` } : {},
+    edit: { path: message.path, changes: [{ before, after }] },
+    finished: true,
+  };
 }
 
 function describe(call: ToolCall, cwd: string): Step {

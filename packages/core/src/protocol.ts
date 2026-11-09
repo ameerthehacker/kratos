@@ -276,6 +276,18 @@ export const ServerMessage = z.discriminatedUnion("type", [
   /** A plan, to the tab that asked (`get_plan`) and to every tab whenever its file changes (4p1a).
    * `markdown` is the file as written, `plan` what Kratos read from it; both null: no plan. */
   z.object({ type: z.literal("plan"), owner: PlanOwner, markdown: z.string().nullable(), plan: Plan.nullable() }),
+  /** In a session's log (4p3a): its turn changed a plan. `before` / `after` the file's text (null:
+   * none), after Kratos held the edit to who-writes-what (`undone`: what it put back, in words). */
+  z.object({
+    type: z.literal("plan_updated"),
+    owner: PlanOwner,
+    /** The plan file, relative to the project (".kratos/features/csv-export/plan.md"). */
+    path: z.string(),
+    before: z.string().nullable(),
+    after: z.string().nullable(),
+    undone: z.array(z.string()),
+    intentChanged: z.boolean(),
+  }),
   /** Reply to `ping`: server info + timestamp. */
   z.object({
     type: z.literal("pong"),

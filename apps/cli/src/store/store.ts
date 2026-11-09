@@ -7,13 +7,14 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import type { ServerMessage } from "@kratos/core";
 import { MIGRATIONS } from "../paths.js";
-import { attachments, features, messages, sessions, snapshots, viewedFiles } from "./schema.js";
+import { attachments, features, messages, planRevisions, sessions, snapshots, viewedFiles } from "./schema.js";
 
 
 export type StoredSession = typeof sessions.$inferSelect;
 export type StoredAttachment = typeof attachments.$inferSelect;
 export type StoredSnapshot = typeof snapshots.$inferSelect;
 export type StoredFeature = typeof features.$inferSelect;
+export type StoredPlanRevision = typeof planRevisions.$inferSelect;
 
 /** Most recently active first; a tie (same millisecond) goes to the later-created session. */
 const NEWEST_FIRST = [desc(sessions.updatedAt), desc(sql`rowid`)];
@@ -114,6 +115,16 @@ export class SessionStore {
       .where(eq(features.projectDir, projectDir))
       .orderBy(desc(features.updatedAt), desc(sql`rowid`))
       .all();
+  }
+
+  /** A plan changed (4p3a): its text after, and who changed it. */
+  addPlanRevision(revision: Omit<typeof planRevisions.$inferInsert, "id" | "createdAt">): void {
+    this.db.insert(planRevisions).values({ ...revision, createdAt: new Date() }).run();
+  }
+
+  /** A plan's revisions, oldest first. */
+  planRevisions(projectDir: string, folder: string): StoredPlanRevision[] {
+    return this.db.select().from(planRevisions).where(and(eq(planRevisions.projectDir, projectDir), eq(planRevisions.folder, folder))).orderBy(planRevisions.id).all();
   }
 
   /** Name a feature's plan folder (D79), once, when its plan is first made. */

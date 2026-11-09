@@ -226,3 +226,38 @@ describe("buildTimeline: steering prompts (D56)", () => {
     expect(items.some((i) => i.type === "event" && i.text === "Stopped")).toBe(false); // the step says it
   });
 });
+
+describe("buildTimeline: plan updates (4p3a)", () => {
+  it("shows a turn's change to a plan as an edit step: its diff, its counts, what was put back", () => {
+    const [prompt, group] = buildTimeline([
+      { type: "user_prompt", text: "tick P1" },
+      {
+        type: "plan_updated",
+        owner: { kind: "feature", id: "f" },
+        path: ".kratos/features/reports/plan.md",
+        before: "# R\n- [ ] **P1. A**\n",
+        after: "# R\n- [?] **P1. A**\n  Proof: ran it\n",
+        undone: ["P1: only you tick a step; marked [?] for you to check."],
+        intentChanged: true,
+      },
+    ]);
+    expect(prompt).toMatchObject({ type: "prompt" });
+    const step = group!.type === "steps" ? group!.steps[0]! : undefined;
+    expect(step).toMatchObject({
+      kind: "edit",
+      title: "Updated the plan",
+      chips: [
+        { text: "+2 −1", tone: "muted" },
+        { text: "1 put back", tone: "wait" },
+        { text: "Intent changed", tone: "wait" },
+      ],
+      edit: { path: ".kratos/features/reports/plan.md", changes: [{ before: "# R\n- [ ] **P1. A**\n", after: "# R\n- [?] **P1. A**\n  Proof: ran it\n" }] },
+      raw: { output: "Put back by Kratos:\nP1: only you tick a step; marked [?] for you to check." },
+    });
+    const [, written] = buildTimeline([
+      { type: "user_prompt", text: "plan" },
+      { type: "plan_updated", owner: { kind: "session", id: "s" }, path: "p", before: null, after: "# S\n", undone: [], intentChanged: false },
+    ]);
+    expect(written!.type === "steps" && written!.steps[0]!.title).toBe("Wrote the session plan");
+  });
+});

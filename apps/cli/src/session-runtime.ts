@@ -79,8 +79,11 @@ export class SessionRuntime {
   /** The turn's start snapshot while it's being taken (3v1, D65): prompts reach the agent after it. */
   private snapshotting: Promise<void> | undefined;
   private readonly logger: Logger;
-  /** Said to the running agent with the next prompt: its plans changed under it (4p2). */
+  /** Said to the running agent with the next prompt: its plans moved under it (4p2). A fresh start
+   * drops it (its instructions are current). */
   private plansNote: string | undefined;
+  /** Said to the agent with the next prompt, whenever that is (4p3a: what was put back). */
+  private agentNotes: string[] = [];
 
   constructor(
     readonly id: string,
@@ -98,6 +101,8 @@ export class SessionRuntime {
       features?: SessionFeatureOps;
       /** Kratos's standing instructions for the agent (4p2: its plans), as they are when it starts. */
       instructions?: () => string | undefined;
+      /** A turn starts or ends (4p3a: what its plans were, and what it changed). */
+      onTurn?: (edge: "start" | "end") => void;
     },
   ) {
     this.logger = deps.log.child({ component: "session", session: id });
@@ -179,6 +184,7 @@ export class SessionRuntime {
     }
     this.publish({ type: "user_prompt", text, ...attachments });
     this.turn = { state: "running", startedBy: "prompt" };
+    this.deps.onTurn?.("start");
     this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     const session = (this.session ??= this.start());
@@ -399,12 +405,24 @@ export class SessionRuntime {
     this.plansNote = this.session ? note : undefined;
   }
 
+  /** Something about its plans the agent should hear with its next prompt, whether or not it is
+   * still running (4p3a: what Kratos put back in its edit). Added to any note already waiting. */
+  tellAgentNext(note: string): void {
+    this.agentNotes.push(note);
+  }
+
+  /** Put a message in this session's log (Kratos's own news about it, like a plan it changed). */
+  addToLog(message: ServerMessage): void {
+    this.publish(message);
+  }
+
   /** The prompt as the agent gets it: with the plans note first when there is one, once. The log
    * and the chat keep the prompt as typed. */
   private withPlansNote(text: string): string {
-    const note = this.plansNote;
+    const notes = [this.plansNote, ...this.agentNotes].filter(Boolean);
     this.plansNote = undefined;
-    return note ? `${note}\n\n${text}` : text;
+    this.agentNotes = [];
+    return notes.length > 0 ? `${notes.join("\n")}\n\n${text}` : text;
   }
 
   private start(): AgentSession {
@@ -461,6 +479,7 @@ export class SessionRuntime {
           this.logger.debug({ event }, "turn ended");
           this.turn = { state: "idle" };
           void this.takeSnapshot("turn_end");
+          this.deps.onTurn?.("end");
           if (this.queue.size === 0) this.runAfterTurn();
           this.deps.onChange();
         }
@@ -475,6 +494,7 @@ export class SessionRuntime {
       this.runAfterTurn(); // nothing runs here any more
       if (this.turn.state === "running") {
         this.turn = { state: "idle" };
+        this.deps.onTurn?.("end");
         this.deps.onChange();
       }
     }
@@ -510,7 +530,10 @@ export class SessionRuntime {
       if (now) now.read = true;
       this.logger.info({ prompt: id, how }, "queued prompt read");
       // Read with no turn running: the agent starts one itself, with this prompt.
-      if (turn.state === "idle") this.turn = { state: "running", startedBy: "queue" };
+      if (turn.state === "idle") {
+        this.turn = { state: "running", startedBy: "queue" };
+        this.deps.onTurn?.("start");
+      }
       this.stopping?.ids.delete(id);
     } else {
       const stopped = this.stopping?.ids.delete(id) ?? false;

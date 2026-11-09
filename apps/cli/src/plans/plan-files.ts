@@ -19,6 +19,9 @@ export interface PlanFiles {
   taken(folder: string): boolean;
   /** Writes a plan, making its folder, and `.kratos/` with its `.gitignore`, as needed. */
   write(folder: string, markdown: string): Promise<void>;
+  /** Its text as it is on disk now; tells the listeners first if that's news (the watcher can miss
+   * an edit, so a turn's end reads for itself, 4p3a). */
+  refresh(folder: string): Promise<string | undefined>;
   /** Makes `.kratos/` (with its `.gitignore`) and starts watching, before an agent may write a plan
    * there itself (4p2): its first plan is then still kept out of git, and seen. */
   prepare(): Promise<void>;
@@ -122,6 +125,12 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
     text: (folder) => known.get(folder),
     taken: (folder) => existsSync(join(root, folder)),
     prepare: () => prepare(),
+    async refresh(folder) {
+      const n = next(folder); // newer than any watcher read under way
+      const text = await readFile(join(root, folder, PLAN), "utf8").catch(() => undefined);
+      if (latest.get(folder) === n) notify(folder, text);
+      return known.get(folder);
+    },
     async write(folder, markdown) {
       await prepare(folder);
       await writeFile(join(root, folder, PLAN), markdown);
@@ -165,6 +174,7 @@ export function memoryPlans(): PlanFiles & { edit(folder: string, markdown: stri
     text: (folder) => plans.get(folder),
     taken: (folder) => plans.has(folder),
     prepare: async () => {},
+    refresh: async (folder) => plans.get(folder),
     write: async (folder, markdown) => edit(folder, markdown),
     create: async (folder, markdown) => !plans.has(folder) && (edit(folder, markdown), true),
     onChange: (listener) => {

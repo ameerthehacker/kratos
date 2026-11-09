@@ -18,7 +18,7 @@ const session = (id: string, updatedAt: number, more: Partial<SessionSummary> = 
   hasPlan: false,
   ...more,
 });
-const feature = (id: string, updatedAt: number, done = false): FeatureSummary => ({ id, title: id, done, updatedAt, hasPlan: false });
+const feature = (id: string, updatedAt: number, done = false, hasPlan = false): FeatureSummary => ({ id, title: id, done, updatedAt, hasPlan });
 /** Each row as its id; a folder as `id[its sessions]`. */
 const names = (items: SidebarItem[]) => items.map((i) => (i.kind === "session" ? i.session.id : `${i.feature.id}[${i.sessions.map((s) => s.id).join(",")}]`));
 
@@ -77,7 +77,7 @@ describe("sidebarTree (D73)", () => {
     );
     const w = treeNodes(working, "working");
     expect(w.children.get("root")).toEqual(["feature:plans", "feature:empty", "one-off"]);
-    expect(w.children.get("feature:plans")).toEqual(["p-live"]);
+    expect(w.children.get("feature:plans")).toEqual(["plan:plans", "p-live"]);
     expect(w.nodes.get("empty:empty")).toEqual({ kind: "empty", text: "No sessions yet" });
     expect(w.closedByDefault.size).toBe(0);
 
@@ -89,6 +89,19 @@ describe("sidebarTree (D73)", () => {
 
     const allDone = sidebarTree([session("x", 1, { featureId: "plans", done: true })], [feature("plans", 1)]);
     expect(treeNodes(allDone.working, "working").nodes.get("empty:plans")).toEqual({ kind: "empty", text: "Nothing in progress" });
+  });
+
+  it("puts a feature's Plan row first, in one place: Working always, a done feature's only with a plan (4p1c)", () => {
+    const sessions = [session("live", 3, { featureId: "a" }), session("old", 2, { featureId: "a", done: true }), session("x", 1, { featureId: "c" })];
+    const { working, done } = sidebarTree(sessions, [feature("a", 5), feature("b", 4), feature("c", 3, true, true), feature("d", 2, true)]);
+    const w = treeNodes(working, "working");
+    expect(w.children.get("feature:a")).toEqual(["plan:a", "live"]);
+    expect(w.children.get("feature:b")).toEqual(["plan:b", "empty:b"]); // no plan yet: it opens to "Start a plan"
+    expect(w.nodes.get("plan:a")).toMatchObject({ kind: "plan", feature: { id: "a" } });
+    const d = treeNodes(done, "done");
+    expect(d.children.get("done-feature:a")).toEqual(["old"]); // the working feature's plan is in Working
+    expect(d.children.get("done-feature:c")).toEqual(["plan:c", "x"]);
+    expect(d.children.get("done-feature:d")).toEqual(["empty:d"]); // done, never planned
   });
 
   it("lands a drop in a working feature, or a one-off only over Working's open space or a one-off's row (4c3)", () => {

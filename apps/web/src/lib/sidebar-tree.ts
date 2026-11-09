@@ -54,11 +54,12 @@ export function sidebarTree(sessions: readonly SessionSummary[], features: reado
   };
 }
 
-/** A node of a sidebar section's tree (Headless Tree, D74): a feature's folder, a session, or the
- * line an empty folder shows. `inDone`: the folder is in the Done section. */
+/** A node of a sidebar section's tree (Headless Tree, D74): a feature's folder, its plan (4p1c), a
+ * session, or the line an empty folder shows. `inDone`: the folder is in the Done section. */
 export type TreeNode =
   | { kind: "root" }
   | { kind: "feature"; feature: FeatureSummary; count: number; status: SessionSummary["status"]; inDone: boolean }
+  | { kind: "plan"; feature: FeatureSummary }
   | { kind: "session"; session: SessionSummary; quiet: boolean }
   | { kind: "empty"; text: string };
 
@@ -90,6 +91,10 @@ export function treeNodes(
     add("root", id, { kind: "feature", feature, count: sessions.length, status, inDone });
     children.set(id, []);
     if (inDone) closedByDefault.add(id);
+    // Its plan, first, in one place: a working feature's folder in Working (always: no plan yet
+    // opens to "Start a plan"), a done feature's only if it has one; never Done's copy of a
+    // working feature.
+    if (feature.done ? feature.hasPlan : !inDone) add(id, `plan:${feature.id}`, { kind: "plan", feature });
     for (const s of sessions) add(id, s.id, { kind: "session", session: s, quiet: feature.done });
     if (sessions.length === 0) add(id, `empty:${feature.id}`, { kind: "empty", text: elsewhere > 0 ? "Nothing in progress" : "No sessions yet" });
   }

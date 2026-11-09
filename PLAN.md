@@ -1379,7 +1379,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           4p3 shows the diff meanwhile); an `Answer:` line inside a step is dropped silently;
           answer text isn't escaped (an answer line `- b` becomes a nested list); step and
           decision titles are parsed by two copies of the same three lines.
-    - [ ] **4p1. Plans exist, and you can read them whole** (~150; board §6, §8) — a feature's
+    - [x] **4p1. Plans exist, and you can read them whole** (~150; board §6, §8) — a feature's
           folder (`.kratos/features/<slug>/`, slug from its title, fixed once made; renaming the
           feature keeps it) and a session's (`.kratos/sessions/<id>/`) are made when the plan is
           first written. The server watches them (chokidar) and sends `plan {owner, markdown,
@@ -1455,8 +1455,28 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             `/s/<id>`; the feature plan again in Kratos Dark. 266 tests pass, typecheck 7/7,
             build 5/5. ~245 lines (page 242 incl. its small parts, hook 19, routes and the Esc
             key). No unit tests: it only draws what 4p0 parsed (tested there).
-      - [ ] **4p1c. Ways in** (~100) — the folder's "Plan" row in the sidebar tree, and the
-            checklist icon on a session's row when it has a plan.
+      - [x] **4p1c. Ways in** (~100; board §3, §8) — the folder's "Plan" row in the sidebar
+            tree, and the checklist icon on a session's row when it has a plan. The Plan row is
+            a folder's first child: always in a working feature's folder in Working (muted
+            until there's a plan; it opens to "Start a plan"), in a done feature's folder only
+            if it has one, never in the Done copy of a working feature (one place per plan). A
+            tree row like the others: Enter / click opens `/f/:id/plan`, it can't be dragged, a
+            drag over it lands in its folder. A session with a plan shows the checklist icon at
+            the row's end, a link to `/s/:id/plan` that slides left of the Done check on hover.
+            Both say where you came from (the page you were on, by name), so the plan page's
+            back says "← Filters in the export" (board §8). Scope: web `lib/sidebar-tree.ts` +
+            test, `components/sessions-sidebar.tsx`. Accept: tree tests (where the Plan row is
+            and isn't); headless: a folder with its Plan row (muted and not), a session row with
+            the icon, hover, opening each and coming back by the named link and by Esc; the
+            keyboard reaches the Plan row and Enter opens it; typecheck, test, build.
+            **Proof:** 2 tree tests (placement: Working always, a done feature's only with a plan,
+            never Done's copy of a working one; the existing shape test now has the Plan row
+            first); 269 pass, typecheck 7/7, build 5/5. Headless Chrome, Kratos Dark, the 4p1b
+            throwaway project: folders with their Plan rows (muted for a feature with no plan),
+            the session row's checklist icon, which moves left of the Done check on hover; the
+            icon → its plan, the way back named for the page it came from ("New session": the
+            untitled session) and taking you there; a Plan row from Home → "← Home", Esc → Home;
+            the keyboard: ↑ to the folder, ↓ back to Plan, Enter opens it. ~95 lines.
     - [ ] **4p2. Every session reads its plans** (~120; board §5, §8) — the plan becomes what
           agents work from. Core: `startSession({instructions})`, generic; the Claude adapter
           passes it as `--append-system-prompt`. Instructions: where the feature plan and this

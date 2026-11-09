@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useNavigate } from "react-router";
+import { Link, NavLink, useLocation, useNavigate } from "react-router";
 import {
   dragAndDropFeature,
   hotkeysCoreFeature,
@@ -9,7 +9,7 @@ import {
   type ItemInstance,
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
-import { Check, ChevronRight, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
+import { Check, ChevronRight, ListTodo, Map as MapIcon, Package, PackageCheck, PackagePlus, PanelLeft, Pencil, Plus, RotateCcw } from "lucide-react";
 import type { FeatureSummary, SessionSummary } from "@kratos/core";
 import { DoneButton } from "@/components/done-button";
 import { NameField } from "@/components/name-field";
@@ -21,6 +21,7 @@ import { useKratos } from "@/lib/kratos-store";
 import { useSidebarPrefs } from "@/lib/sidebar-prefs";
 import { dropFeature, sidebarTree, treeNodes, type SidebarItem, type TreeNode } from "@/lib/sidebar-tree";
 import { cn } from "@/lib/utils";
+import type { PlanFrom } from "@/pages/plan";
 
 /** Shows or hides the sidebar: in its own header when open, in the main header when closed (3d4). */
 export function SidebarToggle({ className }: { className?: string }) {
@@ -147,7 +148,19 @@ function Section(props: { label: string; count: number; always?: boolean; grow?:
 }
 
 const nodeName = (node: TreeNode) =>
-  node.kind === "feature" ? node.feature.title : node.kind === "session" ? sessionTitle(node.session) : node.kind === "empty" ? node.text : "";
+  node.kind === "feature" ? node.feature.title : node.kind === "session" ? sessionTitle(node.session) : node.kind === "empty" ? node.text : node.kind === "plan" ? "Plan" : "";
+
+/** Where a plan link is opened from, by name, so the plan page's way back says it (4p1c, board §8:
+ * "← Filters in the export"). */
+function usePlanFrom(): PlanFrom {
+  const { pathname, search, state } = useLocation();
+  const sessionId = /^\/s\/([^/]+)$/.exec(pathname)?.[1];
+  const session = useKratos((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined));
+  // From one plan to another: keep the first one's way back, not a loop between plans.
+  if (pathname.endsWith("/plan")) return (state ?? {}) as PlanFrom;
+  const label = pathname === "/" ? "Home" : session ? sessionTitle(session) : pathname.endsWith("/review") ? "Review changes" : "Back";
+  return { from: pathname + search, label };
+}
 
 /**
  * A section's rows as an accessible tree (Headless Tree, D74): folders open and close by click or
@@ -162,6 +175,7 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
   const collapsed = useSidebarPrefs((s) => s.collapsed);
   const setCollapsed = useSidebarPrefs((s) => s.setCollapsed);
   const navigate = useNavigate();
+  const from = usePlanFrom();
   const folders = useMemo(() => [...children.keys()].filter((id) => id !== "root"), [children]);
   const isClosed = (id: string) => collapsed[id] ?? closedByDefault.has(id);
   // Same array until a folder opens or closes: Headless Tree compares it by identity, and a new
@@ -194,6 +208,7 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
     onPrimaryAction: (item) => {
       const node = item.getItemData();
       if (node.kind === "session") navigate(`/s/${node.session.id}`);
+      if (node.kind === "plan") navigate(`/f/${node.feature.id}/plan`, { state: from });
     },
     canRename: (item) => item.getItemData().kind === "feature",
     onRename: (item, value) => {
@@ -233,7 +248,7 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
     // the drag's data yet), not the folder the drop would fall back to: ask about that instead.
     canDragForeignDragObjectOver: (data, target) => {
       const row = target.item.getItemData().kind;
-      const landing = (row === "session" || row === "empty") && target.item.getParent() ? { item: target.item.getParent()! } : target;
+      const landing = (row === "session" || row === "empty" || row === "plan") && target.item.getParent() ? { item: target.item.getParent()! } : target;
       const featureId = land(landing);
       return data.types.includes(SESSIONS_DRAG) && featureId !== undefined && dragging.some((s) => s.featureId !== featureId);
     },
@@ -284,6 +299,7 @@ function SectionTree({ label, items }: { label: string; items: SidebarItem[] }) 
         <Row
           key={item.getId()}
           item={item}
+          from={from}
           onDragOver={() => {
             hovered.current = { node: item.getItemData(), level: item.getItemMeta().level };
             setOverSpace(false);
@@ -303,7 +319,7 @@ let dragging: SessionSummary[] = [];
 /** Rows inside a folder hang off a guide line. */
 const INDENT = ["", "ml-4 border-l border-border pl-1.5"];
 
-function Row({ item, onDragOver }: { item: ItemInstance<TreeNode>; onDragOver: () => void }) {
+function Row({ item, from, onDragOver }: { item: ItemInstance<TreeNode>; from: PlanFrom; onDragOver: () => void }) {
   const node = item.getItemData();
   const level = Math.min(item.getItemMeta().level, INDENT.length - 1);
   const props = item.getProps();
@@ -334,13 +350,30 @@ function Row({ item, onDragOver }: { item: ItemInstance<TreeNode>; onDragOver: (
               e.stopPropagation();
               item.setFocused();
             }}
-            className={({ isActive }) => cn(box, "flex flex-col gap-0.5 py-2 pr-10 pl-2.5 hover:bg-accent", isActive && "bg-secondary")}
+            className={({ isActive }) =>
+              cn(box, "flex flex-col gap-0.5 py-2 pr-10 pl-2.5 hover:bg-accent", node.session.hasPlan && "group-hover/row:pr-16", isActive && "bg-secondary")
+            }
           >
             <SessionTitle session={node.session} className={cn("truncate text-sm", (node.session.done || node.quiet) && "text-muted-foreground")} />
             {!node.session.done && !(node.quiet && node.session.status === "idle") && (
               <SessionStatus status={node.session.status} queued={node.session.queued} />
             )}
           </NavLink>
+          {/* Its plan (4p1c): at the row's end, moving aside for the Done check on hover. */}
+          {node.session.hasPlan && (
+            <Link
+              to={`/s/${node.session.id}/plan`}
+              state={from}
+              tabIndex={-1}
+              draggable={false}
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`${sessionTitle(node.session)}: its plan`}
+              title="Its plan"
+              className="absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-run hover:bg-secondary group-hover/row:right-9"
+            >
+              <ListTodo className="size-3.5" aria-hidden="true" />
+            </Link>
+          )}
           <DoneButton
             tabIndex={-1}
             session={node.session}
@@ -351,6 +384,25 @@ function Row({ item, onDragOver }: { item: ItemInstance<TreeNode>; onDragOver: (
       )}
       {node.kind === "feature" && <FeatureRow node={node} item={item} box={box} />}
       {node.kind === "empty" && <p className={cn(box, "px-2.5 py-1.5 text-xs text-muted-foreground")}>{node.text}</p>}
+      {node.kind === "plan" && (
+        // The feature's plan (4p1c): a row like a session's, muted until there's a plan.
+        <NavLink
+          to={`/f/${node.feature.id}/plan`}
+          state={from}
+          tabIndex={-1}
+          draggable={false}
+          onClick={(e) => {
+            e.stopPropagation();
+            item.setFocused();
+          }}
+          className={({ isActive }) =>
+            cn(box, "flex items-center gap-2 py-1.5 pl-2.5 text-sm hover:bg-accent", !node.feature.hasPlan && "text-muted-foreground", isActive && "bg-secondary")
+          }
+        >
+          <MapIcon className={cn("size-3.5 shrink-0", node.feature.hasPlan ? "text-primary" : "text-faint")} aria-hidden="true" />
+          Plan
+        </NavLink>
+      )}
     </div>
   );
 }

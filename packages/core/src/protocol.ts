@@ -11,7 +11,7 @@ import {
   QuestionReply,
   QuestionRequest,
 } from "./agent.js";
-import { Plan, PlanKind } from "./plan.js";
+import { Plan, PlanAction, PlanKind } from "./plan.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -136,6 +136,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
   /** A plan's text and what Kratos read from it (4p1a); answered with `plan`. */
   z.object({ type: z.literal("get_plan"), owner: PlanOwner }),
+  /** Your change to a plan from its page (4p4a): written to the file, which every tab then gets. */
+  z.object({ type: z.literal("plan_action"), owner: PlanOwner, action: PlanAction }),
   /** Start a plan from the template; nothing happens when there is one (4p1a). */
   z.object({ type: z.literal("start_plan"), owner: PlanOwner }),
   /** Move a session into a working feature, back to a one-off with null, or into a new feature

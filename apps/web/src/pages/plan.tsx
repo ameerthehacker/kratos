@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowLeft, Check, CircleAlert, ListTodo, Map as MapIcon, MessageSquare, Package } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { Streamdown } from "streamdown";
-import type { Plan, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
+import type { FeatureSummary, Plan, PlanAction, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
+import { FeatureDoneButton } from "@/components/feature-done-button";
 import { sessionTitle } from "@/components/session-status";
 import { Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
@@ -16,8 +17,9 @@ import { cn } from "@/lib/utils";
 export type PlanFrom = { from?: string; label?: string };
 
 /**
- * `/f/:featureId/plan` and `/s/:sessionId/plan` — a whole plan, read-only, in the main island
- * (4p1b, D79; the design's Plans board §6, §8). Esc goes back.
+ * `/f/:featureId/plan` and `/s/:sessionId/plan` — a whole plan in the main island (4p1b, D79; the
+ * design's Plans board §6, §8), with your side of who-writes-what (4p4a): tick or send back a step
+ * the agent says is done, accept or ask about a decision, answer a question. Esc goes back.
  */
 export function PlanPage({ kind }: { kind: PlanKind }) {
   const params = useParams();
@@ -53,7 +55,13 @@ export function PlanPage({ kind }: { kind: PlanKind }) {
           {plan === undefined ? null : plan.plan === null ? (
             <NoPlan kind={kind} owner={owner} done={kind === "feature" && feature?.done === true} onStart={() => id && send({ type: "start_plan", owner: { kind, id } })} />
           ) : (
-            <PlanBody plan={plan.plan} kind={kind} context={<Context kind={kind} plan={plan.plan} featureTitle={feature?.title} />} />
+            <PlanBody
+              plan={plan.plan}
+              kind={kind}
+              context={<Context kind={kind} plan={plan.plan} featureTitle={feature?.title} />}
+              feature={kind === "feature" ? feature : undefined}
+              act={(action) => id && send({ type: "plan_action", owner: { kind, id }, action })}
+            />
           )}
         </div>
       </main>
@@ -100,13 +108,28 @@ function NoPlan({ kind, owner, done, onStart }: { kind: PlanKind; owner?: string
   );
 }
 
-function PlanBody({ plan, kind, context }: { plan: Plan; kind: PlanKind; context: ReactNode }) {
+type Act = (action: PlanAction) => void;
+
+function PlanBody({ plan, kind, context, feature, act }: { plan: Plan; kind: PlanKind; context: ReactNode; feature?: FeatureSummary; act: Act }) {
+  const gated = plan.steps.filter((s) => s.id);
+  // Every step yours to tick is ticked: the feature can be finished (never automatic, D73).
+  const finished = feature && !feature.done && gated.length > 0 && gated.every((s) => s.mark === "ticked");
   return (
     <article className="flex flex-col gap-7">
       <header className="flex flex-col gap-1">
         {context}
         <h1 className="font-heading text-2xl font-semibold tracking-tight">{plan.title || "Untitled plan"}</h1>
       </header>
+
+      {finished && (
+        <div className="flex items-center gap-3 rounded-2xl bg-add/10 px-4 py-3 ring-1 ring-add/25">
+          <Check className="size-4 flex-none text-add" aria-hidden="true" />
+          <p className="flex-1 text-sm">
+            All {gated.length} {gated.length === 1 ? "step" : "steps"} ticked{plan.decisions.some((d) => d.status === "proposed") ? ", but decisions are still waiting for you" : ""}.
+          </p>
+          <FeatureDoneButton feature={feature} labelled />
+        </div>
+      )}
 
       {plan.notes.length > 0 && (
         <div role="status" className="flex gap-3 rounded-2xl bg-wait/10 px-4 py-3 ring-1 ring-wait/25">
@@ -128,19 +151,19 @@ function PlanBody({ plan, kind, context }: { plan: Plan; kind: PlanKind; context
       )}
 
       <Section title="Steps">
-        {plan.steps.length === 0 ? <Empty>No steps yet.</Empty> : plan.steps.map((step, i) => <StepRow key={step.id ?? i} step={step} />)}
+        {plan.steps.length === 0 ? <Empty>No steps yet.</Empty> : plan.steps.map((step, i) => <StepRow key={step.id ?? i} step={step} act={act} />)}
       </Section>
 
       {(kind === "feature" || plan.decisions.length > 0) && (
         <Section title="Decisions">
-          {plan.decisions.length === 0 ? <Empty>None yet.</Empty> : plan.decisions.map((d, i) => <DecisionCard key={d.id ?? i} decision={d} />)}
+          {plan.decisions.length === 0 ? <Empty>None yet.</Empty> : plan.decisions.map((d, i) => <DecisionCard key={d.id ?? i} decision={d} act={act} />)}
         </Section>
       )}
 
       {plan.questions.length > 0 && (
         <Section title="Open questions">
           {plan.questions.map((q) => (
-            <QuestionRow key={q.text} question={q} />
+            <QuestionRow key={q.text} question={q} act={act} />
           ))}
         </Section>
       )}
@@ -183,7 +206,9 @@ function MarkDot({ mark }: { mark: StepMark }) {
   );
 }
 
-function StepRow({ step }: { step: PlanStep }) {
+function StepRow({ step, act }: { step: PlanStep; act: Act }) {
+  const [sendingBack, setSendingBack] = useState(false);
+  const id = step.id;
   return (
     <div className={cn("-mx-2.5 flex gap-2.5 rounded-xl px-2.5 py-2", step.mark === "claimed" && "bg-card ring-1 ring-wait/35")}>
       <MarkDot mark={step.mark} />
@@ -204,19 +229,77 @@ function StepRow({ step }: { step: PlanStep }) {
         )}
         {step.accept && <Field label="Accept">{step.accept}</Field>}
         {step.proof && <Field label="Proof">{step.proof}</Field>}
+        {step.notYet && <Field label="Not yet" tone="wait">{step.notYet}</Field>}
+        {/* The agent says it's done: yours to tick, or to send back with why (4p4a). */}
+        {id && step.mark === "claimed" &&
+          (sendingBack ? (
+            <NoteField
+              placeholder="What's missing? The agent reads it in the plan"
+              submit="Send back"
+              onDone={(note) => {
+                setSendingBack(false);
+                if (note) act({ kind: "not_yet", stepId: id, note });
+              }}
+            />
+          ) : (
+            <Actions>
+              <Button size="sm" className="rounded-full px-3" onClick={() => act({ kind: "tick", stepId: id })}>
+                Tick {id}
+              </Button>
+              <Button size="sm" variant="ghost" className="rounded-full px-3" onClick={() => setSendingBack(true)}>
+                Not yet
+              </Button>
+            </Actions>
+          ))}
       </div>
     </div>
   );
 }
 
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
-  <p className="text-xs text-muted-foreground">
-    <span className="font-medium text-secondary-foreground">{label}:</span> {children}
+const Actions = ({ children }: { children: ReactNode }) => <div className="flex items-center gap-1.5 pt-1">{children}</div>;
+
+/** A note in place (4p4a): Enter sends it (`optional`: also empty), Esc drops it — not also the
+ * page's Esc (back). */
+function NoteField(props: { placeholder: string; submit: string; initial?: string; optional?: boolean; onDone: (note: string | null) => void }) {
+  const [note, setNote] = useState(props.initial ?? "");
+  return (
+    <form
+      className="flex items-center gap-1.5 pt-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (note.trim() || props.optional) props.onDone(note.trim());
+      }}
+    >
+      <input
+        autoFocus
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape") return;
+          e.preventDefault(); // the page's Esc skips a handled one
+          props.onDone(null);
+        }}
+        aria-label={props.placeholder}
+        placeholder={props.placeholder}
+        className="h-7 min-w-0 flex-1 rounded-full bg-secondary px-3 text-sm outline-none placeholder:text-faint focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      <Button type="submit" size="sm" className="rounded-full px-3" disabled={!note.trim() && !props.optional}>
+        {props.submit}
+      </Button>
+    </form>
+  );
+}
+
+const Field = ({ label, tone, children }: { label: string; tone?: "wait"; children: ReactNode }) => (
+  <p className={cn("text-xs", tone === "wait" ? "text-wait" : "text-muted-foreground")}>
+    <span className={cn("font-medium", tone !== "wait" && "text-secondary-foreground")}>{label}:</span> {children}
   </p>
 );
 
-function DecisionCard({ decision }: { decision: PlanDecision }) {
+function DecisionCard({ decision, act }: { decision: PlanDecision; act: Act }) {
   const proposed = decision.status === "proposed";
+  const [asking, setAsking] = useState(false);
+  const id = decision.id;
   return (
     <div className={cn("flex flex-col gap-1 rounded-xl bg-card px-3 py-2.5", proposed && "ring-1 ring-wait/35")}>
       <p className="flex items-center gap-2 text-sm">
@@ -225,17 +308,58 @@ function DecisionCard({ decision }: { decision: PlanDecision }) {
         <span className={cn("rounded-full px-2 py-0.5 text-xs", proposed ? "bg-wait/12 text-wait" : "bg-add/12 text-add")}>{proposed ? "Proposed" : "Accepted"}</span>
       </p>
       {decision.text && <p className="text-xs whitespace-pre-line text-muted-foreground">{decision.text}</p>}
+      {/* Proposed: yours to accept, or to question; the question goes to Open questions (4p4a). */}
+      {id && proposed &&
+        (asking ? (
+          <NoteField
+            placeholder="Anything to add? (optional)"
+            submit="Ask why"
+            optional
+            onDone={(note) => {
+              setAsking(false);
+              if (note !== null) act({ kind: "ask_why", decisionId: id, ...(note ? { note } : {}) });
+            }}
+          />
+        ) : (
+          <Actions>
+            <Button size="sm" className="rounded-full px-3" onClick={() => act({ kind: "accept", decisionId: id })}>
+              Accept
+            </Button>
+            <Button size="sm" variant="ghost" className="rounded-full px-3" onClick={() => setAsking(true)}>
+              Ask why
+            </Button>
+          </Actions>
+        ))}
     </div>
   );
 }
 
-function QuestionRow({ question }: { question: PlanQuestion }) {
+function QuestionRow({ question, act }: { question: PlanQuestion; act: Act }) {
+  const [answering, setAnswering] = useState(false);
   return (
     <div className="-mx-2.5 flex gap-2.5 px-2.5 py-1.5">
       <MarkDot mark={question.answered ? "ticked" : "todo"} />
-      <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="text-sm">{question.text}</p>
         {question.answer && <Field label={question.answered ? "Answer" : "Suggested"}>{question.answer}</Field>}
+        {!question.answered &&
+          (answering ? (
+            <NoteField
+              placeholder="Your answer"
+              submit="Answer"
+              initial={question.answer} // the agent's suggestion, to take or change
+              onDone={(answer) => {
+                setAnswering(false);
+                if (answer) act({ kind: "answer", question: question.text, answer });
+              }}
+            />
+          ) : (
+            <Actions>
+              <Button size="sm" variant="secondary" className="rounded-full px-3" onClick={() => setAnswering(true)}>
+                Answer
+              </Button>
+            </Actions>
+          ))}
       </div>
     </div>
   );

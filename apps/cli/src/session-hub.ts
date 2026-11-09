@@ -7,6 +7,7 @@ import {
   type ChangedFile,
   type ClientMessage,
   type Harness,
+  type PlanAction,
   type PlanOwner,
   type ServerMessage,
 } from "@kratos/core";
@@ -16,7 +17,7 @@ import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
-import { parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
+import { applyPlanAction, parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
 import { movedNote, planInstructions, type PlanPaths } from "./plans/plan-instructions.js";
 import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
@@ -47,6 +48,8 @@ export class SessionHub {
   /** Each running turn's plans as they were when it started (4p3): folder → text. What changed in
    * them by its end is the turn's edit, held to who-writes-what then. */
   private readonly turnPlans = new Map<string, Map<string, string | undefined>>();
+  /** Your changes to each plan (4p4a), one after another: each reads what the one before wrote. */
+  private readonly planActions = new Map<string, Promise<void>>();
 
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
@@ -222,6 +225,13 @@ export class SessionHub {
       case "get_plan":
         if (!this.planOwnerInProject(send, message.owner)) return;
         send(this.planMessage(message.owner));
+        return;
+      case "plan_action":
+        if (!this.planOwnerInProject(send, message.owner)) return;
+        this.planAction(send, message.owner, message.action).catch((err) => {
+          this.log.warn({ err, owner: message.owner }, "could not change the plan");
+          send({ type: "error", message: `Could not change the plan: ${err instanceof Error ? err.message : err}` });
+        });
         return;
       case "start_plan":
         if (!this.planOwnerInProject(send, message.owner)) return;
@@ -472,6 +482,43 @@ export class SessionHub {
     const folder = this.planFolder(owner)!;
     const template = planTemplate(title, owner.kind);
     if (await this.plans.create(folder, template)) this.log.info({ owner }, "plan started");
+  }
+
+  /**
+   * Your change from the plan page (4p4a): applied to the file as it is on disk now and written;
+   * every tab then gets the plan as with any change. A turn running on this plan started without
+   * it, so it becomes part of that start too: the turn's end mustn't take your tick for the agent's.
+   */
+  private planAction(send: Send, owner: PlanOwner, action: PlanAction): Promise<void> {
+    const folder = this.planFolder(owner);
+    if (!folder) {
+      send({ type: "error", message: "This plan hasn't been started" });
+      return Promise.resolve();
+    }
+    // Two quick clicks both read the file before either wrote it, and the second undid the first.
+    const run = (this.planActions.get(folder) ?? Promise.resolve()).then(() => this.applyAction(send, owner, folder, action));
+    const settled = run.catch(() => {});
+    this.planActions.set(folder, settled);
+    void settled.then(() => this.planActions.get(folder) === settled && this.planActions.delete(folder));
+    return run;
+  }
+
+  private async applyAction(send: Send, owner: PlanOwner, folder: string, action: PlanAction): Promise<void> {
+    const text = await this.plans.refresh(folder);
+    if (text === undefined) return send({ type: "error", message: "This plan hasn't been started" });
+    const next = applyPlanAction(text, action);
+    if (next === undefined) {
+      const what = "stepId" in action ? `step ${action.stepId}` : "decisionId" in action ? `decision ${action.decisionId}` : `open question “${action.question}”`;
+      return send({ type: "error", message: `No ${what} in this plan` });
+    }
+    if (next === text) return;
+    for (const plans of this.turnPlans.values()) {
+      const before = plans.get(folder);
+      const withYours = before === undefined ? undefined : applyPlanAction(before, action);
+      if (withYours !== undefined) plans.set(folder, withYours);
+    }
+    await this.plans.write(folder, next);
+    this.log.info({ owner, action: action.kind }, "you changed the plan");
   }
 
   /** A folder name for a feature's plan: its title as a slug, `-2`, `-3`… when that's taken. */

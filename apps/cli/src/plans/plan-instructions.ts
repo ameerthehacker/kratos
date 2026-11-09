@@ -49,9 +49,11 @@ Step marks: [ ] to do, [~] in hand, [?] done and waiting for the owner, [x] tick
 
 Who writes what:
 - A step with an id (P1, S1) is the owner's to tick. Mark the one you're on [~]; when it's done, mark it [?] and add a "Proof:" line saying what you ran and what it showed. Never write [x] on it yourself.
+- A step the owner sent back is [~] again with a "Not yet:" line saying why: address it, then mark it [?] with a new Proof (you may remove the Not yet line then).
 - A step without an id is your own checklist item: tick it [x] yourself.
 - Ids are never reused or renumbered; split a step as P3a, P3b.
 - Add decisions as (proposed); only the owner accepts them. Add open questions; only the owner answers them.
+- The owner's questions to you (like "Why D2 (…)?") are open questions too: answer with an "Answer:" line under the question; it stays open until the owner answers it.
 - The Intent is the owner's once a plan is approved: propose a change instead of rewriting it.${
     feature ? "\n- New steps and decisions belong in the feature plan; this session's plan holds how you do your step." : ""
   }

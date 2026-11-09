@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Plan } from "@kratos/core";
-import { answerQuestion, markStep, parsePlan, planTemplate, reconcileAgentEdit, setDecisionStatus } from "./plan-file.js";
+import { answerQuestion, applyPlanAction, askWhy, markStep, parsePlan, planTemplate, reconcileAgentEdit, sendBack, setDecisionStatus } from "./plan-file.js";
 
 const FEATURE = `# CSV export for reports
 
@@ -246,5 +246,37 @@ describe("review fixes (D79)", () => {
     const out = reconcileAgentEdit(FEATURE, after);
     expect(out.markdown).toBe(after.replace("(accepted) — smaller.", "(proposed) — smaller.").replace("Answer: Yes, all.", "Answer: No, only what you see."));
     expect(out.undone).toHaveLength(2);
+  });
+});
+
+describe("your side from the plan page (4p4a)", () => {
+  it("sendBack: [~] with your note as a Not yet line, replacing the one there; read back as notYet", () => {
+    const sent = sendBack(FEATURE, "P2", "the date\nfilter is ignored")!;
+    expect(sent).toContain("- [~] **P2. Filters in the export** — the rows you see.\n  Not yet: the date filter is ignored\n- [~] **P2b.");
+    expect(parsePlan(sent, "feature").steps[1]).toMatchObject({ id: "P2", mark: "doing", notYet: "the date filter is ignored" });
+    const again = sendBack(sent, "P2", "still ignored")!;
+    expect(again).toBe(sent.replace("Not yet: the date filter is ignored", "Not yet: still ignored"));
+    expect(sendBack(FEATURE, "P9", "x")).toBeUndefined();
+  });
+
+  it("askWhy: an open question after the others, once; in an empty section; the section made if missing", () => {
+    const asked = askWhy(FEATURE, "D2", "can't it share search's code?")!;
+    expect(asked).toBe(FEATURE.replace("  Answer: No, only what you see.\n", "  Answer: No, only what you see.\n- [ ] Why D2 (Stream rows, don't buffer)? can't it share search's code?\n"));
+    expect(askWhy(asked, "D2", "can't it share search's code?")).toBe(asked); // asked already
+    expect(askWhy("# T\n\n## Decisions\n- **D1. A** (proposed)\n\n## Open questions\n", "D1")).toBe(
+      "# T\n\n## Decisions\n- **D1. A** (proposed)\n\n## Open questions\n- [ ] Why D1 (A)?\n",
+    );
+    expect(askWhy("# T\n\n## Decisions\n- **D1. A** (proposed)\n", "D1")).toBe("# T\n\n## Decisions\n- **D1. A** (proposed)\n\n## Open questions\n- [ ] Why D1 (A)?\n");
+    expect(parsePlan(asked, "feature").questions.at(-1)).toEqual({ text: "Why D2 (Stream rows, don't buffer)? can't it share search's code?", answered: false });
+  });
+
+  it("applyPlanAction does each of them, and says when what it names isn't there", () => {
+    expect(applyPlanAction(FEATURE, { kind: "tick", stepId: "P2" })).toBe(markStep(FEATURE, "P2", "ticked"));
+    expect(applyPlanAction(FEATURE, { kind: "accept", decisionId: "D2" })).toBe(setDecisionStatus(FEATURE, "D2", "accepted"));
+    expect(applyPlanAction(FEATURE, { kind: "answer", question: "Should exports respect the user's timezone?", answer: "Yes" })).toBe(
+      answerQuestion(FEATURE, "Should exports respect the user's timezone?", "Yes"),
+    );
+    expect(applyPlanAction(FEATURE, { kind: "not_yet", stepId: "P1", note: "n" })).toBe(sendBack(FEATURE, "P1", "n"));
+    expect(applyPlanAction(FEATURE, { kind: "ask_why", decisionId: "D9" })).toBeUndefined();
   });
 });

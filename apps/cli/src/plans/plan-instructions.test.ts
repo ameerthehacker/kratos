@@ -21,6 +21,8 @@ describe("planInstructions (4p2, D79)", () => {
     expect(text).not.toContain("feature plan, for");
     expect(text).not.toContain("belong in the feature plan");
     expect(text).toContain("Never write [x] on it yourself.");
+    expect(text).toContain('A step the owner sent back is [~] again with a "Not yet:" line'); // 4p4a
+    expect(text).toContain('The owner\'s questions to you (like "Why D2 (…)?")');
   });
 
   it("in a feature: both plans, and new steps and decisions go to the feature's", () => {

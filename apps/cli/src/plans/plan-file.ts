@@ -1,6 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Heading, ListItem, RootContent } from "mdast";
-import type { DecisionStatus, Plan, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
+import type { DecisionStatus, Plan, PlanAction, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
 
 /**
  * Plan files (D79): read them, change one thing in them, and hold an agent's edit to who-writes-
@@ -20,9 +20,11 @@ interface Span {
 /** What the reader found, with where each editable bit is. */
 interface Located {
   plan: Plan;
-  steps: { step: PlanStep; mark: Span }[];
+  steps: { step: PlanStep; mark: Span; notYet?: Span; end: number; indent: string }[];
   decisions: { decision: PlanDecision; status: Span }[];
   questions: { question: PlanQuestion; mark: Span; answer?: Span; end: number; indent: string }[];
+  /** Where Open questions is: its heading's end, and its list's when it has one (4p4a). */
+  questionsAt?: { heading: number; list?: number };
 }
 
 /** A list item's bullet and optional `[c]` box. The box isn't Markdown we parse (`[~]`, `[?]`). */
@@ -30,7 +32,7 @@ const BULLET = /^([-*+]|\d+[.)])([ \t]+)(?:\[([ xX~?])\][ \t]+)?/;
 /** `**P3. Title** rest` and `**Title** rest`. */
 const ID_HEAD = /^\*\*([A-Za-z]+\d+[a-z]?)\.\s*(.+?)\*\*\s*(.*)$/;
 const PLAIN_HEAD = /^\*\*(.+?)\*\*\s*(.*)$/;
-const FIELD = /^(Scope|Accept|Proof|Answer):\s*(.*)$/i;
+const FIELD = /^(Scope|Accept|Proof|Answer|Not yet):\s*(.*)$/i;
 const STATUS = /^\((proposed|accepted)\)\s*/i;
 /** The dash or colon between a title and its text. */
 const LEAD = /^(?:[—–:]|-(?!\S))\s*/;
@@ -73,6 +75,47 @@ export function answerQuestion(markdown: string, text: string, answer: string): 
   const found = locate(markdown, "session").questions.find((q) => q.question.text === text);
   if (!found) return undefined;
   return splice(markdown, [boxSplice(found.mark, "ticked"), answerSplice(found, answer)]);
+}
+
+/** Sends a step back (4p4a): `[~]` again, with your note as its `Not yet:` line (replacing one). */
+export function sendBack(markdown: string, id: string, note: string): string | undefined {
+  const found = locate(markdown, "session").steps.find((s) => s.step.id === id);
+  if (!found) return undefined;
+  const text = note.replace(/\s+/g, " ").trim();
+  const line = found.notYet ? { ...found.notYet, text: ` ${text}` } : { start: found.end, end: found.end, text: `\n${found.indent}Not yet: ${text}` };
+  return splice(markdown, [boxSplice(found.mark, "doing"), line]);
+}
+
+/** Asks the agent why about a decision (4p4a): an open question, Open questions made if missing.
+ * Asked already: unchanged. */
+export function askWhy(markdown: string, id: string, note?: string): string | undefined {
+  const found = locate(markdown, "session");
+  const decision = found.decisions.find((d) => d.decision.id === id)?.decision;
+  if (!decision) return undefined;
+  const more = note?.replace(/\s+/g, " ").trim();
+  const question = `Why ${id} (${decision.title})?${more ? ` ${more}` : ""}`;
+  if (found.plan.questions.some((q) => q.text === question)) return markdown;
+  const item = `- [ ] ${question}`;
+  const at = found.questionsAt;
+  if (at) return splice(markdown, [{ start: at.list ?? at.heading, end: at.list ?? at.heading, text: `\n${item}` }]);
+  const gap = markdown === "" || markdown.endsWith("\n\n") ? "" : markdown.endsWith("\n") ? "\n" : "\n\n";
+  return `${markdown}${gap}## Open questions\n${item}\n`;
+}
+
+/** Your change from the plan page (4p4a), as the new text; undefined when what it names isn't there. */
+export function applyPlanAction(markdown: string, action: PlanAction): string | undefined {
+  switch (action.kind) {
+    case "tick":
+      return markStep(markdown, action.stepId, "ticked");
+    case "not_yet":
+      return sendBack(markdown, action.stepId, action.note);
+    case "accept":
+      return setDecisionStatus(markdown, action.decisionId, "accepted");
+    case "ask_why":
+      return askWhy(markdown, action.decisionId, action.note);
+    case "answer":
+      return answerQuestion(markdown, action.question, action.answer);
+  }
 }
 
 export interface Reconciled {
@@ -166,6 +209,7 @@ function locate(md: string, kind: PlanKind): Located {
       const text = headingText(md, node);
       if (node.depth === 1 && !found.plan.title) found.plan.title = text;
       section = node.depth === 2 ? SECTIONS.get(text.toLowerCase()) : undefined;
+      if (section === "questions" && !found.questionsAt) found.questionsAt = { heading: end(node) };
       freshSection = true;
       continue;
     }
@@ -174,6 +218,7 @@ function locate(md: string, kind: PlanKind): Located {
       else intents[intents.length - 1]!.end = end(node);
       freshSection = false;
     } else if (section && node.type === "list") {
+      if (section === "questions" && found.questionsAt) found.questionsAt.list = end(node);
       for (const item of node.children) {
         if (section === "steps") readStep(md, item, found);
         else if (section === "decisions") readDecision(md, item, found);
@@ -228,11 +273,14 @@ function body(md: string, item: ListItem): Body {
 }
 
 function readStep(md: string, item: ListItem, found: Located) {
-  const { mark, box, lines } = body(md, item);
+  const { mark, box, lines, end, indent } = body(md, item);
   if (!lines.length) return;
   const [first, ...rest] = lines;
   const withId = ID_HEAD.exec(first!.text);
   const plain = withId ? undefined : PLAIN_HEAD.exec(first!.text);
+  // Your `Not yet:` line (4p4a): from right after the colon to its end, to replace.
+  const back = rest.find((l) => /^Not yet:/i.test(l.text));
+  const notYet = back && { start: back.at + back.text.indexOf(":") + 1, end: back.at + back.text.length };
   const step: PlanStep = {
     id: withId?.[1],
     title: (withId?.[2] ?? plain?.[1] ?? first!.text).trim(),
@@ -244,8 +292,9 @@ function readStep(md: string, item: ListItem, found: Located) {
   if (fields.scope) step.scope = scopeList(fields.scope);
   if (fields.accept) step.accept = fields.accept;
   if (fields.proof) step.proof = fields.proof;
+  if (fields["not yet"]) step.notYet = fields["not yet"];
   found.plan.steps.push(step);
-  found.steps.push({ step, mark });
+  found.steps.push({ step, mark, notYet, end, indent });
 }
 
 function readDecision(md: string, item: ListItem, found: Located) {
@@ -300,7 +349,7 @@ function gather(goal: string, lines: { text: string }[]) {
       fields[current] = field[2]!;
     } else fields[current] = [fields[current], text].filter(Boolean).join(" ");
   }
-  return fields as { goal?: string; scope?: string; accept?: string; proof?: string };
+  return fields as { goal?: string; scope?: string; accept?: string; proof?: string; "not yet"?: string };
 }
 
 /** `` `a/**`, `b.ts` `` → its backticked parts; without backticks, split on commas. */

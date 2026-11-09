@@ -21,6 +21,8 @@ export const PlanStep = z.object({
   accept: z.string().optional(),
   /** What the agent ran and saw, written when it says the step is done. */
   proof: z.string().optional(),
+  /** Why you sent it back (4p4a): its `Not yet:` line, for the agent to address. */
+  notYet: z.string().optional(),
 });
 export type PlanStep = z.infer<typeof PlanStep>;
 
@@ -42,6 +44,20 @@ export type PlanQuestion = z.infer<typeof PlanQuestion>;
 /** A feature plan (what and why, across sessions) or a session plan (how one session does its part). */
 export const PlanKind = z.enum(["feature", "session"]);
 export type PlanKind = z.infer<typeof PlanKind>;
+
+/** Your side of who-writes-what (4p4a): one change to a plan, made from its page. */
+export const PlanAction = z.discriminatedUnion("kind", [
+  /** A step is done: `[x]`. */
+  z.object({ kind: z.literal("tick"), stepId: z.string() }),
+  /** Not done yet: back to `[~]`, with your note as its `Not yet:` line for the agent. */
+  z.object({ kind: z.literal("not_yet"), stepId: z.string(), note: z.string().trim().min(1).max(500) }),
+  z.object({ kind: z.literal("accept"), decisionId: z.string() }),
+  /** An open question for the agent: "Why D2 (<title>)? <note>". */
+  z.object({ kind: z.literal("ask_why"), decisionId: z.string(), note: z.string().trim().max(500).optional() }),
+  /** An open question answered, found by its text. */
+  z.object({ kind: z.literal("answer"), question: z.string(), answer: z.string().trim().min(1).max(2000) }),
+]);
+export type PlanAction = z.infer<typeof PlanAction>;
 
 export const Plan = z.object({
   title: z.string(),

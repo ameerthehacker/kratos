@@ -1906,3 +1906,61 @@ describe("SessionHub: a turn's plan changes, held and in its chat (4p3, D79)", (
     expect(updates(a.seen)).toEqual([]);
   });
 });
+
+describe("SessionHub: you decide, from the plan page (4p4a, D79)", () => {
+  const PLAN = "# Reports\n\n## Steps\n- [?] **P1. Export**\n  Proof: ran it\n- [ ] **P2. Filters**\n\n## Decisions\n- **D1. CSV** (proposed) — simple.\n\n## Open questions\n- [ ] Timezone?\n  Answer: UTC\n";
+  const lastPlan = (seen: ServerMessage[]) => seen.findLast((m): m is Extract<ServerMessage, { type: "plan" }> => m.type === "plan");
+
+  it("each action writes the file and every tab gets the plan; what isn't there is refused", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    const b = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } });
+    await tick();
+    expect(plans.text(folder)).toContain("- [x] **P1. Export**");
+    expect(lastPlan(b.seen)!.plan!.steps[0]!.mark).toBe("ticked");
+
+    a.receive({ type: "plan_action", owner, action: { kind: "not_yet", stepId: "P1", note: "the export is empty" } });
+    a.receive({ type: "plan_action", owner, action: { kind: "accept", decisionId: "D1" } });
+    a.receive({ type: "plan_action", owner, action: { kind: "ask_why", decisionId: "D1" } });
+    a.receive({ type: "plan_action", owner, action: { kind: "answer", question: "Timezone?", answer: "UTC" } });
+    await tick();
+    await tick();
+    const plan = lastPlan(b.seen)!.plan!;
+    expect(plan.steps[0]).toMatchObject({ mark: "doing", notYet: "the export is empty" });
+    expect(plan.decisions[0]!.status).toBe("accepted");
+    expect(plan.questions).toEqual([
+      { text: "Timezone?", answered: true, answer: "UTC" },
+      { text: "Why D1 (CSV)?", answered: false },
+    ]);
+
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P9" } });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P9 in this plan" });
+    a.receive({ type: "plan_action", owner: { kind: "session", id: "nope" }, action: { kind: "tick", stepId: "P1" } });
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No session nope in this project" });
+  });
+
+  it("your tick while an agent's turn runs on that plan survives the turn's end", async () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+    a.receive({ type: "prompt", text: "work on P2" });
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } }); // you, mid-turn
+    await tick();
+    plans.edit(folder, plans.text(folder)!.replace("- [ ] **P2.", "- [~] **P2.")); // the agent
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(plans.text(folder)).toContain("- [x] **P1. Export**"); // yours, not taken for the agent's
+    expect(plans.text(folder)).toContain("- [~] **P2. Filters**");
+    const update = a.seen.findLast((m) => m.type === "plan_updated") as Extract<ServerMessage, { type: "plan_updated" }>;
+    expect(update.undone).toEqual([]);
+  });
+});

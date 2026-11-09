@@ -1541,13 +1541,48 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           owner judged history overkill for now, so the table went (migration 0013 drops it)
           with its crediting, the history list and `get_plan_revision`. Kept from 4p3b: the
           "Kratos" heading, folded diffs, "1 step" (was "1 steps").
-    - [ ] **4p4. The agent proposes, you decide** (~150; board §3–4, §6) — on the plan page:
-          Tick / Not yet on a `[?]` step (Not yet's note goes to the session that claimed it),
-          Accept / Reject a proposed step, Accept / Ask why on a proposed decision, Answer on an
-          open question, and Edit (the raw Markdown; editor library chosen then). Each is a
-          server-side splice of the file. When every step is ticked: "Mark
-          feature done" (never automatic). Covers step 6, the decision ledger. Done when:
-          nothing the agent writes can tick a step, accept a decision or answer a question.
+    - [ ] **4p4. The agent proposes, you decide** (board §3–4, §6) — your side of who-writes-what,
+          from the plan page. Owner (2026-11-09): your notes go into the plan file, where every
+          session reads them (Kratos no longer knows which session claimed a step); Edit is its
+          own slice. Covers step 6, the decision ledger.
+      - [x] **4p4a. Tick, send back, accept, ask, answer** (~250 + tests) — on a `[?]` step:
+            Tick (→ `[x]`) and Not yet with a note (→ `[~]` and a `Not yet: <note>` line under
+            it, replacing one that's there); on a proposed decision: Accept (→ accepted) and Ask
+            why with an optional note (→ an open question "Why D2 (<title>)? <note>", the section
+            made if missing); on an open question: Answer (→ `[x]` and its `Answer:`, the agent's
+            suggestion offered as the start). A feature plan with every id'd step ticked offers
+            Mark feature done (the sidebar's, with its stop-first ask). Each is one message,
+            `plan_action {owner, action}`, a splice on the server (4p0's edits, plus `sendBack`
+            and `askWhy`), written to the file — whose change then reaches every tab as any
+            change does. Your change made while an agent's turn on that plan runs is applied to
+            that turn's starting text too, so its end doesn't take your tick for the agent's.
+            Format: steps get `Not yet:` (read as `notYet`, shown on the page); the agent's
+            instructions say a step sent back is `[~]` with a Not yet line to address, and that
+            your "Why …?" questions are for it to answer (its answer stays a suggestion). Scope:
+            core `plan.ts`, `protocol.ts`; cli `plans/plan-file.ts` + test,
+            `plans/plan-instructions.ts` + test, `session-hub.ts` + tests; web `pages/plan.tsx`,
+            a done button shared with the sidebar. Accept: edit tests (send back adds / replaces
+            its line; ask why adds the question, makes the section); hub tests (each action
+            writes the file and every tab gets the plan; an unknown id → error; a tick during a
+            turn survives its end); headless: tick, send back with a note, accept, ask why,
+            answer, all ticked → Mark feature done; typecheck, test, build.
+            **Proof:** 5 new tests (edits: send back adds / replaces its line and reads back as
+            `notYet`; ask why after the others, once, into an empty section, the section made;
+            `applyPlanAction` does each and misses what isn't there) + 2 hub tests (each action
+            written and every tab gets the plan, unknown step / other project refused; your tick
+            mid-turn survives the turn's end, nothing "put back"). The first hub test caught four
+            quick actions undoing each other (each read the file before the last wrote): they
+            now run one after another per plan. 287 pass, typecheck 7/7, build 5/5. Headless,
+            clicking as you would on a feature plan with two `[?]` steps: Tick P1 → `[x]`; Not
+            yet + Esc → nothing, still on the page; Not yet + "the date filter is ignored" + Enter
+            → `[~]` and its Not yet line; Accept → `(accepted)`; Ask why + a note → the question
+            under Open questions; Answer opened with the agent's suggestion, Enter → `[x]` and
+            its Answer; P2 claimed again and ticked → "All 2 steps ticked, but decisions are still
+            waiting for you" with Mark feature done → the feature done. The Mark feature done
+            button moved out of the sidebar into `feature-done-button.tsx` (icon or labelled).
+            ~260 lines + ~110 of tests.
+      - [ ] **4p4b. Edit the plan** — the raw Markdown in an editor on the plan page (library
+            chosen and logged then), saved as your change.
     - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the
           right island in a session, shown or hidden with ⌥⌘B or the header's panel button (like
           ⌘B for sessions; remembered), not offered without a plan: the feature plan's step in

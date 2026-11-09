@@ -234,6 +234,16 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   plan at once — the change shows in the turn that ends first (D41). Reverse / if history is
   wanted: derive a plan's session history from the `plan_updated` messages first; add a table
   only if your own or an editor's changes need recording.
+- Your side (4p4a, owner: notes into the file): Tick / Not yet on a `[?]` step, Accept / Ask why
+  on a proposed decision, Answer an open question — one `plan_action` message, a splice on the
+  server, written to the file. Your notes live in the plan, where every session reads them:
+  Not yet → `[~]` with a `Not yet:` line (a new step field); Ask why → an open question "Why D2
+  (<title>)? <note>" for the agent to answer (its answer stays a suggestion you can take). Your
+  actions on one plan run one after another (two quick clicks both read the file before either
+  wrote, and the second undid the first — found by a test); one made during an agent's turn on
+  that plan is applied to the turn's starting text too, so its end doesn't take your tick for
+  the agent's. Alternatives: the note as a prompt to a session (Kratos no longer knows which
+  claimed a step; a guess at the feature's latest is wrong as often as not).
 - Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
   sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
   route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own

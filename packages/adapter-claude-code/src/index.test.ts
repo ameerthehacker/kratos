@@ -641,7 +641,10 @@ describe("Claude Code adapter: host tools (D77)", () => {
   it("an allow's word to the agent goes after an approved plan, where Claude quotes it back; elsewhere it's dropped (4p6a)", async () => {
     const plan = answerSeenByCli(await runTurn("planask", async () => ({ decision: "allow", message: "Saved at .kratos/x/plan.md." })));
     expect(plan.response).toEqual({ behavior: "allow", updatedInput: { plan: "1. do it\n\n---\nSaved at .kratos/x/plan.md.", planFilePath: "/x/plan.md" } });
-    const write = answerSeenByCli(await runTurn("ask", async () => ({ decision: "allow", message: "ignored" })));
+    // Your edited plan (4p6b) is the plan Claude is told was approved, the word after it.
+    const edited = answerSeenByCli(await runTurn("planask", async () => ({ decision: "allow", plan: "1. do it well\n", message: "Saved." })));
+    expect(edited.response.updatedInput.plan).toBe("1. do it well\n\n---\nSaved.");
+    const write = answerSeenByCli(await runTurn("ask", async () => ({ decision: "allow", message: "ignored", plan: "ignored" })));
     expect(write.response).toEqual({ behavior: "allow", updatedInput: WRITE_INPUT });
   });
 

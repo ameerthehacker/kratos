@@ -147,7 +147,9 @@ export function SessionPage() {
             asks={openAsks(items)}
             agent={agentName}
             where={{ inFeature: !!feature, featureHasPlan: feature?.hasPlan ?? false, featureTitle: feature?.title }}
-            onDecide={(id, decision, savePlanAs) => send({ type: "permission_decision", id, decision, ...(savePlanAs ? { savePlanAs } : {}) })}
+            onDecide={(id, decision, savePlanAs, planText) =>
+              send({ type: "permission_decision", id, decision, ...(savePlanAs ? { savePlanAs } : {}), ...(planText !== undefined ? { planText } : {}) })
+            }
           />
           <PromptCard
             chips={

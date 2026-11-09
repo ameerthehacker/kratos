@@ -277,6 +277,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   files (told "write no plan file", it sent an empty ask; told nothing, it wrote ours and a
   second copy). An empty plan is never saved; the card offers only Keep planning. Board §2 drew
   a wide island beside the chat; a card in the ask dock is this slice.
+  Edit before approving (4p6b): Read / Edit in the card (the plan page's CodeMirror part, shared
+  as `components/markdown-code.tsx`, its own lazy chunk); `permission_decision.planText` saves
+  your version, and an allow's new generic `plan` hands it to the agent — the Claude adapter puts
+  it in `ExitPlanMode`'s input, and Claude Code then quotes it back as "Approved Plan (edited by
+  user)". Keep planning with edits sends them as "start from this version". Only the hub sets
+  an allow's `plan`, after saving: one a tab sends on a plain allow is dropped.
 - The plans island (4p5a): a third island the layout adds beside the main one on `/s/:id`, only
   when the session has a plan to show (its feature's, its own, or both): the feature plan's
   progress and its steps waiting for you / in hand (with Tick / Not yet) or the next to do, and

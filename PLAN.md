@@ -1746,8 +1746,41 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             keeps the new feature (a disk error). 306 pass, typecheck 7/7, build 5/5; live again
             (Haiku, plan mode): build later saved exactly the ask's plan, a second answer sent
             during the save made no feature, no code written.
-      - [ ] **4p6b. Edit before approving** (board §2) — Read / Edit in the card; your edits go
-            back to the agent as the approved plan (`updatedInput`, built by the adapter).
+      - [x] **4p6b. Edit before approving** (~150 + tests; board §2) — Read / Edit in the plan card:
+            Edit is the plan's Markdown in CodeMirror (the plan page's editor, its CodeMirror part
+            shared as `components/markdown-code.tsx`, still loaded only when it's needed); "you
+            edited it" shows once your text differs. Approving saves your text (`permission_decision.
+            planText`), and with build here the agent gets it as the approved plan: a new generic
+            `plan` on an allow (for a plan action: the plan as approved), which the Claude adapter
+            puts in `ExitPlanMode`'s input (`updatedInput`), so its result quotes your version back.
+            Keep planning with edits sends them too: "start from this version". The draft is kept
+            per ask by the dock, like the note. Scope: core `agent.ts`, `protocol.ts`; adapter
+            `index.ts` + test; cli `session-hub.ts` + tests; web `components/conversation/
+            {ask-dock,plan-review}.tsx`, new `components/markdown-code.tsx`, `plan-editor.tsx`.
+            Accept: adapter test (the approved plan in the input, the word after it); hub tests
+            (your text saved, the agent's allow carries it; Keep planning carries it); live:
+            Edit in the card (screenshot), approve an edited plan → the file is yours and the
+            agent builds from it; typecheck, test, build.
+            **Proof:** 2 hub tests (your text saved and given to the agent as the plan; unchanged
+            text adds nothing; build later saves your edits) + the adapter test (your plan in
+            `ExitPlanMode`'s input, the word after it; other tools untouched). 308 pass,
+            typecheck 7/7, build 5/5; `markdown-code` is its own chunk, shared by both editors.
+            Live, real `claude` (Haiku) in plan mode, the card driven in headless Chrome: Edit →
+            CodeMirror, a line typed → "You edited it"; Approve and build here → the saved plan has
+            your line; the agent's result read "## Approved Plan (edited by user)" with your
+            version and Kratos's word after it; it built P1, marked it `[?]`. (The test typed at
+            the end of the document — under Open questions — so the agent rightly took the line
+            for a question, not a step, and asked before adding it.) ~150 lines + ~40 of tests.
+            **Review round** (owner): 6 findings, all fixed — in the card's editor ⌘⌫ (delete to
+            the line start) sent Keep planning, Esc reached the session's Stop and cancelled the
+            ask with your edits, ⌘↵ typed a blank line instead of approving: the editor now keeps
+            ⌘⌫, takes Esc back to Read and ⌘↵ to approve; a plan edited down to nothing could be
+            approved (and was refused as "came without its text"): blocked; a tab's own `plan`
+            on a plain allow reached the agent as an approved plan Kratos never saved: the hub
+            drops it (only it sets one, after saving); "edited" worked out in two places: one.
+            Live (Haiku, plan mode, keys sent in headless Chrome): Esc in the editor → back to
+            Read, the card open, nothing stopped; ⌘⌫ → the line cleared, the card open; ⌘↵ → approved,
+            the agent working, the saved plan with the edit. 308 pass, typecheck 7/7, build 5/5.
       - [ ] **4p6c. The agent switches to plan by itself** (board §1) — a line in the chat with
             its reason and Skip planning.
             Found (owner's playground test, 2026-11-09, claude 2.1.308): `ExitPlanMode` reaches us

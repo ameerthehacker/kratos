@@ -332,14 +332,22 @@ export class SessionHub {
         const runtime = [...this.runtimes.values()].find((r) => r.openAsk(message.id));
         const request = runtime?.openAsk(message.id);
         if (!runtime || !request) return;
-        if (!message.savePlanAs || request.action?.type !== "plan") return void runtime.decide(message.id, message.decision);
+        if (!message.savePlanAs || request.action?.type !== "plan") {
+          // An allow's `plan` is the hub's to set, once it saved yours (4p6b): never a tab's.
+          const { decision } = message;
+          return void runtime.decide(message.id, decision.decision === "allow" ? { ...decision, plan: undefined } : decision);
+        }
         // A proposed plan, approved (4p6a): saved first, then the agent's answer says so.
         const build = message.decision.decision === "allow";
         this.approving.add(message.id);
-        this.approvePlan(send, runtime.id, request.action.plan ?? "", message.savePlanAs)
+        // Your edited text (4p6b), when it differs: saved, and the plan the agent is told was approved.
+        const proposed = request.action.plan ?? "";
+        const yours = message.planText !== undefined && message.planText !== proposed ? message.planText : undefined;
+        this.approvePlan(send, runtime.id, yours ?? proposed, message.savePlanAs)
           .then((saved) => {
             if (!saved) return; // refused: the ask stays open
-            runtime.decide(message.id, build ? { decision: "allow", message: buildHere(saved) } : { decision: "deny", message: buildLater(saved.path) });
+            const allow = { decision: "allow" as const, message: buildHere(saved), ...(yours !== undefined ? { plan: yours } : {}) };
+            runtime.decide(message.id, build ? allow : { decision: "deny", message: buildLater(saved.path) });
           })
           .catch((err) => {
             this.log.warn({ err, session: runtime.id }, "could not save the approved plan");

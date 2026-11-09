@@ -2215,6 +2215,24 @@ describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
     expect(second.plans.text(`sessions/${second.a.viewing}`)).toBe(PLAN);
   });
 
+  it("your edited plan is the one saved, and the one the agent is told was approved (4p6b)", async () => {
+    const { a, asked, askId, plans } = await proposing();
+    const mine = PLAN.replace("Draw with the pen", "Draw with pen and pressure");
+    a.receive({ type: "permission_decision", id: askId, decision: { decision: "allow" }, savePlanAs: "session", planText: mine });
+    expect(await asked.decision).toMatchObject({ decision: "allow", plan: mine, message: expect.stringContaining("Work from that file") });
+    expect(plans.text(`sessions/${a.viewing}`)).toBe(mine);
+  });
+
+  it("your text unchanged: nothing extra for the agent; build later saves your edits too", async () => {
+    const first = await proposing();
+    first.a.receive({ type: "permission_decision", id: first.askId, decision: { decision: "allow" }, savePlanAs: "session", planText: PLAN });
+    expect(await first.asked.decision).not.toHaveProperty("plan");
+    const second = await proposing();
+    second.a.receive({ type: "permission_decision", id: second.askId, decision: { decision: "deny", message: "later" }, savePlanAs: "session", planText: "# Mine\n" });
+    expect(await second.asked.decision).toMatchObject({ decision: "deny" });
+    expect(second.plans.text(`sessions/${second.a.viewing}`)).toBe("# Mine\n");
+  });
+
   it("a plan presented without its text isn't saved: the ask stays open for Keep planning", async () => {
     const ctx = setup();
     const a = ctx.tab();

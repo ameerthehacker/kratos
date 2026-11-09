@@ -275,7 +275,7 @@ function startSession(
       { signal },
     );
     if (d.decision === "deny") return { behavior: "deny", message: d.message };
-    return { behavior: "allow", updatedInput: withMessage(tool, (d.updatedInput ?? input) as Record<string, unknown>, d.message) };
+    return { behavior: "allow", updatedInput: approvedInput(tool, (d.updatedInput ?? input) as Record<string, unknown>, d.plan, d.message) };
   }
 
   /**
@@ -419,11 +419,14 @@ function startSession(
 }
 
 /**
- * An allow's word to the agent (4p6a), where Claude can hear one: an approved plan's result
- * quotes the plan back to the agent ("## Approved Plan: …"), so the word goes after it there.
- * Claude's allow carries no message of its own; other tools drop it.
+ * What an allow hands Claude, for an approved plan: your version of the plan (4p6b), and the
+ * allow's word to the agent after it (4p6a) — `ExitPlanMode`'s result quotes the plan back to the
+ * agent ("## Approved Plan: …"), and Claude's allow carries no message of its own. Other tools:
+ * as they were.
  */
-function withMessage(tool: string, input: Record<string, unknown>, message: string | undefined): Record<string, unknown> {
-  if (!message || tool !== "ExitPlanMode" || typeof input.plan !== "string") return input;
-  return { ...input, plan: `${input.plan.replace(/\s+$/, "")}\n\n---\n${message}` };
+function approvedInput(tool: string, input: Record<string, unknown>, plan: string | undefined, message: string | undefined): Record<string, unknown> {
+  if (tool !== "ExitPlanMode") return input;
+  const text = plan ?? (typeof input.plan === "string" ? input.plan : undefined);
+  if (text === undefined) return input;
+  return { ...input, plan: message ? `${text.replace(/\s+$/, "")}\n\n---\n${message}` : text };
 }

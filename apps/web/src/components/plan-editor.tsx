@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import CodeMirror, { EditorView, Prec, keymap } from "@uiw/react-codemirror";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
+import { useEffect, useState } from "react";
 import { CircleAlert } from "lucide-react";
+import MarkdownCode from "@/components/markdown-code";
 import { Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
 import { PLAN_EDIT_KEYS } from "@/lib/shortcuts";
@@ -28,24 +25,6 @@ export default function PlanEditor({ markdown: current, onSave, onDone }: { mark
     onSave(text, moved ? current : base); // over theirs, when you chose to
     if (moved) setBase(current);
   };
-  // CodeMirror keeps the keymap it was made with: it calls whatever these are now.
-  const keys = useRef({ save, cancel: onDone });
-  keys.current = { save, cancel: onDone };
-  const [extensions] = useState(() => [
-    markdown({ base: markdownLanguage }), // GFM: the `[ ]` boxes are task markers
-    EditorView.lineWrapping,
-    syntaxHighlighting(PLAN_HIGHLIGHT),
-    EditorView.contentAttributes.of({ "aria-label": "The plan's Markdown", spellcheck: "false" }),
-    // Before CodeMirror's own keys. Handled keys are default-prevented, so the page's Esc (back)
-    // and the browser's ⌘S (save page) leave them alone.
-    Prec.highest(
-      keymap.of([
-        { key: "Mod-s", preventDefault: true, run: () => (keys.current.save(), true) },
-        { key: PLAN_EDIT_KEYS.cancel, run: () => (keys.current.cancel(), true) },
-      ]),
-    ),
-  ]);
-
   return (
     <div className="flex flex-col gap-3">
       {moved && (
@@ -65,14 +44,13 @@ export default function PlanEditor({ markdown: current, onSave, onDone }: { mark
           </Button>
         </div>
       )}
-      <CodeMirror
+      <MarkdownCode
         value={text}
         onChange={setText}
+        label="The plan's Markdown"
         autoFocus
-        theme={PLAN_THEME}
-        extensions={extensions}
-        basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false, autocompletion: false, closeBrackets: false }}
-        minHeight="24rem" // CodeMirror sizes itself in CSS lengths; matches the textarea it replaced (min-h-96)
+        keys={{ "Mod-s": save, [PLAN_EDIT_KEYS.cancel]: onDone }}
+        minHeight="24rem" // matches the textarea it replaced (min-h-96)
       />
       <div className="flex items-center justify-end gap-2">
         <Button variant="ghost" className="rounded-full px-3" onClick={onDone}>
@@ -87,38 +65,3 @@ export default function PlanEditor({ markdown: current, onSave, onDone }: { mark
     </div>
   );
 }
-
-/** The editor in the app's own colors: its theme variables, so it follows every theme (3w1),
- * light or dark, with no CodeMirror theme of its own. (CodeMirror's theme is plain CSS-in-JS, so
- * these are its values, not Tailwind classes.) */
-const PLAN_THEME = EditorView.theme({
-  "&": { backgroundColor: "var(--well)", color: "var(--foreground)", borderRadius: "1rem" },
-  "&.cm-focused": { outline: "2px solid var(--ring)" },
-  ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "0.875rem", lineHeight: "1.65" },
-  ".cm-content": { padding: "12px 0", caretColor: "var(--foreground)" },
-  ".cm-line": { padding: "0 16px" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--foreground)" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-    backgroundColor: "color-mix(in oklab, var(--run) 30%, transparent)",
-  },
-  ".cm-searchMatch": { backgroundColor: "color-mix(in oklab, var(--wait) 30%, transparent)" },
-  ".cm-panels": { backgroundColor: "var(--card)", color: "var(--foreground)", borderRadius: "0 0 1rem 1rem" },
-  ".cm-panels.cm-panels-bottom": { borderTop: "1px solid var(--border)" },
-  ".cm-textfield": { backgroundColor: "var(--well)", color: "var(--foreground)", border: "1px solid var(--border)", borderRadius: "0.5rem" },
-  ".cm-button": { backgroundImage: "none", backgroundColor: "var(--secondary)", color: "var(--foreground)", border: "none", borderRadius: "0.5rem" },
-});
-
-/** Markdown the way the plan page reads it: headings strong, the `[ ]` boxes and ids standing out,
- * the punctuation of the syntax quiet. */
-const PLAN_HIGHLIGHT = HighlightStyle.define([
-  { tag: t.heading, fontWeight: "600", color: "var(--foreground)" },
-  { tag: t.heading1, fontSize: "1.15em" },
-  { tag: t.strong, fontWeight: "600", color: "var(--foreground)" },
-  { tag: t.emphasis, fontStyle: "italic" },
-  { tag: t.atom, color: "var(--wait)", fontWeight: "600" }, // task markers: [ ] [x]
-  { tag: t.monospace, color: "var(--run)" },
-  { tag: [t.link, t.url], color: "var(--run)" },
-  { tag: t.quote, color: "var(--muted-foreground)", fontStyle: "italic" },
-  // #, -, **, ---: the marks, not what they mark (`list` would be a whole list's text).
-  { tag: [t.processingInstruction, t.contentSeparator], color: "var(--faint)" },
-]);

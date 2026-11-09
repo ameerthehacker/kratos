@@ -9,7 +9,7 @@ import type { Step } from "@/lib/timeline";
 
 /** Answer a permission ask (the hub routes it to the session that asked; first answer wins).
  * `savePlanAs`: a proposed plan, approved, saved there (4p6a). */
-export type Decide = (askId: string, decision: PermissionDecision, savePlanAs?: PlanSave) => void;
+export type Decide = (askId: string, decision: PermissionDecision, savePlanAs?: PlanSave, planText?: string) => void;
 
 /**
  * The open permission ask, docked above the composer (owner's option C, 3c3): "Claude Code wants
@@ -26,10 +26,10 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
   const lastError = useKratos((s) => s.lastError);
   const refused = sent && sent.askId === askId && lastError && lastError.at > sent.at ? lastError.message : undefined;
   const busy = sent?.askId === askId && !refused;
-  const decide = (decision: PermissionDecision, savePlanAs?: PlanSave) => {
+  const decide = (decision: PermissionDecision, savePlanAs?: PlanSave, planText?: string) => {
     if (!askId) return;
     setSent({ askId, at: performance.now() });
-    props.onDecide(askId, decision, savePlanAs);
+    props.onDecide(askId, decision, savePlanAs, planText);
   };
   // A plan: where approving saves it, by default or as you switched it (this ask only).
   const isPlan = step?.kind === "plan";
@@ -40,12 +40,17 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
   // Your note for Keep planning, for this ask only (a revised plan starts without the last one's).
   const [note, setNote] = useState({ askId: "", text: "" });
   const planNote = note.askId === askId ? note.text : "";
-  // A plan presented without its text: nothing to approve, only Keep planning.
+  // Your version of the plan, for this ask only (4p6b): sent when it differs from the agent's.
+  const [draft, setDraft] = useState({ askId: "", text: "" });
+  const planDraft = draft.askId === askId ? draft.text : undefined;
+  const edited = isPlan && planDraft !== undefined && planDraft !== (step?.plan ?? "") ? planDraft : undefined;
+  // A plan presented without its text (or edited down to nothing): nothing to approve, only Keep planning.
   const emptyPlan = isPlan && !step?.plan?.trim();
+  const noApprove = emptyPlan || (edited !== undefined && !edited.trim());
   const appHotkeys = useAppHotkeys();
   // ⌘↵ in the prompt with text to send is the prompt's "send now": it handles it first.
-  useHotkey(appHotkeys["ask.allow"], () => decide({ decision: "allow" }, isPlan ? saveAs : undefined), {
-    enabled: !!askId && !busy && !emptyPlan,
+  useHotkey(appHotkeys["ask.allow"], () => decide({ decision: "allow" }, isPlan ? saveAs : undefined, edited), {
+    enabled: !!askId && !busy && !noApprove,
     ignoreDefaultPrevented: true,
   });
   // ⌘⌫ while typing deletes the line, as always; we only take it when there's nothing to delete.
@@ -54,7 +59,7 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
     (event) => {
       if (typing(event.target)) return;
       event.preventDefault();
-      decide(isPlan ? keepPlanning(planNote, emptyPlan) : DENY);
+      decide(isPlan ? keepPlanning(planNote, emptyPlan, edited) : DENY);
     },
     { enabled: !!askId && !busy, preventDefault: false },
   );
@@ -62,6 +67,7 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
   if (isPlan) {
     return (
       <PlanReview
+        key={askId} // Read / Edit start over with each plan
         step={step}
         agent={props.agent}
         where={props.where}
@@ -70,6 +76,8 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
         empty={emptyPlan}
         note={planNote}
         onNote={(text) => setNote({ askId: askId ?? "", text })}
+        edited={edited}
+        onDraft={(text) => setDraft({ askId: askId ?? "", text })}
         saveAs={saveAs}
         other={other}
         onSwitch={() => setSwitched(switched === askId ? null : (askId ?? null))}
@@ -112,8 +120,10 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
 
 const DENY: PermissionDecision = { decision: "deny", message: "The owner denied this in Kratos." };
 
-/** A text field with something in it: ⌘⌫ there means "delete to the line start". */
+/** A text field with something in it, or an editor (the plan card's CodeMirror, 4p6b): ⌘⌫ there
+ * means "delete to the line start". */
 const typing = (target: EventTarget | null) =>
-  (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value.length > 0;
+  ((target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value.length > 0) ||
+  (target instanceof HTMLElement && target.isContentEditable);
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);

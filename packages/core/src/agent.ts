@@ -102,7 +102,14 @@ export const PermissionDecision = z.discriminatedUnion("decision", [
   /** Run it. `updatedInput` lets the owner edit e.g. a command before it runs. `message`: a word
    * to the agent with the go-ahead, where its agent can carry one (4p6a: where Kratos saved the
    * plan it approved); others drop it. */
-  z.object({ decision: z.literal("allow"), updatedInput: z.unknown().optional(), message: z.string().optional() }),
+  z.object({
+    decision: z.literal("allow"),
+    updatedInput: z.unknown().optional(),
+    message: z.string().optional(),
+    /** For a `plan` action: the plan as approved, with your edits (4p6b); the adapter gives it to
+     * its agent as the plan. */
+    plan: z.string().optional(),
+  }),
   /** Don't run it. `message` is shown to the agent so it can change course. */
   z.object({ decision: z.literal("deny"), message: z.string() }),
 ]);

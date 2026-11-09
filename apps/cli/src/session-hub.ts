@@ -228,9 +228,16 @@ export class SessionHub {
         return;
       case "plan_action":
         if (!this.planOwnerInProject(send, message.owner)) return;
-        this.planAction(send, message.owner, message.action).catch((err) => {
+        this.onPlan(send, message.owner, (folder) => this.applyAction(send, message.owner, folder, message.action)).catch((err) => {
           this.log.warn({ err, owner: message.owner }, "could not change the plan");
           send({ type: "error", message: `Could not change the plan: ${err instanceof Error ? err.message : err}` });
+        });
+        return;
+      case "save_plan":
+        if (!this.planOwnerInProject(send, message.owner)) return;
+        this.onPlan(send, message.owner, (folder) => this.savePlan(send, message.owner, folder, message.markdown, message.base)).catch((err) => {
+          this.log.warn({ err, owner: message.owner }, "could not save the plan");
+          send({ type: "error", message: `Could not save the plan: ${err instanceof Error ? err.message : err}` });
         });
         return;
       case "start_plan":
@@ -484,25 +491,26 @@ export class SessionHub {
     if (await this.plans.create(folder, template)) this.log.info({ owner }, "plan started");
   }
 
-  /**
-   * Your change from the plan page (4p4a): applied to the file as it is on disk now and written;
-   * every tab then gets the plan as with any change. A turn running on this plan started without
-   * it, so it becomes part of that start too: the turn's end mustn't take your tick for the agent's.
-   */
-  private planAction(send: Send, owner: PlanOwner, action: PlanAction): Promise<void> {
+  /** Your changes to a plan (4p4), in line: each reads what the one before wrote. */
+  private onPlan(send: Send, owner: PlanOwner, change: (folder: string) => Promise<void>): Promise<void> {
     const folder = this.planFolder(owner);
     if (!folder) {
       send({ type: "error", message: "This plan hasn't been started" });
       return Promise.resolve();
     }
     // Two quick clicks both read the file before either wrote it, and the second undid the first.
-    const run = (this.planActions.get(folder) ?? Promise.resolve()).then(() => this.applyAction(send, owner, folder, action));
+    const run = (this.planActions.get(folder) ?? Promise.resolve()).then(() => change(folder));
     const settled = run.catch(() => {});
     this.planActions.set(folder, settled);
     void settled.then(() => this.planActions.get(folder) === settled && this.planActions.delete(folder));
     return run;
   }
 
+  /**
+   * Your change from the plan page (4p4a): applied to the file as it is on disk now and written;
+   * every tab then gets the plan as with any change. A turn running on this plan started without
+   * it, so it becomes part of that start too: the turn's end mustn't take your tick for the agent's.
+   */
   private async applyAction(send: Send, owner: PlanOwner, folder: string, action: PlanAction): Promise<void> {
     const text = await this.plans.refresh(folder);
     if (text === undefined) return send({ type: "error", message: "This plan hasn't been started" });
@@ -519,6 +527,22 @@ export class SessionHub {
     }
     await this.plans.write(folder, next);
     this.log.info({ owner, action: action.kind }, "you changed the plan");
+  }
+
+  /**
+   * Your edit of the whole plan (4p4b): written only if the file is still what you started from
+   * (else nothing is: the page shows you what changed). One saved during an agent's turn on this
+   * plan is that turn's starting text from now on: what you save is yours, including whatever of
+   * the agent's changes you kept.
+   */
+  private async savePlan(send: Send, owner: PlanOwner, folder: string, markdown: string, base: string): Promise<void> {
+    const text = await this.plans.refresh(folder);
+    if (text === undefined) return send({ type: "error", message: "This plan hasn't been started" });
+    if (text !== base) return send({ type: "error", message: "The plan changed while you were editing; nothing was saved" });
+    if (markdown === text) return;
+    for (const plans of this.turnPlans.values()) if (plans.has(folder)) plans.set(folder, markdown);
+    await this.plans.write(folder, markdown);
+    this.log.info({ owner }, "you edited the plan");
   }
 
   /** A folder name for a feature's plan: its title as a slug, `-2`, `-3`… when that's taken. */

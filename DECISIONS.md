@@ -244,6 +244,14 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   that plan is applied to the turn's starting text too, so its end doesn't take your tick for
   the agent's. Alternatives: the note as a prompt to a session (Kratos no longer knows which
   claimed a step; a guess at the feature's latest is wrong as often as not).
+- Editing (4p4b): the plan's raw Markdown in the project's shadcn Textarea (grows with its
+  text, monospace), ⌘S / Esc. No editor library: a plan is short Markdown; CodeMirror (the
+  common choice, `@uiw/react-codemirror` + Markdown) would add ~300 KB for highlighting it
+  doesn't need yet — swap it in inside `PlanEditor` if it does. `save_plan {markdown, base}`
+  writes only over the text you started from (in line with your other actions on that plan);
+  the page notices a change under you and offers Load theirs / Save over it. Saved during an
+  agent's turn on that plan, your text becomes the turn's starting text: what you save is yours,
+  including what you kept of the agent's changes.
 - Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
   sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
   route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own

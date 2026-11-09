@@ -41,6 +41,9 @@ export const SCOPES = { session: "session", review: "review", plan: "plan", shee
  * the hints and the shortcuts sheet show them from here too. */
 export const PROMPT_KEYS = { send: "Enter", newLine: "Shift+Enter", sendNow: "Mod+Enter", startAndStay: "Mod+Enter" } as const satisfies Record<string, Hotkey>;
 
+/** A plan's editor's own keys (4p4b). */
+export const PLAN_EDIT_KEYS = { save: "Mod+S", cancel: "Escape" } as const satisfies Record<string, Hotkey>;
+
 /** What the sheet lists besides the app shortcuts: a hotkey, or literal caps for a range. */
 export type SheetRow = { name: string; when?: string; hotkey?: Hotkey; keys?: string[] };
 
@@ -52,6 +55,8 @@ export const LOCAL_ROWS: Array<SheetRow & { group: string }> = [
   { group: "Questions", name: "Pick an option", keys: ["1–9"] },
   { group: "Questions", name: "Next / send", hotkey: "Enter" },
   { group: "Questions", name: "Skip", hotkey: "Escape" },
+  { group: "Plans", name: "Save your edit", when: "editing a plan", hotkey: PLAN_EDIT_KEYS.save },
+  { group: "Plans", name: "Cancel your edit", when: "editing a plan", hotkey: PLAN_EDIT_KEYS.cancel },
 ];
 
 /** The sheet's order (the design): two columns, filled left to right. */

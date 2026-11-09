@@ -138,6 +138,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("get_plan"), owner: PlanOwner }),
   /** Your change to a plan from its page (4p4a): written to the file, which every tab then gets. */
   z.object({ type: z.literal("plan_action"), owner: PlanOwner, action: PlanAction }),
+  /** Your edit of a plan's whole text (4p4b): written only if the file is still `base`, what you
+   * started editing from. */
+  z.object({ type: z.literal("save_plan"), owner: PlanOwner, markdown: z.string().max(500_000), base: z.string() }),
   /** Start a plan from the template; nothing happens when there is one (4p1a). */
   z.object({ type: z.literal("start_plan"), owner: PlanOwner }),
   /** Move a session into a working feature, back to a one-off with null, or into a new feature

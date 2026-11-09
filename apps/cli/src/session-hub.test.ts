@@ -1964,3 +1964,44 @@ describe("SessionHub: you decide, from the plan page (4p4a, D79)", () => {
     expect(update.undone).toEqual([]);
   });
 });
+
+describe("SessionHub: you edit the plan (4p4b, D79)", () => {
+  const PLAN = "# Reports\n\n## Steps\n- [?] **P1. Export**\n- [ ] **P2. Filters**\n";
+
+  it("saves your text when the file is still what you started from; refuses, untouched, when it moved on", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    const b = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+    const mine = PLAN.replace("## Steps", "## Intent\nReports as CSV.\n\n## Steps");
+    a.receive({ type: "save_plan", owner, markdown: mine, base: PLAN });
+    await tick();
+    expect(plans.text(folder)).toBe(mine);
+    expect(b.seen.findLast((m) => m.type === "plan")).toMatchObject({ plan: { intent: "Reports as CSV." } });
+
+    plans.edit(folder, mine.replace("[ ] **P2", "[~] **P2")); // the agent, while you edit
+    a.receive({ type: "save_plan", owner, markdown: "# Mine only\n", base: mine });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "The plan changed while you were editing; nothing was saved" });
+    expect(plans.text(folder)).toContain("[~] **P2");
+  });
+
+  it("saved during an agent's turn on that plan: the turn's end keeps your [x]", async () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    const folder = `sessions/${a.viewing}`;
+    plans.edit(folder, PLAN);
+    a.receive({ type: "prompt", text: "work" });
+    const mine = PLAN.replace("[?] **P1", "[x] **P1");
+    a.receive({ type: "save_plan", owner, markdown: mine, base: PLAN });
+    await tick();
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    await tick();
+    expect(plans.text(folder)).toBe(mine);
+    expect(a.seen.some((m) => m.type === "plan_updated")).toBe(false); // the turn changed nothing of its own
+  });
+});

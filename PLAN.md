@@ -1581,8 +1581,29 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             waiting for you" with Mark feature done → the feature done. The Mark feature done
             button moved out of the sidebar into `feature-done-button.tsx` (icon or labelled).
             ~260 lines + ~110 of tests.
-      - [ ] **4p4b. Edit the plan** — the raw Markdown in an editor on the plan page (library
-            chosen and logged then), saved as your change.
+      - [x] **4p4b. Edit the plan** (~150) — Edit on the plan page swaps the plan for its raw
+            Markdown in the project's Textarea (shadcn's, grows with its text; no editor library,
+            D79), Save (⌘S) / Cancel (Esc, which here isn't "back"). `save_plan {owner, markdown,
+            base}`: written only if the file is still `base` (what you started from), in line with
+            your other actions on that plan; one saved during an agent's turn on it becomes that
+            turn's starting text (what you save is yours, including what you kept of the agent's).
+            Changed under you while you edit (the agent, an editor): a notice says so, with "Load
+            theirs" (your text replaced) and Save becomes "Save over it". The editor closes when
+            the plan comes back as you saved it, so a refused save keeps your text. Scope: core
+            `protocol.ts`; cli `session-hub.ts` + tests; web `pages/plan.tsx`, `lib/shortcuts.ts`
+            (the sheet). Accept: hub tests (saved; refused when the file moved on, the file
+            untouched; mid-turn: the turn's end keeps your `[x]`); headless: edit and save with
+            ⌘S, Esc cancels and stays on the page, a change from outside while editing → the
+            notice, Load theirs / Save over it; typecheck, test, build.
+            **Proof:** 2 hub tests (saved when the file is still `base`, every tab gets it;
+            refused, the file untouched, when the agent changed it meanwhile; saved mid-turn →
+            the turn's end keeps your `[x]` and makes no step of its own). 289 pass, typecheck
+            7/7, build 5/5. Headless on the 4p1b project's session plan: Edit → the Markdown; a
+            line typed, ⌘S → on disk, the editor closed, the page showing it; Esc → closed, still
+            on the page, the file untouched; the file changed from outside while editing → "The
+            plan changed while you were editing." and "Save over it"; Load theirs → their text,
+            yours gone; another outside line, then Save over it → yours on disk, theirs gone. The
+            shortcuts sheet lists ⌘S / Esc under Plans. ~150 lines + ~50 of tests.
     - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the
           right island in a session, shown or hidden with ⌥⌘B or the header's panel button (like
           ⌘B for sessions; remembered), not offered without a plan: the feature plan's step in

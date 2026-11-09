@@ -1,16 +1,17 @@
-import { useState, type ReactNode } from "react";
-import { ArrowLeft, Check, CircleAlert, ListTodo, Map as MapIcon, MessageSquare, Package } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowLeft, Check, CircleAlert, ListTodo, Map as MapIcon, MessageSquare, Package, Pencil } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
+import { HotkeysProvider, matchesKeyboardEvent, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { Streamdown } from "streamdown";
 import type { FeatureSummary, Plan, PlanAction, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
 import { FeatureDoneButton } from "@/components/feature-done-button";
 import { sessionTitle } from "@/components/session-status";
 import { Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { usePlan } from "@/hooks/use-plan";
 import { useKratos } from "@/lib/kratos-store";
-import { SCOPES } from "@/lib/shortcuts";
+import { PLAN_EDIT_KEYS, SCOPES } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** Where the link that opened a plan came from (4p1c's links say; else a sensible default). */
@@ -19,7 +20,8 @@ export type PlanFrom = { from?: string; label?: string };
 /**
  * `/f/:featureId/plan` and `/s/:sessionId/plan` — a whole plan in the main island (4p1b, D79; the
  * design's Plans board §6, §8), with your side of who-writes-what (4p4a): tick or send back a step
- * the agent says is done, accept or ask about a decision, answer a question. Esc goes back.
+ * the agent says is done, accept or ask about a decision, answer a question; or edit its text
+ * (4p4b). Esc goes back.
  */
 export function PlanPage({ kind }: { kind: PlanKind }) {
   const params = useParams();
@@ -38,6 +40,7 @@ export function PlanPage({ kind }: { kind: PlanKind }) {
   useHotkey(appHotkeys["plan.back"], () => navigate(back), { target: window, ignoreDefaultPrevented: true });
 
   const owner = kind === "feature" ? feature?.title : session && sessionTitle(session);
+  const [editing, setEditing] = useState(false);
   return (
     <HotkeysProvider scope={SCOPES.plan}>
       <main className="min-h-0 flex-1 overflow-y-auto">
@@ -49,10 +52,18 @@ export function PlanPage({ kind }: { kind: PlanKind }) {
               <Shortcut id="plan.back" variant="secondary" className="invisible group-hover:visible group-focus-visible:visible" />
             </Link>
             <span className="flex-1" />
+            {plan?.markdown != null && !editing && (
+              <Button size="sm" variant="ghost" className="rounded-full px-3" onClick={() => setEditing(true)}>
+                <Pencil className="size-3.5" aria-hidden="true" />
+                Edit
+              </Button>
+            )}
             <KindChip kind={kind} />
           </div>
 
-          {plan === undefined ? null : plan.plan === null ? (
+          {plan === undefined ? null : editing && plan.markdown !== null ? (
+            <PlanEditor markdown={plan.markdown} onSave={(markdown, base) => id && send({ type: "save_plan", owner: { kind, id }, markdown, base })} onDone={() => setEditing(false)} />
+          ) : plan.plan === null ? (
             <NoPlan kind={kind} owner={owner} done={kind === "feature" && feature?.done === true} onStart={() => id && send({ type: "start_plan", owner: { kind, id } })} />
           ) : (
             <PlanBody
@@ -109,6 +120,76 @@ function NoPlan({ kind, owner, done, onStart }: { kind: PlanKind; owner?: string
 }
 
 type Act = (action: PlanAction) => void;
+
+/**
+ * The plan's own text, to edit (4p4b): saved with ⌘S, dropped with Esc. Saved only over the text
+ * you started from; if the plan changes under you (the agent, an editor), it says so: take theirs,
+ * or save over it. It closes once the plan comes back as you saved it, so a refused save keeps
+ * your text.
+ */
+function PlanEditor({ markdown, onSave, onDone }: { markdown: string; onSave: (markdown: string, base: string) => void; onDone: () => void }) {
+  const [base, setBase] = useState(markdown);
+  const [text, setText] = useState(markdown);
+  const [saving, setSaving] = useState<string>();
+  useEffect(() => {
+    if (saving !== undefined && markdown === saving) onDone(); // saved: back to the plan
+  }, [markdown, saving, onDone]);
+  const moved = markdown !== base && markdown !== saving;
+  const save = () => {
+    if (text === base && !moved) return onDone();
+    setSaving(text);
+    onSave(text, moved ? markdown : base); // over theirs, when you chose to
+    if (moved) setBase(markdown);
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      {moved && (
+        <div role="status" className="flex items-center gap-3 rounded-2xl bg-wait/10 px-4 py-2.5 ring-1 ring-wait/25">
+          <CircleAlert className="size-4 flex-none text-wait" aria-hidden="true" />
+          <p className="flex-1 text-sm">The plan changed while you were editing.</p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="rounded-full px-3"
+            onClick={() => {
+              setText(markdown);
+              setBase(markdown);
+            }}
+          >
+            Load theirs
+          </Button>
+        </div>
+      )}
+      <Textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (matchesKeyboardEvent(e.nativeEvent, PLAN_EDIT_KEYS.save)) {
+            e.preventDefault(); // not the browser's "save page"
+            save();
+          } else if (e.key === PLAN_EDIT_KEYS.cancel) {
+            e.preventDefault(); // the page's Esc (back) skips a handled one
+            onDone();
+          }
+        }}
+        aria-label="The plan's Markdown"
+        spellCheck={false}
+        className="min-h-96 rounded-2xl bg-well px-4 py-3 font-mono text-sm leading-relaxed"
+      />
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="ghost" className="rounded-full px-3" onClick={onDone}>
+          Cancel
+          <Shortcut hotkey={PLAN_EDIT_KEYS.cancel} variant="secondary" />
+        </Button>
+        <Button className="rounded-full px-3.5" onClick={save}>
+          {moved ? "Save over it" : "Save"}
+          <Shortcut hotkey={PLAN_EDIT_KEYS.save} variant="secondary" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function PlanBody({ plan, kind, context, feature, act }: { plan: Plan; kind: PlanKind; context: ReactNode; feature?: FeatureSummary; act: Act }) {
   const gated = plan.steps.filter((s) => s.id);

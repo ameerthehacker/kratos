@@ -1053,7 +1053,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a
       chat message: sessions update its steps and decisions, you tick steps done. Features first
-      (4a–4c, no plans needed), then plans on top (4d–4k). Only 4a is specified in full; each
+      (4a–4c, no plans needed), then plans on top (4p0–4p7). Only 4a is specified in full; each
       later step gets its scope and acceptance when it's picked up.
   - [x] **4a. Features on the server** (~150 + tests) — the server knows features; no UI yet.
         A feature belongs to the project and has a title; a session belongs to at most one
@@ -1258,27 +1258,147 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           its new feature, no shelf in the session.
     - [ ] **4m5. The nudge** — once per session, the agent is told it can offer to file the work
           in a feature or mark it done, and must ask.
-  - [ ] **4d. Plan review card** (board §2) — `ExitPlanMode` shows the plan as a document beside
-        the chat with Approve and build here / Keep planning (your note goes back); not saved yet.
-  - [ ] **4e. Claude switches to plan by itself** (board §1) — a line in the chat with Claude's
-        reason and Skip planning. First find out how `EnterPlanMode` reaches us (an ask or only
-        a mode change).
-  - [ ] **4f. Plans saved in features** (board §2, §6–7) — approving makes a feature (or fills
-        the one the session is in) and writes `.kratos/features/<slug>/plan.md`; Approve, build
-        later; the folder's Plan item opens the plan page, read-only; a new feature from the
-        shelf can start in plan mode (4c2 makes it without a plan).
-  - [ ] **4g. Edit before approving** (board §2) — Read / Edit in the review card; your edits go
-        back to Claude as the approved plan (`updatedInput`).
-  - [ ] **4h. Continue a plan in a new session** (board §3, §5) — the first prompt tells the agent
-        about the plan; "Up next" step chips on Home; "Start in new session" on a step.
-  - [ ] **4i. Plan changes per session** (board §3) — at turn end a changed plan is saved as a
-        revision credited to the session and shown as "Updated the plan" with its diff; the
-        session log on the plan page.
-  - [ ] **4j. The gate and decisions** (board §3–4, §6) — a step Claude calls done waits for your
-        tick; proposed decisions wait for Accept / Ask why; the right island shows the step in
-        hand; "Mark feature done" when every step is ticked. Covers step 6.
-  - [ ] **4k. Scope drift** (board §3) — files a turn changed outside the step's files are flagged
-        with Show diff / Add to scope. The first piece of step 5's scope fence.
+  - [ ] **4p. The plan, a source of truth** (owner, 2026-11-08; replaces 4d–4k; board §1–8,
+        D79) — the plan is the one place a piece of work's intent, steps, decisions and open
+        questions live; nothing about it lives only in a chat. It's the source of truth when four
+        things hold, and each layer below adds one: **(1)** it has a shape Kratos can read
+        (4p0–4p1), **(2)** every session reads it before working (4p2), **(3)** every change to
+        it is recorded, with who made it (4p3), **(4)** the agent proposes and you decide (4p4).
+        Then it drives the work (4p5), plan mode feeds it (4p6) and it guards the work (4p7).
+        Each layer works on its own. The format is this repo's own PLAN.md and DECISIONS.md, so
+        Kratos's working agreement becomes the product's.
+
+        Two kinds, one format (board §8, owner): a **feature plan** says what and why, across
+        sessions (`.kratos/features/<slug>/plan.md`); a **session plan** says how one session
+        does its part (`.kratos/sessions/<id>/plan.md`, kept by session so moving the session
+        never moves it): for a step of its feature's plan, or the whole of a one-off. The call:
+        does it outlive this session? Kratos picks the default from where the session is (a
+        one-off → session plan; a feature with no plan → feature plan; a feature with one → a
+        session plan for the step in hand) and you can switch it when approving. A session plan
+        only goes up: "Make it a feature" makes the feature, moves the session in and the file
+        becomes the feature plan. The top plan (the feature's, or a one-off's session plan)
+        holds the gate and the one decision ledger; in a feature, a session plan's decisions
+        and new steps go to the feature plan as proposals.
+
+        ```markdown
+        # CSV export for reports
+
+        ## Intent
+        What and why, in prose. Yours once approved. (A session plan may call it Approach.)
+
+        ## Steps
+        - [x] **P1. Export button** — goal in a line.
+          Scope: `apps/web/src/pages/reports.tsx`, `apps/api/src/export/**`
+          Accept: what proves it works.
+          Proof: what was run and what it showed (the agent writes it when it says done).
+        - [?] **P2. Filters in the export** — …
+        - [ ] **P3. …**
+
+        ## Decisions
+        - **D1. CSV, not XLSX** (accepted) — the decision. Why: … Instead of: … Reverse: …
+        - **D2. Stream rows, don't buffer** (proposed) — …
+
+        ## Open questions
+        - [ ] Should exports respect the user's timezone?
+          Answer: … (yours)
+        ```
+
+        Step marks: `[ ]` to do · `[~]` in hand · `[?]` the agent says done (with Proof) · `[x]`
+        ticked by you. **A step with an id is yours to tick; one without is the agent's own**
+        (a session plan's "How" items inside a feature: `- [ ] Reuse the filter parser`). Ids
+        (`P3`, `S2`, `D2`) are never reused or renumbered; a split step is `P3a`, `P3b`.
+        Sections Kratos doesn't know are kept and shown as they are. The session log is not in
+        the file: Kratos writes it from its records (board §7).
+
+        Who writes what (board §7, D79): the agent edits the file with its normal tools (D73);
+        at turn end Kratos reads what changed and undoes only what isn't the agent's to do: an
+        `[x]` it wrote on a step with an id becomes `[?]`, an `(accepted)` becomes `(proposed)`,
+        an answer it wrote keeps its text but stays open (a suggestion), and an intent change is
+        flagged to you. You tick, accept and answer from the UI; Kratos edits just those
+        characters in the file, so the agent's formatting survives.
+
+    - [x] **4p0. The format, read and written** (~200 + tests) — a pure module, no UI, nothing
+          calls it yet. Core `plan.ts`: zod `Plan` {title, intent, steps {id?, title, mark, goal,
+          scope[], accept, proof}, decisions {id, title, status, text}, questions {text,
+          answered, answer}, notes[]} for the protocol (4p1 sends it). CLI `src/plans/plan-file.ts`:
+          `parsePlan(markdown, kind)` — mdast from `mdast-util-from-markdown` (the parser under
+          remark; positions kept), the marks read from the source (`[~]`, `[?]` aren't Markdown);
+          lenient: never throws, problems become notes ("Two steps are P4", "A feature plan step
+          without an id", "No title"); `planTemplate(title, kind)`; edits that splice by
+          position and return the new text: `markStep(md, id, mark)`,
+          `setDecisionStatus(md, id, status)`, `answerQuestion(md, text, answer)`;
+          `reconcileAgentEdit(before, after)` → {markdown, undone[], intentChanged}.
+          Scope: core `plan.ts` + `index.ts`, new `apps/cli/src/plans/` + test,
+          `apps/cli/package.json` (`mdast-util-from-markdown`, `@types/mdast`), DECISIONS (D79).
+          Accept: parse tests on a full feature plan, a feature session plan (no ids), a one-off
+          session plan, a messy one and an empty one; each edit changes only its characters
+          (the rest byte-for-byte); reconcile tests (agent `[x]` → `[?]` on an id'd step, kept on
+          an id-less one; accepted → proposed; an agent answer stays open; intent change
+          flagged; the agent's own edits pass); typecheck, test, build.
+          **Proof:** 12 tests (all five sample plans, the three edits byte-compared, four
+          reconcile cases); 251 pass, typecheck 7/7, build 5/5. ~270 lines of code + ~220 of tests
+          (over the guess: reconcile works both ways, and box-less steps / status-less decisions
+          get one inserted). **Review round** (owner): 9 findings, 6 fixed — a byte-order mark
+          no longer shifts every offset; `## Constructor` isn't a section (a Map, not an object);
+          two Intent / Approach sections don't swallow what's between them; a multi-line answer
+          reads back whole and is replaced whole; continuation lines follow the item's real
+          indent; an accepted decision the agent rewords is proposed again, your answer it
+          rewrites is put back (D79). 4 regression tests; 255 pass, typecheck 7/7, build 5/5.
+          Left: an item the agent deletes isn't restored (needs a rule for where it goes back;
+          4p3 shows the diff meanwhile); an `Answer:` line inside a step is dropped silently;
+          answer text isn't escaped (an answer line `- b` becomes a nested list); step and
+          decision titles are parsed by two copies of the same three lines.
+    - [ ] **4p1. Plans exist, and you can read them whole** (~150; board §6, §8) — a feature's
+          folder (`.kratos/features/<slug>/`, slug from its title, fixed once made; renaming the
+          feature keeps it) and a session's (`.kratos/sessions/<id>/`) are made when the plan is
+          first written. The server watches them (chokidar) and sends `plan {owner, markdown,
+          plan, updatedAt}` to the tabs. The whole plan opens in the main island, read-only,
+          with the kind on it (Map icon "Feature plan" / checklist "Session plan" and its
+          breadcrumb), back or Esc to the session: from the folder's "Plan" row, and from the
+          checklist icon on a session's row. No plan yet: "Start a plan" writes the template.
+          Done when: you write or edit a plan.md anywhere and its page shows it within a second.
+    - [ ] **4p2. Every session reads its plans** (~120; board §5, §8) — the plan becomes what
+          agents work from. Core: `startSession({instructions})`, generic; the Claude adapter
+          passes it as `--append-system-prompt`. Instructions: where the feature plan and this
+          session's plan are, the format, who writes what ("`[?]` with Proof, never `[x]` on an
+          id'd step; decisions as proposed; don't renumber; in a feature, new steps and
+          decisions go to the feature plan"). The changing part (the step in hand, what's
+          waiting on you) rides on the first prompt, and on the next one after the session
+          moves. Done when: in a new feature, "plan this" writes a feature plan in the format,
+          and a second session picks up from it without being told what was done.
+    - [ ] **4p3. Every change is recorded** (~150; board §3, §6) — a `plan_revisions` table
+          (plan, markdown, by: session | you | outside Kratos, turn, at). At turn end a changed
+          plan is reconciled (4p0), saved as a revision credited to the session, and shown in
+          the chat as "Updated the plan" / "Updated the session plan" with its diff (D65's
+          snapshots can't see `.kratos/`, which is ignored). A change from outside a turn is
+          credited "outside Kratos". The plan page gets its session log from these. Done when:
+          every change to a plan has a row saying who, when and what.
+    - [ ] **4p4. The agent proposes, you decide** (~150; board §3–4, §6) — on the plan page:
+          Tick / Not yet on a `[?]` step (Not yet's note goes to the session that claimed it),
+          Accept / Reject a proposed step, Accept / Ask why on a proposed decision, Answer on an
+          open question, and Edit (the raw Markdown; editor library chosen then). Each is a
+          server-side splice and a revision credited to you. When every step is ticked: "Mark
+          feature done" (never automatic). Covers step 6, the decision ledger. Done when:
+          nothing the agent writes can tick a step, accept a decision or answer a question.
+    - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the
+          right island in a session, shown or hidden with ⌥⌘B or the header's panel button (like
+          ⌘B for sessions; remembered), not offered without a plan: the feature plan's step in
+          hand with your tick on top, this session's plan as a checklist under it, ⤢ to open
+          either whole. "Up next" step chips on Home for a picked feature, "Start in new
+          session" on a step; the session is tagged with its step (`sessions.step_id`) and the
+          folder shows `n/m` ticked.
+    - [ ] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) —
+          `ExitPlanMode` shows the plan in a review island beside the chat, titled with what
+          approving makes (feature plan / session plan / plan for P2), with the switch where
+          there is one ("Make it a feature", "Just this session"); Approve and build here /
+          Approve, build later / Keep planning with your note; editable before approving, your
+          edits go back as the approved plan (`updatedInput`). "Make it a feature" also on a
+          one-off's session plan page. Claude entering plan mode by itself is a line in the chat
+          with Skip planning. Probably three slices; the first is finding out what
+          `EnterPlanMode` / `ExitPlanMode` send us.
+    - [ ] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
+          the step's Scope are flagged with Show diff / Add to scope (Add edits the plan). The
+          first piece of step 5's scope fence.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
       `requestPermission`), using the D24 model: steps carry an estimate (agent must split before
       coding if it exceeds the budget); budget = review load (in-scope insertions, config/lockfiles/
@@ -1286,7 +1406,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       UI gate with **Extend** (+N lines, reason logged) / **Checkpoint** (commit what works, continue
       as a new step) / **Split** / **Revert**. Approve/reject between steps; checkpoints via git.
 - [ ] **6. Decision ledger** — decisions captured as structured events, shown in UI, flippable.
-      Now planned as part of 4j (decisions live in the feature's plan).
+      Now planned as 4p4 (decisions live in the feature's plan).
 - [ ] **7. Dogfood** — build step 8+ of Kratos using Kratos.
 
 ## Website (distribution) — owner, D58

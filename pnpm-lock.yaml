@@ -47,6 +47,9 @@ importers:
       fastify:
         specifier: ^5.12.8
         version: 5.12.8
+      mdast-util-from-markdown:
+        specifier: ^2.1.0
+        version: 2.1.0
       open:
         specifier: ^11.0.4
         version: 11.0.4
@@ -81,6 +84,9 @@ importers:
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6

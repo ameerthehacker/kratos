@@ -156,6 +156,43 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D79. Plans: one Markdown format, two kinds, agent edits reconciled at turn end (step 4p, owner)
+- Owner: the plan document should be the source of truth for whatever is being built; a
+  session can have its own plan too; "Make it a feature" for a one-off that grew. Designed on
+  the "Proposal · features and plans" board, §8.
+- Format: this repo's own PLAN.md / DECISIONS.md shape — `# title`, `## Intent` (a session plan
+  may say `## Approach`), `## Steps` (task items, `**P1. Title** — goal` then `Scope:` /
+  `Accept:` / `Proof:` lines), `## Decisions` (`**D1. Title** (proposed|accepted) — text`),
+  `## Open questions` (task items, `Answer:` line). Marks `[ ]` `[~]` `[?]` `[x]`; ids never
+  renumbered. Unknown sections are kept. Read leniently: never refused, problems become notes
+  shown to you and the agent.
+- Two kinds (board §8): a **feature plan** (what and why, across sessions,
+  `.kratos/features/<slug>/plan.md`) and a **session plan** (how one session does its part,
+  `.kratos/sessions/<id>/plan.md`). Default from where the session is; you can switch when
+  approving; a session plan only goes up ("Make it a feature"). The top plan holds the gate and
+  the one decision ledger.
+- Who ticks: **a step with an id is yours, one without is the agent's** — that one rule covers
+  a feature plan (ids), a one-off's session plan (ids, `S1`) and a feature session's "How"
+  checklist (no ids), without the parser knowing which kind it reads.
+- The agent edits plan files with its normal tools (D73 kept); at turn end Kratos reconciles
+  against the version before the turn: `[x]` on an id'd step → `[?]`, `(accepted)` →
+  `(proposed)`, an answer it wrote stays a suggestion (question left open), an intent change is
+  flagged. An accepted decision it rewords goes back to `(proposed)`; your answer it rewrites
+  is put back. (An item it deletes outright is not restored yet.) Your actions are splices at
+  the parsed positions, so the rest of the file is untouched.
+- Parser: `mdast-util-from-markdown` (the parser inside remark, already in the tree via the web
+  app's Markdown), for structure and source positions; the marks are read from the source
+  because `[~]` / `[?]` aren't Markdown (GFM knows only `[ ]` / `[x]`, so no `remark-gfm`).
+- Alternatives: the agent changes plans only through Kratos tools (stricter, cheap since D77,
+  but Claude-only in practice and no free-form edits); refusing a malformed plan; only feature
+  plans, every approved plan making a feature (a folder for every quick planned task); plans
+  in SQLite; the session log written into the file.
+- Owner's calls (2026-11-09, "ok" to the recommendations): direct edits + reconcile; the
+  source-of-truth layers before plan mode (4p6); malformed plans kept with notes; the session
+  log in Kratos's records only.
+- Reverse: plan files are plain Markdown and stay readable; drop `src/plans/` and the `Plan`
+  schema, and reconcile goes with them.
+
 ### D78. Sessions are named by the agent's own fast model (step 3z4, owner)
 - Owner: like other agents, a session gets a short name after its first message, animating in,
   with a quick menu to regenerate it, using a less powerful model.

@@ -17,6 +17,7 @@ import type {
 } from "@kratos/core";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { memoryLogger } from "./logger.js";
+import { memoryPlans } from "./plans/plan-files.js";
 import { SessionHub } from "./session-hub.js";
 import { SessionStore } from "./store/store.js";
 
@@ -121,7 +122,7 @@ const MODELS: AgentModel[] = [
   { id: "claude-opus-4-8", label: "Opus 4.8", description: "older", group: "other" },
 ];
 
-function setup(snapshots?: Snapshots) {
+function setup(snapshots?: Snapshots, plans = memoryPlans()) {
   const agents: FakeSession[] = [];
   const adapter: AgentAdapter = {
     id: "fake",
@@ -136,7 +137,7 @@ function setup(snapshots?: Snapshots) {
     },
   };
   const store = SessionStore.open(":memory:");
-  let hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots);
+  let hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots, plans);
 
   /** A browser tab on the current hub. Like the real UI: its log clears when it switches session,
    * and `ready` says the replay is complete (`seenWhenReady`: how much of the log it had then).
@@ -191,7 +192,7 @@ function setup(snapshots?: Snapshots) {
     };
   };
   /** Simulate a kratos restart: a new hub over the same database; old agent processes are gone. */
-  const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots));
+  const restart = () => (hub = new SessionHub(adapter, "/projects/demo", store, undefined, undefined, snapshots, plans));
   /** Another project's hub on the same database (its sessions aren't this project's). */
   const otherProject = () => new SessionHub(adapter, "/projects/other", store);
   return {
@@ -200,6 +201,7 @@ function setup(snapshots?: Snapshots) {
     restart,
     otherProject,
     store,
+    plans,
     get hub() {
       return hub;
     },
@@ -1685,5 +1687,104 @@ describe("SessionHub: reviewing changes (3v1, D65)", () => {
     const seen: ServerMessage[] = [];
     otherProject().connect((m) => seen.push(m)).receive({ type: "get_changes", sessionId: a.viewing });
     expect(seen.at(-1)).toEqual({ type: "error", message: `No session ${a.viewing} in this project` });
+  });
+});
+
+describe("SessionHub: plan files (4p1a, D79)", () => {
+  const plansSeen = (seen: ServerMessage[]) => seen.filter((m): m is Extract<ServerMessage, { type: "plan" }> => m.type === "plan");
+
+  it("starts a feature's plan from the template, in a folder named from its title, for every tab", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    const b = tab();
+    a.receive({ type: "create_feature", title: "CSV export: reports!" });
+    const owner = { kind: "feature" as const, id: a.features[0]!.id };
+    expect(a.features[0]!.hasPlan).toBe(false);
+
+    a.receive({ type: "start_plan", owner });
+    await tick();
+    expect(plans.text("features/csv-export-reports")).toBe("# CSV export: reports!\n\n## Intent\n\n## Steps\n\n## Decisions\n\n## Open questions\n");
+    for (const t of [a, b]) {
+      expect(plansSeen(t.seen)).toMatchObject([{ owner, markdown: expect.stringContaining("## Intent"), plan: { title: "CSV export: reports!", steps: [] } }]);
+      expect(t.features[0]!.hasPlan).toBe(true);
+    }
+
+    plans.edit("features/csv-export-reports", "# Mine\n");
+    a.receive({ type: "start_plan", owner }); // there's a plan: nothing happens
+    await tick();
+    expect(plans.text("features/csv-export-reports")).toBe("# Mine\n");
+  });
+
+  it("starts a session's plan; get_plan answers with it, or null when there's none", async () => {
+    const { tab } = setup();
+    const a = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    a.receive({ type: "get_plan", owner });
+    await tick();
+    expect(plansSeen(a.seen)).toEqual([{ type: "plan", owner, markdown: null, plan: null }]);
+
+    a.receive({ type: "start_plan", owner });
+    await tick();
+    expect(a.list.find((s) => s.id === a.viewing)!.hasPlan).toBe(true);
+    a.receive({ type: "get_plan", owner });
+    await tick();
+    expect(plansSeen(a.seen).at(-1)).toMatchObject({ owner, markdown: "# Session plan\n\n## Approach\n\n## Steps\n" });
+  });
+
+  it("an outside edit reaches every tab, a removed plan says null, an unknown folder is ignored", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    const b = tab();
+    const owner = { kind: "session" as const, id: a.viewing };
+    a.receive({ type: "start_plan", owner });
+    await tick();
+    plans.edit(`sessions/${a.viewing}`, "# Edited\n\n## Steps\n- [ ] **S1. One**\n");
+    expect(plansSeen(b.seen).at(-1)).toMatchObject({ owner, plan: { title: "Edited", steps: [{ id: "S1", mark: "todo" }] } });
+    plans.edit(`sessions/${a.viewing}`, undefined);
+    expect(plansSeen(b.seen).at(-1)).toEqual({ type: "plan", owner, markdown: null, plan: null });
+    expect(b.list.find((s) => s.id === a.viewing)!.hasPlan).toBe(false);
+
+    const before = b.seen.length;
+    plans.edit("features/made-by-hand", "# ?\n");
+    plans.edit("sessions/not-a-session", "# ?\n");
+    expect(b.seen.length).toBe(before);
+  });
+
+  it("keeps the folder when the feature is renamed; another feature of that name gets -2", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    const first = a.features[0]!.id;
+    a.receive({ type: "start_plan", owner: { kind: "feature", id: first } });
+    await tick();
+    a.receive({ type: "rename_feature", id: first, title: "Monthly reports" });
+    a.receive({ type: "create_feature", title: "Reports" });
+    const second = a.features.find((f) => f.id !== first)!.id;
+    a.receive({ type: "start_plan", owner: { kind: "feature", id: second } });
+    await tick();
+    expect(plans.text("features/reports")).toMatch(/^# Reports\n/);
+    expect(plans.text("features/reports-2")).toMatch(/^# Reports\n/);
+    expect(a.features.every((f) => f.hasPlan)).toBe(true);
+  });
+
+  it("refuses another project's session or feature, and a done feature", async () => {
+    const { tab, otherProject } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Old" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "set_feature_done", id: feature, done: true });
+    a.receive({ type: "start_plan", owner: { kind: "feature", id: feature } });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "“Old” is done; reopen it to plan it" });
+    expect(a.features[0]!.hasPlan).toBe(false);
+
+    const seen: ServerMessage[] = [];
+    const other = otherProject().connect((m) => seen.push(m));
+    other.receive({ type: "get_plan", owner: { kind: "session", id: a.viewing } });
+    other.receive({ type: "start_plan", owner: { kind: "feature", id: feature } });
+    expect(seen.filter((m) => m.type === "error")).toEqual([
+      { type: "error", message: `No session ${a.viewing} in this project` },
+      { type: "error", message: `No feature ${feature} in this project` },
+    ]);
   });
 });

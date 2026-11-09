@@ -1357,6 +1357,54 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           breadcrumb), back or Esc to the session: from the folder's "Plan" row, and from the
           checklist icon on a session's row. No plan yet: "Start a plan" writes the template.
           Done when: you write or edit a plan.md anywhere and its page shows it within a second.
+          Split (~450 lines in one go; each slice works alone):
+      - [x] **4p1a. Plan files on the server** (~200 + tests) — no UI yet. Store: a nullable
+            `features.plan_dir` (the folder's name, from the title when its plan is first made,
+            `-2` on a clash, kept when the feature is renamed) + migration. New
+            `src/plans/plan-files.ts`: one project's plan files under `<project>/.kratos/`
+            (`features/<dir>/plan.md`, `sessions/<id>/plan.md`): read, create from the template
+            (making `.kratos/` with a `.gitignore` of `*` the first time, so plans stay out of git
+            without touching yours), and watch them (chokidar, those two folders only, not the
+            database next to them) → which plan changed. Protocol (core): `PlanOwner {kind, id}`;
+            `get_plan {owner}` and `start_plan {owner}`; the server sends `plan {owner, markdown,
+            plan}` (both null: no plan) on request and to every tab when a plan file changes;
+            `FeatureSummary.hasPlan`, `SessionSummary.hasPlan`. Rules: the owner must be this
+            project's; a done feature takes no new plan (reopen first, D73); `start_plan` on an
+            existing plan does nothing. Scope: core `protocol.ts`, cli `store/schema.ts` +
+            migration, `store.ts`, new `plans/plan-files.ts` + test, `session-hub.ts` + tests,
+            `index.ts` (wiring), DECISIONS. Accept: plan-files tests (create → template on disk +
+            `.gitignore`; an outside edit is seen within a second; the database's churn isn't);
+            hub tests (`start_plan` for a feature and a session → `plan` to every tab, lists say
+            `hasPlan`; `get_plan` on none → `missing`; another project's or a done feature's
+            refused; renaming keeps the folder); `pnpm dev` on the dev database migrates;
+            typecheck, test, build, the binary builds.
+            **Proof:** 9 new tests (4 plan-files on a real folder and watcher — 20/20 runs after
+            a settle wait: macOS can drop an edit made the instant the watcher says ready; 5 hub
+            tests); 264 pass, typecheck 7/7, build 5/5. Live, on a copy of the dev database and a
+            throwaway project, a WebSocket client: `start_plan` for a session → the template;
+            the file edited outside → its `plan` (with `[?] S1` read) in 12 ms; the list said
+            `hasPlan`; a feature's folder `plans-as-first-class`; `.kratos/.gitignore` = `*`. The
+            same run on the single binary (built, 215 MB): 10 ms. Your running `pnpm dev`
+            migrated the dev database itself (12 migrations). ~265 lines of code + ~190 of tests
+            (over: the in-memory twin for the hub's tests, and the web store had to keep `plan`
+            out of the chat log). Also touched: web `kratos-store.ts`, the sidebar test's
+            fixtures (`hasPlan`). D79.
+            **Review round** (owner): 10 findings, 8 fixed — a slower, older read of a plan can't
+            win over a newer one or Kratos's own write; lists are resent only when a plan
+            appears or goes, not on every edit; shutdown stops the agents even if closing the
+            watcher fails; starting a plan never overwrites one (an exclusive create, not check
+            then write); `get_plan` answers from the same last-seen text the changes carry, so a
+            late answer can't undo a newer change; the hub stops listening at close; an existing
+            `.kratos/` is watched from the start (in development it holds the database), and a
+            new plan folder is handed to the watcher at once, which ended the macOS misses in
+            the tests (40/40, no settle wait needed for it); this entry said `missing`. Left: the
+            watcher isn't rebuilt if `.kratos/` is deleted while Kratos runs.
+      - [ ] **4p1b. The plan page** (~200) — `/f/:featureId/plan` and `/s/:sessionId/plan` in
+            the main island, read-only (board §6, §8): kind chip and breadcrumb, intent, steps
+            with marks and fields, decisions, open questions, notes; back or Esc to where you
+            came from; no plan: "Start a plan".
+      - [ ] **4p1c. Ways in** (~100) — the folder's "Plan" row in the sidebar tree, and the
+            checklist icon on a session's row when it has a plan.
     - [ ] **4p2. Every session reads its plans** (~120; board §5, §8) — the plan becomes what
           agents work from. Core: `startSession({instructions})`, generic; the Claude adapter
           passes it as `--append-system-prompt`. Instructions: where the feature plan and this

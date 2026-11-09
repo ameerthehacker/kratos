@@ -11,6 +11,7 @@ import {
   QuestionReply,
   QuestionRequest,
 } from "./agent.js";
+import { Plan, PlanKind } from "./plan.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -71,6 +72,10 @@ export type ChangedFile = z.infer<typeof ChangedFile>;
 /** A feature's or a session's name (D73, 3z4): as typed, trimmed, 1–80 characters. */
 export const Title = z.string().trim().min(1).max(80);
 
+/** Whose plan (D79): a feature's (what and why, across sessions) or a session's (how it does its part). */
+export const PlanOwner = z.object({ kind: PlanKind, id: z.string() });
+export type PlanOwner = z.infer<typeof PlanOwner>;
+
 /** Browser → server */
 export const ClientMessage = z.discriminatedUnion("type", [
   /** A prompt for the session this tab views. `newSession: true` (sent from Home) starts a new
@@ -128,6 +133,10 @@ export const ClientMessage = z.discriminatedUnion("type", [
   /** Mark a feature done with its sessions, or reopen it (D73). Like `set_done`, a busy session
    * in it needs `stop: true` (4c5). */
   z.object({ type: z.literal("set_feature_done"), id: z.string(), done: z.boolean(), stop: z.boolean().optional() }),
+  /** A plan's text and what Kratos read from it (4p1a); answered with `plan`. */
+  z.object({ type: z.literal("get_plan"), owner: PlanOwner }),
+  /** Start a plan from the template; nothing happens when there is one (4p1a). */
+  z.object({ type: z.literal("start_plan"), owner: PlanOwner }),
   /** Move a session into a working feature, back to a one-off with null, or into a new feature
    * named here (`newFeatureTitle`, which wins) (D73). */
   z.object({
@@ -190,6 +199,8 @@ export const SessionSummary = z.object({
   featureId: z.string().nullable(),
   /** The agent is naming it (3z4): its title may change in a moment. */
   titling: z.boolean(),
+  /** It has its own session plan (D79). */
+  hasPlan: z.boolean(),
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 
@@ -200,6 +211,8 @@ export const FeatureSummary = z.object({
   /** The owner marked it done: one row under "Done". */
   done: z.boolean(),
   updatedAt: z.number(),
+  /** Its feature plan has been started (D79). */
+  hasPlan: z.boolean(),
 });
 export type FeatureSummary = z.infer<typeof FeatureSummary>;
 
@@ -260,6 +273,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("sessions"), list: z.array(SessionSummary) }),
   /** All of this project's features, most recent first: on connect and whenever one changes (D73). */
   z.object({ type: z.literal("features"), list: z.array(FeatureSummary) }),
+  /** A plan, to the tab that asked (`get_plan`) and to every tab whenever its file changes (4p1a).
+   * `markdown` is the file as written, `plan` what Kratos read from it; both null: no plan. */
+  z.object({ type: z.literal("plan"), owner: PlanOwner, markdown: z.string().nullable(), plan: Plan.nullable() }),
   /** Reply to `ping`: server info + timestamp. */
   z.object({
     type: z.literal("pong"),

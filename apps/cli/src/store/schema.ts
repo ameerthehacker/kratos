@@ -47,6 +47,9 @@ export const features = sqliteTable(
     doneAt: integer("done_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    /** Its plan's folder under `.kratos/features/` (D79): named from the title when the plan is
+     * first made, kept when the feature is renamed; null = no plan yet. */
+    planDir: text("plan_dir"),
   },
   (t) => [index("features_by_project").on(t.projectDir, t.updatedAt)],
 );

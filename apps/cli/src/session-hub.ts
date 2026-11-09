@@ -7,13 +7,17 @@ import {
   type ChangedFile,
   type ClientMessage,
   type Harness,
+  type PlanOwner,
   type ServerMessage,
 } from "@kratos/core";
+import { slug } from "github-slugger";
 import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
+import { parsePlan, planTemplate } from "./plans/plan-file.js";
+import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
 
 type Send = (message: ServerMessage) => void;
@@ -37,6 +41,8 @@ export class SessionHub {
   private held = false;
   /** Which session each connected tab is viewing. */
   private readonly views = new Map<Send, string>();
+  /** Stops the hub hearing plan changes (D79), at close. */
+  private readonly unwatchPlans: () => void;
 
   /** Harnesses and their models (D43); empty until the agent has reported its models. */
   private harnesses: Harness[] = [];
@@ -54,10 +60,13 @@ export class SessionHub {
     private readonly files: AttachmentFiles = memoryFiles(),
     /** Snapshots for reviewing changes (3v1, D65); none = review unavailable. */
     private readonly snapshots?: Snapshots,
+    /** The project's plan files (D79); default: in memory. */
+    private readonly plans: PlanFiles = memoryPlans(),
   ) {
     this.rootLog = log;
     this.log = log.child({ component: "hub" });
     this.loadHarnesses();
+    this.unwatchPlans = this.plans.onChange((folder, markdown, existed) => this.planChanged(folder, markdown, existed));
   }
 
   /** A tab connected: show it the features, the session list and the harnesses, then the session
@@ -98,7 +107,8 @@ export class SessionHub {
 
   /** Server shutdown: withdraw every session's open asks and stop every agent. */
   async close(): Promise<void> {
-    await Promise.all([...this.runtimes.values()].map((runtime) => runtime.close()));
+    this.unwatchPlans();
+    await Promise.all([this.plans.close(), ...[...this.runtimes.values()].map((runtime) => runtime.close())]);
   }
 
   private receive(send: Send, message: ClientMessage): void {
@@ -205,6 +215,17 @@ export class SessionHub {
         this.broadcastSessionList();
         return;
       }
+      case "get_plan":
+        if (!this.planOwnerInProject(send, message.owner)) return;
+        send(this.planMessage(message.owner));
+        return;
+      case "start_plan":
+        if (!this.planOwnerInProject(send, message.owner)) return;
+        this.startPlan(send, message.owner).catch((err) => {
+          this.log.warn({ err, owner: message.owner }, "could not start a plan");
+          send({ type: "error", message: `Could not start the plan: ${err instanceof Error ? err.message : err}` });
+        });
+        return;
       case "set_session_feature": {
         if (!this.inProject(send, message.sessionId)) return;
         if (!message.newFeatureTitle && message.featureId === undefined) {
@@ -396,6 +417,66 @@ export class SessionHub {
     this.broadcast(this.featureList());
   }
 
+  // --- plans (D79) ---
+
+  /** Is this plan's owner one of this project's sessions or features? Tells the tab when not. */
+  private planOwnerInProject(send: Send, owner: PlanOwner): boolean {
+    return owner.kind === "session" ? this.inProject(send, owner.id) : this.featureInProject(send, owner.id);
+  }
+
+  /** Its plan's folder under `.kratos/`; undefined for a feature whose plan was never started. */
+  private planFolder(owner: PlanOwner): string | undefined {
+    if (owner.kind === "session") return `sessions/${owner.id}`;
+    const dir = this.store.getFeature(owner.id)?.planDir;
+    return dir ? `features/${dir}` : undefined;
+  }
+
+  private planMessage(owner: PlanOwner): ServerMessage {
+    const folder = this.planFolder(owner);
+    return this.planOf(owner, folder ? this.plans.text(folder) : undefined);
+  }
+
+  private planOf(owner: PlanOwner, markdown: string | undefined): ServerMessage {
+    return { type: "plan", owner, markdown: markdown ?? null, plan: markdown === undefined ? null : parsePlan(markdown, owner.kind) };
+  }
+
+  /** Writes the template, unless there's a plan already. A feature's folder is named now, from its
+   * title, and kept from then on (renaming the feature doesn't move it). */
+  private async startPlan(send: Send, owner: PlanOwner): Promise<void> {
+    let title: string;
+    if (owner.kind === "feature") {
+      const feature = this.store.getFeature(owner.id)!;
+      if (feature.doneAt) return send({ type: "error", message: `“${feature.title}” is done; reopen it to plan it` });
+      if (!feature.planDir) this.store.setFeaturePlanDir(feature.id, this.freePlanDir(feature.title));
+      title = feature.title;
+    } else title = this.store.get(owner.id)!.title ?? "Session plan";
+    const folder = this.planFolder(owner)!;
+    if (await this.plans.create(folder, planTemplate(title, owner.kind))) this.log.info({ owner }, "plan started");
+  }
+
+  /** A folder name for a feature's plan: its title as a slug, `-2`, `-3`… when that's taken. */
+  private freePlanDir(title: string): string {
+    const base = slug(title).slice(0, 60).replace(/-+$/, "") || "feature";
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? base : `${base}-${n}`;
+      if (!this.store.featureByPlanDir(this.cwd, name) && !this.plans.taken(`features/${name}`)) return name;
+    }
+  }
+
+  /** A plan file changed, from anywhere: every tab gets it, and, when a plan appeared or went, the
+   * list that says who has one. */
+  private planChanged(folder: string, markdown: string | undefined, existed: boolean): void {
+    const [kind, name = ""] = folder.split("/");
+    let owner: PlanOwner | undefined;
+    if (kind === "sessions" && this.ours(name)) owner = { kind: "session", id: name };
+    const feature = kind === "features" ? this.store.featureByPlanDir(this.cwd, name) : undefined;
+    if (feature) owner = { kind: "feature", id: feature.id };
+    if (!owner) return; // a folder Kratos didn't make: made by hand, or another project's database
+    this.broadcast(this.planOf(owner, markdown));
+    if (existed === (markdown !== undefined)) return; // an edit: who has a plan is unchanged
+    this.broadcast(owner.kind === "session" ? this.sessionList() : this.featureList());
+  }
+
   /** Is this one of this project's features? Tells the tab when not. */
   private featureInProject(send: Send, featureId: string): boolean {
     if (this.store.getFeature(featureId)?.projectDir === this.cwd) return true;
@@ -534,6 +615,7 @@ export class SessionHub {
         done: s.doneAt !== null,
         featureId: s.featureId,
         titling: this.runtimes.get(s.id)?.titling ?? false,
+        hasPlan: this.plans.text(`sessions/${s.id}`) !== undefined,
       })),
     };
   }
@@ -541,7 +623,13 @@ export class SessionHub {
   private featureList(): ServerMessage {
     return {
       type: "features",
-      list: this.store.listFeatures(this.cwd).map((f) => ({ id: f.id, title: f.title, done: f.doneAt !== null, updatedAt: f.updatedAt.getTime() })),
+      list: this.store.listFeatures(this.cwd).map((f) => ({
+        id: f.id,
+        title: f.title,
+        done: f.doneAt !== null,
+        updatedAt: f.updatedAt.getTime(),
+        hasPlan: f.planDir !== null && this.plans.text(`features/${f.planDir}`) !== undefined,
+      })),
     };
   }
 

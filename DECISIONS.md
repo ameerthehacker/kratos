@@ -183,6 +183,21 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Parser: `mdast-util-from-markdown` (the parser inside remark, already in the tree via the web
   app's Markdown), for structure and source positions; the marks are read from the source
   because `[~]` / `[?]` aren't Markdown (GFM knows only `[ ]` / `[x]`, so no `remark-gfm`).
+- Files (4p1a): `<project>/.kratos/features/<dir>/plan.md` and `.kratos/sessions/<id>/plan.md`.
+  A feature's `<dir>` is its title made a slug by `github-slugger` (GitHub's heading anchors:
+  keeps any script's letters, drops punctuation; already in the tree via the web app), `-2` on
+  a clash, stored as `features.plan_dir` when the plan is first made and kept on rename (a
+  moving folder would break the agent's paths mid-work). The first write puts a `.gitignore` of
+  `*` in `.kratos/` (unless one is there), so plans stay out of git without editing the
+  project's own ignores. Changes are seen with **chokidar** (the common Node file watcher, no
+  native parts, so the single binary keeps working), watching only `features/` and `sessions/`
+  (not the database beside them in development) and reporting a change only when the text
+  differs, so Kratos's own write isn't announced twice; a plan's last-seen text answers
+  `get_plan` too, so an answer and a change can't arrive out of order. Starting a plan is an
+  exclusive create (`wx`): it never overwrites one that appeared meanwhile. Every plan change
+  goes to every tab (plans are small; no per-tab subscriptions to keep). Alternatives: folders named by feature
+  id (stable, no column, but unreadable to you and the agent); Node's own `fs.watch` (no
+  rename / atomic-save handling); plans read only when asked (an editor's change wouldn't show).
 - Alternatives: the agent changes plans only through Kratos tools (stricter, cheap since D77,
   but Claude-only in practice and no free-form edits); refusing a malformed plan; only feature
   plans, every approved plan making a feature (a folder for every quick planned task); plans

@@ -116,6 +116,16 @@ export class SessionStore {
       .all();
   }
 
+  /** Name a feature's plan folder (D79), once, when its plan is first made. */
+  setFeaturePlanDir(featureId: string, planDir: string): void {
+    this.db.update(features).set({ planDir }).where(eq(features.id, featureId)).run();
+  }
+
+  /** The project's feature whose plan is in this folder, if any. */
+  featureByPlanDir(projectDir: string, planDir: string): StoredFeature | undefined {
+    return this.db.select().from(features).where(and(eq(features.projectDir, projectDir), eq(features.planDir, planDir))).get();
+  }
+
   /** Rename a feature. Not work on it: its place in the list stays (`updatedAt` untouched). */
   renameFeature(featureId: string, title: string): void {
     this.db.update(features).set({ title }).where(eq(features.id, featureId)).run();

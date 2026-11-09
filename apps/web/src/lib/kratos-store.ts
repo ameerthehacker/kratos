@@ -1,12 +1,16 @@
 import { create } from "zustand";
-import type { ClientMessage, FeatureSummary, Harness, ServerMessage, SessionSummary, Settings, UpdateStatus } from "@kratos/core";
+import type { ClientMessage, FeatureSummary, Harness, PlanOwner, ServerMessage, SessionSummary, Settings, UpdateStatus } from "@kratos/core";
 import { clientLog } from "@/lib/log";
 
 export type ServerInfo = Extract<ServerMessage, { type: "pong" }>;
 /** What a session changed, as the server last said (3v1). */
 export type Changes = Extract<ServerMessage, { type: "changes" }>;
+/** A plan as the server last sent it (D79): its file's text and what Kratos read from it. */
+export type PlanState = Extract<ServerMessage, { type: "plan" }>;
+/** The key `plans` keeps a plan under. */
+export const planKey = (owner: PlanOwner) => `${owner.kind}:${owner.id}`;
 /** Messages that belong to a session's log (everything the server replays). */
-export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "features" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" | "viewed" }>;
+export type LogMessage = Exclude<ServerMessage, { type: "pong" | "error" | "session" | "session_ready" | "sessions" | "features" | "plan" | "harnesses" | "prompts_returned" | "update" | "settings" | "changes" | "viewed" }>;
 
 type KratosState = {
   connected: boolean;
@@ -34,6 +38,8 @@ type KratosState = {
   log: LogMessage[];
   /** Each session's changes, by id, as last asked for with `get_changes` (3v2). */
   changes: Record<string, Changes>;
+  /** Plans the server has sent, by `planKey` (4p1a): asked for with `get_plan`, and every change. */
+  plans: Record<string, PlanState>;
   /** Each session's files marked viewed in review: path → the version viewed (3v3). */
   viewed: Record<string, Record<string, string>>;
   /** Mark a file viewed or not: shown at once, then saved by Kratos, which tells every tab. */
@@ -56,6 +62,7 @@ export const useKratos = create<KratosState>((set, get) => ({
   harnesses: [],
   log: [],
   changes: {},
+  plans: {},
   viewed: {},
   ready: false,
   sessionAnnounced: false,
@@ -108,6 +115,8 @@ export const useKratos = create<KratosState>((set, get) => ({
         return set({ settings: message.settings });
       case "changes": // a reply to this tab's get_changes, not part of the log
         return set((state) => ({ changes: { ...state.changes, [message.sessionId]: message } }));
+      case "plan": // a reply to get_plan, or a plan file changed: not part of the log
+        return set((state) => ({ plans: { ...state.plans, [planKey(message.owner)]: message } }));
       case "viewed": // after `changes`, and whenever any tab marks a file (3v3)
         return set((state) => ({ viewed: { ...state.viewed, [message.sessionId]: message.files } }));
       case "error":

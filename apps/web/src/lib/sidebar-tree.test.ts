@@ -15,9 +15,10 @@ const session = (id: string, updatedAt: number, more: Partial<SessionSummary> = 
   done: false,
   featureId: null,
   titling: false,
+  hasPlan: false,
   ...more,
 });
-const feature = (id: string, updatedAt: number, done = false): FeatureSummary => ({ id, title: id, done, updatedAt });
+const feature = (id: string, updatedAt: number, done = false): FeatureSummary => ({ id, title: id, done, updatedAt, hasPlan: false });
 /** Each row as its id; a folder as `id[its sessions]`. */
 const names = (items: SidebarItem[]) => items.map((i) => (i.kind === "session" ? i.session.id : `${i.feature.id}[${i.sessions.map((s) => s.id).join(",")}]`));
 

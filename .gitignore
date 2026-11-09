@@ -5,6 +5,8 @@ dist/
 .DS_Store
 # `pnpm dev`: the dev server's session history (kratos.db)
 .kratos/
+# `pnpm dev`: where its agent works (3z8), a git repository of its own
+/playground/
 # Astro: generated types
 .astro/
 

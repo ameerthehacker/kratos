@@ -156,6 +156,20 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
 - Why: boilerplate, not logic to understand. Step 2's budget was raised 150 → 188 by exactly its
   config lines until the hook implements this in step 2b. Folded into D24.
 
+### D80. `pnpm dev` works in a playground, not in Kratos (step 3z8, owner)
+- Owner: test locally against a gitignored playground instead of pointing the dev server at
+  the Kratos repo.
+- Decision: the dev script's default project is `playground/` at the repo root, made on first
+  run by `apps/cli/scripts/playground.mjs` (a README, `git init`, one commit under its own
+  name so a machine without a git identity can make it) and ignored by this repo. Its own git
+  repository, because reviewing changes snapshots the repository the project is in (D65):
+  inside Kratos's it would review Kratos. The database stays `.kratos/kratos.db`: sessions are
+  per project, so dogfooding (`KRATOS_PROJECT=../.. pnpm dev`) still shows the repo's history.
+- Alternatives: a folder outside the repo (e.g. `~/kratos-playground`; nothing to ignore, but
+  hidden from your editor's tree); a separate dev database for the playground (cleaner, but
+  two histories to keep apart by hand).
+- Reverse: the `dev` script's default back to `../..`, drop the script and the ignore line.
+
 ### D79. Plans: one Markdown format, two kinds, agent edits reconciled at turn end (step 4p, owner)
 - Owner: the plan document should be the source of truth for whatever is being built; a
   session can have its own plan too; "Make it a feature" for a one-off that grew. Designed on

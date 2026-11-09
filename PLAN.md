@@ -1067,6 +1067,19 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       id still 404. Every `/editor-icons/*` forced to 404 in headless Chrome → the pill shows the
       generic code icon, no broken image. The guard test fails on the old `editors.ts`. 268 tests,
       typecheck 7/7, build 5/5. ~45 lines + a test.
+- [x] **3z8. `pnpm dev` works in a playground** (~30; owner, 2026-11-09) — by default the dev
+      server's agent works in `playground/` at the repo root (gitignored, its own git repo made
+      on first run with one commit, so reviewing changes sees only its files), not in Kratos
+      itself; `KRATOS_PROJECT=../.. pnpm dev` still dogfoods. The database stays
+      `.kratos/kratos.db` (sessions are per project, so the repo's history is kept and shows when
+      dogfooding). Scope: cli `package.json` (`dev`), new `scripts/playground.mjs`, root
+      `.gitignore`, CLAUDE.md (Commands), DECISIONS. Accept: a fresh clone's `pnpm dev` makes
+      the playground and the app shows it as the project; a second run leaves it alone.
+      **Proof:** with no `playground/`, the script made it (README, its own repo, one commit
+      "Playground"); a second run did nothing; `KRATOS_PROJECT=../..` skipped it; `git -C
+      playground rev-parse --show-toplevel` is the playground; this repo ignores it
+      (`.gitignore:9`); Kratos started on it reports it as the project. Your running `pnpm dev`
+      still uses the old script until you restart it. D80.
 - [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a

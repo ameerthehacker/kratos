@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "dev": "tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../..}\" --db \"${KRATOS_DB:-../../.kratos/kratos.db}\" --no-open",
+    "dev": "node scripts/playground.mjs && tsx watch --clear-screen=false src/index.ts \"${KRATOS_PROJECT:-../../playground}\" --db \"${KRATOS_DB:-../../.kratos/kratos.db}\" --no-open",
     "build:binary": "node scripts/build-binary.mjs"
   },
   "dependencies": {

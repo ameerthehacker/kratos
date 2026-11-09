@@ -88,7 +88,8 @@ outside an adapter may depend on a specific agent.
 nvm use               # Node 26 (.nvmrc); pnpm install refuses other versions
 pnpm install          # install workspace deps
 pnpm dev              # server (tsx watch) + UI (Vite, http://localhost:5173) + package watchers;
-                      # agent works in this repo (dogfooding), history in .kratos/kratos.db
+                      # agent works in playground/ (gitignored, its own git repo, made on first
+                      # run), history in .kratos/kratos.db. Dogfood: KRATOS_PROJECT=../.. pnpm dev
                       # (override: KRATOS_PROJECT=<dir> KRATOS_DB=<file> pnpm dev)
 pnpm build            # turbo build (core → cli, web)
 pnpm typecheck        # turbo typecheck

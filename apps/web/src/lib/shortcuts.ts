@@ -25,6 +25,8 @@ export const appHotkeys = defineAppHotkeys({
   "review.viewed": { hotkey: "V", scope: "review", meta: { name: "Viewed", description: "on and off", group: "Reviewing changes" } },
   "review.layout": { hotkey: "S", scope: "review", meta: { name: "Split / unified", group: "Reviewing changes" } },
   "review.back": { hotkey: "Escape", scope: "review", meta: { name: "Back to the session", group: "Reviewing changes" } },
+
+  "plan.back": { hotkey: "Escape", scope: "plan", meta: { name: "Back from a plan", group: "Plans" } },
 });
 
 declare module "@tanstack/react-hotkeys" {
@@ -33,7 +35,7 @@ declare module "@tanstack/react-hotkeys" {
   }
 }
 
-export const SCOPES = { session: "session", review: "review", sheet: "shortcuts-sheet" } as const;
+export const SCOPES = { session: "session", review: "review", plan: "plan", sheet: "shortcuts-sheet" } as const;
 
 /** Keys a focused widget handles itself (the prompt box, a question card): not app shortcuts, but
  * the hints and the shortcuts sheet show them from here too. */
@@ -53,4 +55,4 @@ export const LOCAL_ROWS: Array<SheetRow & { group: string }> = [
 ];
 
 /** The sheet's order (the design): two columns, filled left to right. */
-export const SHEET_GROUPS = ["General", "Session", "In the prompt", "Reviewing changes", "Questions"];
+export const SHEET_GROUPS = ["General", "Session", "In the prompt", "Reviewing changes", "Questions", "Plans"];

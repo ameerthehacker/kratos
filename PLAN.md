@@ -1430,10 +1430,31 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             new plan folder is handed to the watcher at once, which ended the macOS misses in
             the tests (40/40, no settle wait needed for it); this entry said `missing`. Left: the
             watcher isn't rebuilt if `.kratos/` is deleted while Kratos runs.
-      - [ ] **4p1b. The plan page** (~200) — `/f/:featureId/plan` and `/s/:sessionId/plan` in
-            the main island, read-only (board §6, §8): kind chip and breadcrumb, intent, steps
-            with marks and fields, decisions, open questions, notes; back or Esc to where you
-            came from; no plan: "Start a plan".
+      - [x] **4p1b. The plan page** (~220) — `/f/:featureId/plan` and `/s/:sessionId/plan` in
+            the main island, sidebar kept, read-only (board §6, §8 "Opening each plan"). Top:
+            the way back (to where you came from when the link says so — 4p1c's will — else a
+            session's chat or Home) with Esc (`plan.back`, its own scope), and the kind: Map
+            "Feature plan" / checklist "Session plan". Then what it belongs to (a feature's
+            "n of m ticked"; a session's feature, or "One-off"), the title, and the parts:
+            Intent / Approach as Markdown (Streamdown, like replies), steps with their mark
+            (to do, in hand, says done, ticked), id, title, goal, Scope as file chips, Accept,
+            Proof; decisions with proposed / accepted; open questions with their answers; the
+            reader's notes as a notice. No plan: "No plan yet" and Start a plan (`start_plan`;
+            a done feature says to reopen it). New `hooks/use-plan.ts` asks with `get_plan` when
+            connected; changes arrive by themselves (4p1a). Scope: web `router.tsx`, new
+            `pages/plan.tsx`, `hooks/use-plan.ts`, `lib/shortcuts.ts`. Accept: headless
+            screenshots on a throwaway project: a full feature plan, a session plan, one with
+            notes, the empty state; Start a plan fills the page; an outside edit shows on the
+            open page; Esc goes back; typecheck, test, build.
+            **Proof:** headless Chrome (DevTools protocol) on the built app, a throwaway project
+            and a copy of the dev database: a full feature plan (all four marks, Scope chips,
+            Accept / Proof, accepted and proposed decisions, an answered question), a feature's
+            session plan ("CSV export" above it, id-less steps), a messy plan (its three notes),
+            the empty state; Start a plan → the page showed the template's title and "No steps
+            yet"; a line appended to the open session plan's file → shown; Esc → back at
+            `/s/<id>`; the feature plan again in Kratos Dark. 266 tests pass, typecheck 7/7,
+            build 5/5. ~245 lines (page 242 incl. its small parts, hook 19, routes and the Esc
+            key). No unit tests: it only draws what 4p0 parsed (tested there).
       - [ ] **4p1c. Ways in** (~100) — the folder's "Plan" row in the sidebar tree, and the
             checklist icon on a session's row when it has a plan.
     - [ ] **4p2. Every session reads its plans** (~120; board §5, §8) — the plan becomes what
@@ -1475,6 +1496,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           one-off's session plan page. Claude entering plan mode by itself is a line in the chat
           with Skip planning. Probably three slices; the first is finding out what
           `EnterPlanMode` / `ExitPlanMode` send us.
+          Found (owner's playground test, 2026-11-09, claude 2.1.308): `ExitPlanMode` reaches us
+          as an ordinary `can_use_tool` ask (today: the generic Allow / Deny card with raw JSON)
+          with input `{plan, planFilePath}` — the plan as Markdown, and Claude Code's own copy in
+          `~/.claude/plans/<random-name>.md`. Allow → its tool result says "User has approved your
+          plan… saved to <planFilePath>" and the mode drops out of plan (to the mode it had). The
+          plan is free-form: its steps were `### Step 1: Scaffold` headings with Goal / Scope /
+          Accept bullets, not our task list, so 4p0 reads no steps from it — the format has to
+          reach Claude before it plans (4p2's instructions), or the reader learns that shape too.
     - [ ] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
           the step's Scope are flagged with Show diff / Add to scope (Add edits the plan). The
           first piece of step 5's scope fence.

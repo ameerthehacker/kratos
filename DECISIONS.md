@@ -212,6 +212,10 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   goes to every tab (plans are small; no per-tab subscriptions to keep). Alternatives: folders named by feature
   id (stable, no column, but unreadable to you and the agent); Node's own `fs.watch` (no
   rename / atomic-save handling); plans read only when asked (an editor's change wouldn't show).
+- Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
+  sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
+  route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own
+  `plan` scope like review's.
 - Alternatives: the agent changes plans only through Kratos tools (stricter, cheap since D77,
   but Claude-only in practice and no free-form edits); refusing a malformed plan; only feature
   plans, every approved plan making a feature (a folder for every quick planned task); plans

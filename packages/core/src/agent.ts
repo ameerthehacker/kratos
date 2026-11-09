@@ -341,6 +341,9 @@ export interface AgentAdapter {
     askQuestions?: AskQuestions;
     /** Tools Kratos offers this session's agent (D77); none = the agent's own tools only. */
     tools?: readonly HostTool[];
+    /** Standing instructions from Kratos for this conversation, added to the agent's own (4p2:
+     * where its plans are and how they're written). Given at every start, as they are then. */
+    instructions?: string;
   }): AgentSession;
 }
 

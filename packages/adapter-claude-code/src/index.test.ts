@@ -616,6 +616,28 @@ describe("Claude Code adapter: host tools (D77)", () => {
     expect(report.responsesAfterCancel).toBe(0);
   });
 
+  it("passes Kratos's standing instructions after Claude Code's own system prompt (4p2)", async () => {
+    const session = createClaudeCodeAdapter({ claudePath: FAKE_CLAUDE }).startSession({
+      cwd: process.cwd(),
+      requestPermission: async () => ({ decision: "allow" }),
+      instructions: "Plans live in .kratos/.\nWrite them this way.",
+    });
+    session.send("args");
+    let args: string[] = [];
+    for await (const event of session.events) {
+      if (event.kind === "tool_result") args = JSON.parse(event.output);
+      if (event.kind === "turn_end") break;
+    }
+    await session.stop();
+    expect(args.slice(args.indexOf("--append-system-prompt"), args.indexOf("--append-system-prompt") + 2)).toEqual([
+      "--append-system-prompt",
+      "Plans live in .kratos/.\nWrite them this way.",
+    ]);
+    expect((await runTurn("args", async () => ({ decision: "allow" }))).find((e) => e.kind === "tool_result")).not.toMatchObject({
+      output: expect.stringContaining("--append-system-prompt"),
+    });
+  });
+
   it("declares nothing without tools", async () => {
     const events = await runTurn("args", async () => ({ decision: "allow" }));
     const args = events.flatMap((e) => (e.kind === "tool_result" ? [e.output] : []))[0]!;

@@ -19,6 +19,9 @@ export interface PlanFiles {
   taken(folder: string): boolean;
   /** Writes a plan, making its folder, and `.kratos/` with its `.gitignore`, as needed. */
   write(folder: string, markdown: string): Promise<void>;
+  /** Makes `.kratos/` (with its `.gitignore`) and starts watching, before an agent may write a plan
+   * there itself (4p2): its first plan is then still kept out of git, and seen. */
+  prepare(): Promise<void>;
   /** Writes a plan only if there's none on disk (checked by the write itself); false when there was. */
   create(folder: string, markdown: string): Promise<boolean>;
   /** A plan's folder, its new text (undefined: it was removed) and whether there was a plan
@@ -105,11 +108,11 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
 
   /** Makes `.kratos/` and the plan's folder, and tells the watcher about the folder at once
    * (found on its own, a new folder's first edits can go unseen for a moment on macOS). */
-  async function prepare(folder: string) {
+  async function prepare(folder?: string) {
     await mkdir(root, { recursive: true });
     if (!existsSync(join(root, ".gitignore"))) await writeFile(join(root, ".gitignore"), GITIGNORE);
     watchFolders();
-    if (!existsSync(join(root, folder))) {
+    if (folder && !existsSync(join(root, folder))) {
       await mkdir(join(root, folder), { recursive: true });
       watcher!.add(join(root, folder));
     }
@@ -118,6 +121,7 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
   return {
     text: (folder) => known.get(folder),
     taken: (folder) => existsSync(join(root, folder)),
+    prepare: () => prepare(),
     async write(folder, markdown) {
       await prepare(folder);
       await writeFile(join(root, folder, PLAN), markdown);
@@ -160,6 +164,7 @@ export function memoryPlans(): PlanFiles & { edit(folder: string, markdown: stri
   return {
     text: (folder) => plans.get(folder),
     taken: (folder) => plans.has(folder),
+    prepare: async () => {},
     write: async (folder, markdown) => edit(folder, markdown),
     create: async (folder, markdown) => !plans.has(folder) && (edit(folder, markdown), true),
     onChange: (listener) => {

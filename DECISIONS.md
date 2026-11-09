@@ -212,6 +212,17 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   goes to every tab (plans are small; no per-tab subscriptions to keep). Alternatives: folders named by feature
   id (stable, no column, but unreadable to you and the agent); Node's own `fs.watch` (no
   rename / atomic-save handling); plans read only when asked (an editor's change wouldn't show).
+- Telling the agent (4p2): every session's agent starts with standing instructions — its plans'
+  paths, the format (the same text a test parses with 4p0, so the two can't drift), who writes
+  what — passed generically as `startSession({instructions})`, by the Claude adapter as
+  `--append-system-prompt` (after Claude Code's own prompt; recomputed at every start and
+  resume). One-offs too: a one-off can have a session plan. A feature's plan folder is named and
+  `.kratos/` prepared before the agent starts, so a plan it writes first is kept out of git and
+  watched. Moved by you while its agent runs: a one-line note on its next prompt, to the agent
+  only (the chat keeps your words); moved by its own `file_session`: the tool's answer says the
+  paths. Alternatives: a prompt prefix on every prompt (repeats it in every turn, costs tokens);
+  a Kratos tool the agent calls to read its plan (another step it can skip; files are already
+  readable); restarting the agent on a move (drops its in-memory context).
 - Plan page (4p1b): `/f/:featureId/plan` and `/s/:sessionId/plan` inside the app layout (the
   sidebar stays, unlike review's own page). The way back is whatever the opening link put in the
   route's state (`{from, label}`), else a session's chat or Home; Esc does the same, in its own

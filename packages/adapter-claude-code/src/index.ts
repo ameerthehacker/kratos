@@ -165,7 +165,7 @@ function startSession(
   options: Parameters<AgentAdapter["startSession"]>[0],
   listModels: () => Promise<AgentModel[]>,
 ): AgentSession {
-  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode, tools = [] } = options;
+  const { cwd, requestPermission, askQuestions, conversation, model, effort, permissionMode, tools = [], instructions } = options;
   // One long-lived process per conversation (D14). The process class owns spawning, streams,
   // signals and cleanup (D26); this adapter only speaks Claude's protocol. A start --effort the
   // model lacks is fine: the CLI clamps it to one the model has (verified, D51).
@@ -179,6 +179,8 @@ function startSession(
     "--allow-dangerously-skip-permissions",
     // Kratos's own tools, as an in-process MCP server (D77).
     ...(tools.length > 0 ? ["--mcp-config", hostServerConfig()] : []),
+    // Kratos's standing instructions (4p2), after Claude Code's own system prompt.
+    ...(instructions ? ["--append-system-prompt", instructions] : []),
   ];
   const proc = new JsonLinesProcess(claudePath, args, { cwd, env: cliEnv() });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against

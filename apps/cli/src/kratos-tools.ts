@@ -11,6 +11,8 @@ export interface SessionFeatureOps {
   /** Why this filing can't happen (a done or unknown feature), or undefined. */
   cannotFile(filing: Filing): string | undefined;
   file(filing: Filing): string | undefined;
+  /** Where its plans are now, in words (4p2): said back when it has filed itself. */
+  plansNote(): string;
   /** Marks it done once its turn ends (it's in one: the agent is calling the tool). */
   markSessionDone(): void;
   /** Why its feature can't be marked done now (none, already done, another session works). */
@@ -58,7 +60,7 @@ export function kratosTools(ops: SessionFeatureOps, ask: Ask): HostTool[] {
     request: { tool: string; input: unknown; description: string; reason?: string },
     context: HostToolContext,
     act: () => string | undefined,
-    done: string,
+    done: string | (() => string),
   ) => {
     const decision = await ask(
       {
@@ -72,7 +74,7 @@ export function kratosTools(ops: SessionFeatureOps, ask: Ask): HostTool[] {
     );
     if (decision.decision === "deny") return { text: `The owner said no (${decision.message}). Nothing changed; carry on without it.`, isError: true };
     const problem = act();
-    return problem ? { text: problem, isError: true } : { text: done };
+    return problem ? { text: problem, isError: true } : { text: typeof done === "string" ? done : done() };
   };
 
   return [
@@ -102,7 +104,7 @@ export function kratosTools(ops: SessionFeatureOps, ask: Ask): HostTool[] {
         const filing: Filing = input.newFeatureTitle ? { newTitle: input.newFeatureTitle } : input.oneOff ? { oneOff: true } : { featureId: input.featureId! };
         const problem = ops.cannotFile(filing);
         if (problem) return { text: problem, isError: true }; // refused before bothering the owner
-        return askThen({ tool: "file_session", input, description: described(input), reason: input.reason }, context, () => ops.file(filing), "Done: the session is filed.");
+        return askThen({ tool: "file_session", input, description: described(input), reason: input.reason }, context, () => ops.file(filing), () => `Done: the session is filed. ${ops.plansNote()}`);
       },
     }),
     hostTool({

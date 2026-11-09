@@ -17,6 +17,7 @@ import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
 import { parsePlan, planTemplate } from "./plans/plan-file.js";
+import { movedNote, planInstructions, type PlanPaths } from "./plans/plan-instructions.js";
 import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
 
@@ -379,7 +380,11 @@ export class SessionHub {
 
   /** Put a session in a feature (null: a one-off) and tell every tab; `by` says who moved it. */
   private moveSession(sessionId: string, featureId: string | null, by: "owner" | "agent"): void {
+    const before = this.store.get(sessionId)?.featureId ?? null;
     this.store.setSessionFeature(sessionId, featureId);
+    // Its agent, if running, learns where its plans are now: on its next prompt, or (moved by its
+    // own tool) in the tool's answer (4p2).
+    if (by === "owner" && before !== featureId) this.runtimes.get(sessionId)?.plansMoved(movedNote(this.planPaths(sessionId)));
     this.log.info({ session: sessionId, feature: featureId, by }, "session moved");
     this.broadcast(this.featureList());
     this.broadcastSessionList();
@@ -438,6 +443,17 @@ export class SessionHub {
 
   private planOf(owner: PlanOwner, markdown: string | undefined): ServerMessage {
     return { type: "plan", owner, markdown: markdown ?? null, plan: markdown === undefined ? null : parsePlan(markdown, owner.kind) };
+  }
+
+  /** Where a session's plans are, relative to the project (4p2). A feature's plan folder is named
+   * now if it hasn't been (the agent may write it before anyone starts it from the UI). */
+  private planPaths(sessionId: string): PlanPaths {
+    const session = `.kratos/sessions/${sessionId}/plan.md`;
+    const featureId = this.store.get(sessionId)?.featureId;
+    const feature = featureId ? this.store.getFeature(featureId) : undefined;
+    if (!feature) return { session };
+    if (!feature.planDir) this.store.setFeaturePlanDir(feature.id, this.freePlanDir(feature.title));
+    return { session, feature: { title: feature.title, path: `.kratos/features/${this.store.getFeature(feature.id)!.planDir}/plan.md` } };
   }
 
   /** Writes the template, unless there's a plan already. A feature's folder is named now, from its
@@ -517,6 +533,7 @@ export class SessionHub {
         current: featureOf(),
       }),
       cannotFile,
+      plansNote: () => movedNote(this.planPaths(sessionId)).replace(/^\[Kratos\] /, ""),
       file: (filing) => {
         const problem = cannotFile(filing);
         if (problem) return problem;
@@ -588,6 +605,10 @@ export class SessionHub {
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
         features: this.featureOps(sessionId),
+        instructions: () => {
+          void this.plans.prepare().catch((err) => this.log.warn({ err }, "could not prepare .kratos/ for plans"));
+          return planInstructions(this.planPaths(sessionId));
+        },
       });
       this.runtimes.set(sessionId, runtime);
       this.broadcastSessionList(); // a new session (or one just loaded) may change the list

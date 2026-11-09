@@ -79,6 +79,8 @@ export class SessionRuntime {
   /** The turn's start snapshot while it's being taken (3v1, D65): prompts reach the agent after it. */
   private snapshotting: Promise<void> | undefined;
   private readonly logger: Logger;
+  /** Said to the running agent with the next prompt: its plans changed under it (4p2). */
+  private plansNote: string | undefined;
 
   constructor(
     readonly id: string,
@@ -94,6 +96,8 @@ export class SessionRuntime {
       onChange: () => void;
       /** What the agent's own Kratos tools may do, on this session (4m3); none = no such tools. */
       features?: SessionFeatureOps;
+      /** Kratos's standing instructions for the agent (4p2: its plans), as they are when it starts. */
+      instructions?: () => string | undefined;
     },
   ) {
     this.logger = deps.log.child({ component: "session", session: id });
@@ -165,8 +169,9 @@ export class SessionRuntime {
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
       const session = this.session;
+      const forAgent = this.withPlansNote(text);
       this.toAgent(() => {
-        session.send(text, files, { id });
+        session.send(forAgent, files, { id });
         if (options.sendNow) this.sendNow(id); // ⌘↵: straight past the queue
       });
       this.deps.onChange();
@@ -177,7 +182,8 @@ export class SessionRuntime {
     this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     const session = (this.session ??= this.start());
-    this.toAgent(() => session.send(text, files));
+    const forAgent = this.withPlansNote(text); // after start: a fresh start already knows
+    this.toAgent(() => session.send(forAgent, files));
     this.deps.onChange();
     if (first) void this.name(text);
   }
@@ -386,7 +392,23 @@ export class SessionRuntime {
     await this.session?.stop();
   }
 
+  /** The session moved into or out of a feature (4p2). A running agent's standing instructions
+   * still name the old plans, so its next prompt says where they are now; one that starts later
+   * gets the new instructions anyway. */
+  plansMoved(note: string): void {
+    this.plansNote = this.session ? note : undefined;
+  }
+
+  /** The prompt as the agent gets it: with the plans note first when there is one, once. The log
+   * and the chat keep the prompt as typed. */
+  private withPlansNote(text: string): string {
+    const note = this.plansNote;
+    this.plansNote = undefined;
+    return note ? `${note}\n\n${text}` : text;
+  }
+
   private start(): AgentSession {
+    this.plansNote = undefined; // the instructions it starts with are current
     const session = this.deps.adapter.startSession({
       cwd: this.deps.cwd,
       conversation: { id: this.id, resume: this.agentStarted },
@@ -397,6 +419,7 @@ export class SessionRuntime {
       askQuestions: (request, { signal }) => this.askQuestions(request, signal),
       // Its changes ask the owner on this session's usual ask, whatever the mode (4m3, D77).
       tools: this.deps.features ? kratosTools(this.deps.features, (request, signal) => this.ask(request, signal)) : undefined,
+      instructions: this.deps.instructions?.(),
     });
     this.logger.info(
       {

@@ -816,7 +816,10 @@ describe("SessionHub: the agent's Kratos tools (4m3, D77)", () => {
     expect(a.features).toEqual([]); // nothing yet
 
     a.receive({ type: "permission_decision", id: ask.id, decision: { decision: "allow" } });
-    expect(await result).toEqual({ text: "Done: the session is filed." });
+    expect(await result).toEqual({
+      text: `Done: the session is filed. This session is now part of the feature “Reports”; its feature plan is .kratos/features/reports/plan.md. This session's plan is still .kratos/sessions/${a.viewing}/plan.md. Read the plans before going on.`,
+    });
+    expect(agents[0]!.prompts).toEqual(["csv export"]); // it learnt in the answer: no note later
     expect(a.features.map((f) => f.title)).toEqual(["Reports"]);
     expect(a.list.find((s) => s.id === a.viewing)?.featureId).toBe(a.features[0]!.id);
   });
@@ -1786,5 +1789,56 @@ describe("SessionHub: plan files (4p1a, D79)", () => {
       { type: "error", message: `No session ${a.viewing} in this project` },
       { type: "error", message: `No feature ${feature} in this project` },
     ]);
+  });
+});
+
+describe("SessionHub: every session reads its plans (4p2, D79)", () => {
+  it("starts a feature's session with both plans' paths, the feature's folder named then", () => {
+    const { agents, tab, store } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "CSV export" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "prompt", text: "plan this", newSession: true, featureId: feature });
+    const instructions = agents[0]!.options.instructions!;
+    expect(instructions).toContain("The feature plan, for “CSV export”: what and why, shared by every session working on it: .kratos/features/csv-export/plan.md");
+    expect(instructions).toContain(`.kratos/sessions/${a.viewing}/plan.md`);
+    expect(store.getFeature(feature)!.planDir).toBe("csv-export"); // known before anyone starts the plan
+    expect(agents[0]!.prompts).toEqual(["plan this"]);
+  });
+
+  it("a one-off's agent is told about its own plan only", () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "quick fix" });
+    expect(agents[0]!.options.instructions).toContain(`This session's plan: .kratos/sessions/${a.viewing}/plan.md (this session isn't part of a feature`);
+    expect(agents[0]!.options.instructions).not.toContain(".kratos/features/");
+  });
+
+  it("moved by the owner while its agent runs: the next prompt tells the agent, once; the chat shows it as typed", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    a.receive({ type: "prompt", text: "second" });
+    a.receive({ type: "prompt", text: "third" }); // queued while the second runs
+    expect(agents).toHaveLength(1); // the same process: its instructions name no feature
+    expect(agents[0]!.prompts[1]).toBe(
+      `[Kratos] This session is now part of the feature “Reports”; its feature plan is .kratos/features/reports/plan.md. This session's plan is still .kratos/sessions/${a.viewing}/plan.md. Read the plans before going on.\n\nsecond`,
+    );
+    expect(agents[0]!.prompts[2]).toBe("third");
+    expect(a.seen.filter((m) => m.type === "user_prompt").map((m) => (m as { text: string }).text)).toEqual(["first", "second"]);
+  });
+
+  it("moved while no agent runs: no note, the next start has the new instructions", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    a.receive({ type: "prompt", text: "go" });
+    expect(agents[0]!.prompts).toEqual(["go"]);
+    expect(agents[0]!.options.instructions).toContain(".kratos/features/reports/plan.md");
   });
 });

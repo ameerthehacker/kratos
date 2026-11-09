@@ -1477,15 +1477,44 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             icon → its plan, the way back named for the page it came from ("New session": the
             untitled session) and taking you there; a Plan row from Home → "← Home", Esc → Home;
             the keyboard: ↑ to the folder, ↓ back to Plan, Enter opens it. ~95 lines.
-    - [ ] **4p2. Every session reads its plans** (~120; board §5, §8) — the plan becomes what
-          agents work from. Core: `startSession({instructions})`, generic; the Claude adapter
-          passes it as `--append-system-prompt`. Instructions: where the feature plan and this
-          session's plan are, the format, who writes what ("`[?]` with Proof, never `[x]` on an
-          id'd step; decisions as proposed; don't renumber; in a feature, new steps and
-          decisions go to the feature plan"). The changing part (the step in hand, what's
-          waiting on you) rides on the first prompt, and on the next one after the session
-          moves. Done when: in a new feature, "plan this" writes a feature plan in the format,
-          and a second session picks up from it without being told what was done.
+    - [x] **4p2. Every session reads its plans** (~150 + tests; board §5, §8) — the plan becomes
+          what agents work from. Core: `startSession({instructions})`, generic ("standing
+          instructions from the host"); the Claude adapter passes them as
+          `--append-system-prompt`. Every session gets them, one-offs too (a one-off can have a
+          session plan): where its plans are (the feature plan, if it's in a feature, and its
+          own `.kratos/sessions/<id>/plan.md`), the format, and who writes what (`[?]` with Proof,
+          never `[x]` on an id'd step; `[~]` for the one in hand; its own id-less items it ticks;
+          decisions proposed, questions open; ids never renumbered; the Intent is yours; in a
+          feature, new steps and decisions go to the feature plan; when it plans — plan mode or
+          asked — it writes in this format, and in a feature with no plan yet that's the feature
+          plan). Paths are known before the agent starts: a feature's plan folder is named then
+          (4p1a's rule), and `.kratos/` with its `.gitignore` is made, so a plan the agent writes
+          first is still kept out of git and seen by the watcher. A process starts with the
+          instructions as they are then (every start and resume); a session moved into or out of
+          a feature while its agent runs gets a one-line note on its next prompt, to the agent
+          only (the chat shows your prompt as typed); `file_session`'s result says the plan's
+          path. Scope: core `agent.ts`; adapter `index.ts` + test; new cli
+          `plans/plan-instructions.ts` + test; `plans/plan-files.ts` (`prepare`);
+          `session-runtime.ts` (instructions at start, the note); `session-hub.ts` + tests;
+          `kratos-tools.ts`; DECISIONS. Accept: adapter test (the flag reaches the CLI); tests of
+          the text (one-off / feature, paths, rules); hub tests (a session in a feature starts
+          with both paths and the folder named; a one-off with its own only; moved while running
+          → the note once, the chat unchanged); live with the real `claude` (Haiku) in the
+          playground: in a new feature, "plan this" writes a feature plan Kratos reads with steps
+          and no notes, and a second session in the feature answers from it; typecheck, test,
+          build.
+          **Proof:** 10 new tests (adapter: the flag reaches the CLI, absent without
+          instructions; the text: its format example parses with 0 notes, one-off vs feature,
+          the move note; hub: a feature session starts with both paths and the folder named, a
+          one-off with its own only, moved while running → the note on the next prompt only, the
+          chat as typed, moved while stopped → no note and new instructions; `file_session`'s
+          answer names the paths). 278 pass, typecheck 7/7, build 5/5. Live, real `claude`
+          (Haiku), a throwaway git repo through Kratos: in a new feature "Plan this feature…" →
+          it wrote `.kratos/features/date-cli/plan.md` in the format unprompted (Intent, P1 / P2
+          with Scope and Accept, D1 / D2 proposed, two open questions); Kratos read 2 steps, 2
+          decisions, 0 notes; a second session in the feature, asked only "what is the first
+          step of this feature's plan?", answered "P1, Print today's date from a Node script";
+          the repo's `git status` stayed empty. ~150 lines + ~130 of tests.
     - [ ] **4p3. Every change is recorded** (~150; board §3, §6) — a `plan_revisions` table
           (plan, markdown, by: session | you | outside Kratos, turn, at). At turn end a changed
           plan is reconciled (4p0), saved as a revision credited to the session, and shown in

@@ -1541,7 +1541,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           owner judged history overkill for now, so the table went (migration 0013 drops it)
           with its crediting, the history list and `get_plan_revision`. Kept from 4p3b: the
           "Kratos" heading, folded diffs, "1 step" (was "1 steps").
-    - [ ] **4p4. The agent proposes, you decide** (board §3–4, §6) — your side of who-writes-what,
+    - [x] **4p4. The agent proposes, you decide** (board §3–4, §6) — your side of who-writes-what,
           from the plan page. Owner (2026-11-09): your notes go into the plan file, where every
           session reads them (Kratos no longer knows which session claimed a step); Edit is its
           own slice. Covers step 6, the decision ledger.
@@ -1604,6 +1604,28 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             plan changed while you were editing." and "Save over it"; Load theirs → their text,
             yours gone; another outside line, then Save over it → yours on disk, theirs gone. The
             shortcuts sheet lists ⌘S / Esc under Plans. ~150 lines + ~50 of tests.
+      - [x] **4p4c. CodeMirror for editing plans** (~120; owner, 2026-11-09) — the plan editor
+            becomes CodeMirror 6 (`@uiw/react-codemirror`, the common React wrapper, with
+            `@codemirror/lang-markdown`): Markdown highlighting (headings, the `[ ]` boxes, bold
+            ids, `code`), soft line wrapping, undo history, search. Themed from the app's own
+            tokens (CSS variables), so it follows all 8 themes, light and dark, with no theme of its
+            own. ⌘S / Esc as CodeMirror keys (the same save / cancel as 4p4b). Loaded only when you
+            press Edit (a lazy chunk), so the plan page and the chat don't carry it. Everything else
+            from 4p4b stays (base, Load theirs, Save over it). Scope: web `package.json`,
+            `pages/plan.tsx`, new `components/plan-editor.tsx`, DECISIONS (D79's editing bullet).
+            Accept: headless: highlighted Markdown in Kratos Dark and a light theme, ⌘S saves, Esc
+            cancels without leaving, the change-under-you notice still works; the editor is its
+            own chunk in the build; typecheck, test, build.
+            **Proof:** the build's `plan-editor-*.js` is its own chunk (621 KB minified, 204 KB
+            gzipped) and the main bundle has no CodeMirror in it. Headless on the 4p1b project:
+            Edit → CodeMirror after its chunk loads, the Markdown highlighted (headings bold, `#`
+            and `-` faint, `[ ]` / `[x]` in the wait color); the same in Kratos Light; a line
+            typed, ⌘S → on disk, closed, shown; Esc → closed, on the page, the file untouched;
+            changed from outside → the notice and "Save over it", Load theirs, Save over it — all
+            as with 4p4b. First screenshot: every step's text was faint (the grammar's `list` tag
+            covers a whole list, not its marks): only the marks are styled now. Seen: our `[~]` /
+            `[?]` aren't GFM, so they show as link brackets. 289 pass, typecheck 7/7, build 5/5.
+            ~120 lines (the editor moved to `components/plan-editor.tsx`).
     - [ ] **4p5. The plan drives the work** (~150; board §3, §5, §8) — the plans island: the
           right island in a session, shown or hidden with ⌥⌘B or the header's panel button (like
           ⌘B for sessions; remembered), not offered without a plan: the feature plan's step in

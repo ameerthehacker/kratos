@@ -244,10 +244,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   that plan is applied to the turn's starting text too, so its end doesn't take your tick for
   the agent's. Alternatives: the note as a prompt to a session (Kratos no longer knows which
   claimed a step; a guess at the feature's latest is wrong as often as not).
-- Editing (4p4b): the plan's raw Markdown in the project's shadcn Textarea (grows with its
-  text, monospace), ⌘S / Esc. No editor library: a plan is short Markdown; CodeMirror (the
-  common choice, `@uiw/react-codemirror` + Markdown) would add ~300 KB for highlighting it
-  doesn't need yet — swap it in inside `PlanEditor` if it does. `save_plan {markdown, base}`
+- Editing (4p4b, 4p4c): the plan's raw Markdown in CodeMirror 6 — `@uiw/react-codemirror` (the
+  common React wrapper) with `@codemirror/lang-markdown` in GFM mode (so `[ ]` / `[x]` are task
+  markers), soft wrapping, undo, search; ⌘S / Esc as its own keys. 4p4b shipped the project's
+  Textarea first to keep the bundle small; owner asked for CodeMirror before moving on. It's a
+  lazy chunk (204 KB gzipped, fetched on Edit; the main bundle has none of it), themed from the
+  app's raw theme variables (`--well`, `--foreground`, `--run`…, not Tailwind's `--color-*`,
+  which `@theme inline` doesn't emit) so it follows all 8 themes. Our own `[~]` / `[?]` aren't
+  GFM, so it shows them as link brackets. Reverse: `components/plan-editor.tsx` alone holds it.
+  `save_plan {markdown, base}`
   writes only over the text you started from (in line with your other actions on that plan);
   the page notices a change under you and offers Load theirs / Save over it. Saved during an
   agent's turn on that plan, your text becomes the turn's starting text: what you save is yours,

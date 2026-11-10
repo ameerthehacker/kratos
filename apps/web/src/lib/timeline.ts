@@ -1,4 +1,4 @@
-import type { AgentEvent, AttachmentRef, QuestionAnswer, QuestionRequest, ToolAction } from "@kratos/core";
+import type { AgentEvent, AttachmentRef, PlanOwner, QuestionAnswer, QuestionRequest, ToolAction } from "@kratos/core";
 import { diffLines } from "diff";
 import type { LogMessage } from "@/lib/kratos-store";
 
@@ -48,7 +48,7 @@ export type TimelineItem =
    * mode it was in (Skip planning goes back to it; null: never said, the agent's default). */
   | { type: "plan_switch"; id: string; reason?: string; before: string | null }
   /** Files the last turn changed outside its step's Scope (4p7a). */
-  | { type: "scope_drift"; stepId: string; paths: string[] }
+  | { type: "scope_drift"; owner: PlanOwner; stepId: string; paths: string[] }
   | { type: "event"; text: string };
 
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
@@ -155,7 +155,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       questions.set(message.id, step);
     } else if (message.type === "scope_drift") {
       breakGroup();
-      items.push({ type: "scope_drift", stepId: message.stepId, paths: message.paths });
+      items.push({ type: "scope_drift", owner: message.owner, stepId: message.stepId, paths: message.paths });
     } else if (message.type === "plan_updated") {
       // Kratos's, not the agent's: a group of its own, and the agent's next steps start another.
       breakGroup();

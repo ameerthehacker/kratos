@@ -54,6 +54,15 @@ export const PlanAction = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("accept"), decisionId: z.string() }),
   /** An open question for the agent: "Why D2 (<title>)? <note>". */
   z.object({ kind: z.literal("ask_why"), decisionId: z.string(), note: z.string().trim().max(500).optional() }),
+  /** Files a turn changed outside the step's Scope, put in it (4p7b): project-relative paths. */
+  z.object({
+    kind: z.literal("add_scope"),
+    stepId: z.string(),
+    paths: z
+      .array(z.string().min(1).max(500).regex(/^[^`\n\r]+$/, "a path without backticks or line breaks"))
+      .min(1)
+      .max(100),
+  }),
   /** An open question answered, found by its text. */
   z.object({ kind: z.literal("answer"), question: z.string(), answer: z.string().trim().min(1).max(2000) }),
 ]);

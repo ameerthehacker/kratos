@@ -300,6 +300,15 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   order: a turn's end and the next one's start snapshot may finish in either order. Drift is a
   `scope_drift` message in the session's log: a notice under the turn with Show diff. Only a
   notice — the fence that stops a turn is step 5.
+- Add to scope (4p7b): a plan action like your others (`add_scope {stepId, paths}`), so it's in
+  line with the plan's other changes and lands on top of a live turn's edit. The paths go in as
+  written, not escaped: picomatch matches a glob that equals the path before reading it as a
+  pattern, so `src/[id].tsx` covers itself and the line stays readable. Backticked, or plain to a
+  Scope written without backticks; a step without a Scope line gets one before its other fields.
+  The notice's "added" is read from the plan (every path in the step's Scope as written), not
+  remembered by the notice: it holds after a reload, and a Scope edited back makes it offer Add
+  again. A Scope widened by a glob instead still shows Add (adding is harmless); matching with
+  picomatch in the browser too would fix that, for one more dependency there.
 - Steps start sessions (4p5b): a session remembers the feature-plan step it was started on
   (`sessions.step_id`, taken with its first prompt in that feature, like the feature; cleared when
   it moves). Home's Up next chips and ▶ on a step (plan page, island) both go through Home with

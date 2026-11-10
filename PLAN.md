@@ -1862,7 +1862,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             plan is free-form: its steps were `### Step 1: Scaffold` headings with Goal / Scope /
             Accept bullets, not our task list, so 4p0 reads no steps from it — the format has to
             reach Claude before it plans (4p2's instructions), or the reader learns that shape too.
-    - [ ] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
+    - [x] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
           the step's Scope are flagged with Show diff / Add to scope (Add edits the plan). The
           first piece of step 5's scope fence. Split:
       - [x] **4p7a. Scope drift, flagged** (~200 + tests) — when a turn's end snapshot is taken
@@ -1899,8 +1899,30 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             to `[?]` by then, so drift goes unflagged — the owner's call); a failed start snapshot
             widens the span to the last one; the notice can land in a queued turn's group. 318
             pass, typecheck 7/7, build 5/5.
-      - [ ] **4p7b. Add to scope** — the notice's Add to scope puts the paths in the step's
-            Scope line (your change, in line), and the notice says so.
+      - [x] **4p7b. Add to scope** (~100 + tests) — the notice's Add to scope puts its paths in
+            the step's Scope line: a new plan action, `add_scope {stepId, paths}`, so it goes the
+            way your other changes do (in line with the plan's other changes; mid-turn, on top of
+            the agent's edit so far, 4p4a). Each path not already there is appended backticked
+            (or plain, to a Scope written without backticks); a step without a Scope line gets
+            one, before its other fields. The notice then says "Added to P2's scope" — read from
+            the plan, so it holds after a reload: every path is in the step's Scope as written.
+            A step that's gone from the plan: no button. Scope: core `plan.ts` (the action);
+            cli `plans/plan-file.ts` + test (the edit); `protocol.ts` / hub only if the
+            notice needs the owner (it does: the timeline item carries it); web
+            `lib/timeline.ts`, `components/conversation/scope-drift.tsx`.
+            Accept: plan-file tests (appended, deduped, plain list, no Scope line, unknown step);
+            a hub test (the action mid-turn keeps the agent's edit); live: Add to scope on the
+            notice → the plan's Scope line has the path, the notice says Added; typecheck, test,
+            build.
+            **Proof:** 3 plan-file tests (appended once, deduped; plain list, empty Scope, a Scope
+            over two lines; no Scope line → one before Accept or as the last line; unknown step)
+            + a hub test (Add mid-turn keeps the agent's `[~]`, the next turn's change to that
+            file isn't flagged, an unknown step is an error). 322 pass, typecheck 7/7, build 5/5.
+            Live, real `claude` (Haiku), started on P1 (Scope `src/greet.js`), asked to also
+            document it in the README: "1 file changed outside P1's scope · README.md · Show diff
+            · Add to scope"; Add → the plan's line is ``Scope: `src/greet.js`, `README.md` `` and
+            the notice "· added to its scope" with a check, the button gone; after a reload the
+            same. ~60 lines + ~60 of tests.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
       `requestPermission`), using the D24 model: steps carry an estimate (agent must split before
       coding if it exceeds the budget); budget = review load (in-scope insertions, config/lockfiles/

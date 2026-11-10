@@ -2345,7 +2345,7 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
     for (const path of edits) snapshots.edit(path);
     ctx.agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await settle(); // its end snapshot, then the check
-    return { ...ctx, a, feature };
+    return { ...ctx, a, feature, snapshots };
   }
 
   it("files outside the step's Scope: a notice in the session's log, paths from the project", async () => {
@@ -2391,5 +2391,23 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
     agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await settle();
     expect(drift(a.seen).map((m) => m.type === "scope_drift" && m.paths)).toEqual([["docs/one.md"], ["docs/two.md"]]);
+  });
+
+  it("Add to scope (4p7b): the paths in the step's Scope, mid-turn on top of the agent's edit, and no notice for them after", async () => {
+    const { a, agents, plans, snapshots, feature } = await turnOn("P1", ["docs/x.md"]);
+    const owner = { kind: "feature" as const, id: feature };
+    a.receive({ type: "prompt", text: "more" });
+    await settle();
+    plans.edit("features/reports", plans.text("features/reports")!.replace("- [ ] **P2. Docs**", "- [~] **P2. Docs**")); // the agent
+    a.receive({ type: "plan_action", owner, action: { kind: "add_scope", stepId: "P1", paths: ["docs/x.md"] } }); // you
+    await settle();
+    expect(plans.text("features/reports")).toBe("# Reports\n\n## Steps\n- [ ] **P1. Export**\n  Scope: `src/**`, `README.md`, `docs/x.md`\n- [~] **P2. Docs**\n");
+    snapshots.edit("docs/x.md");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await settle();
+    expect(drift(a.seen)).toHaveLength(1); // the first turn's only
+    a.receive({ type: "plan_action", owner, action: { kind: "add_scope", stepId: "P7", paths: ["a.ts"] } });
+    await tick();
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P7 in this plan" });
   });
 });

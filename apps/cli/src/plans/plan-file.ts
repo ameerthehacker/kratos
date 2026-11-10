@@ -20,7 +20,16 @@ interface Span {
 /** What the reader found, with where each editable bit is. */
 interface Located {
   plan: Plan;
-  steps: { step: PlanStep; mark: Span; notYet?: Span; end: number; indent: string }[];
+  steps: {
+    step: PlanStep;
+    mark: Span;
+    notYet?: Span;
+    /** Its `Scope:` field, after the colon (4p7b); else where one goes: its first field line's start. */
+    scope?: Span;
+    fieldAt?: number;
+    end: number;
+    indent: string;
+  }[];
   decisions: { decision: PlanDecision; status: Span }[];
   questions: { question: PlanQuestion; mark: Span; answer?: Span; end: number; indent: string }[];
   /** Where Open questions is: its heading's end, and its list's when it has one (4p4a). */
@@ -104,6 +113,27 @@ export function askWhy(markdown: string, id: string, note?: string): string | un
   return `${markdown}${gap}## Open questions\n${item}\n`;
 }
 
+/** Puts paths in a step's Scope (4p7b): each one not there yet, appended — backticked, or plain to
+ * a Scope written without backticks; a step without a Scope line gets one, before its other fields. */
+export function addToScope(markdown: string, id: string, paths: string[]): string | undefined {
+  const found = locate(markdown, "session").steps.find((s) => s.step.id === id);
+  if (!found) return undefined;
+  const more = [...new Set(paths)].filter((path) => !found.step.scope.includes(path));
+  if (more.length === 0) return markdown;
+  const ticked = (list: string[]) => list.map((path) => `\`${path}\``).join(", ");
+  if (found.scope) {
+    const was = markdown.slice(found.scope.start, found.scope.end);
+    // An empty `Scope:` gets them; a list gets them after its last.
+    const edit = !was.trim()
+      ? { ...found.scope, text: ` ${ticked(more)}` }
+      : { start: found.scope.end, end: found.scope.end, text: `, ${was.includes("`") ? ticked(more) : more.join(", ")}` };
+    return splice(markdown, [edit]);
+  }
+  const line = `Scope: ${ticked(more)}`;
+  const at = found.fieldAt;
+  return splice(markdown, [at === undefined ? { start: found.end, end: found.end, text: `\n${found.indent}${line}` } : { start: at, end: at, text: `${line}\n${found.indent}` }]);
+}
+
 /** Your change from the plan page (4p4a), as the new text; undefined when what it names isn't there. */
 export function applyPlanAction(markdown: string, action: PlanAction): string | undefined {
   switch (action.kind) {
@@ -117,6 +147,8 @@ export function applyPlanAction(markdown: string, action: PlanAction): string | 
       return askWhy(markdown, action.decisionId, action.note);
     case "answer":
       return answerQuestion(markdown, action.question, action.answer);
+    case "add_scope":
+      return addToScope(markdown, action.stepId, action.paths);
   }
 }
 
@@ -280,16 +312,10 @@ function readStep(md: string, item: ListItem, found: Located) {
   const [first, ...rest] = lines;
   const withId = ID_HEAD.exec(first!.text);
   const plain = withId ? undefined : PLAIN_HEAD.exec(first!.text);
-  // Your `Not yet:` field (4p4a): from right after the colon to the end of its last line (it runs
-  // until the next field, as `gather` reads it), to replace.
-  const at = rest.findIndex((l) => /^Not yet:/i.test(l.text));
-  let notYet: Span | undefined;
-  if (at >= 0) {
-    const back = rest[at]!;
-    const fieldAfter = rest.slice(at + 1).findIndex((l) => FIELD.test(l.text));
-    const last = rest[fieldAfter < 0 ? rest.length - 1 : at + fieldAfter]!;
-    notYet = { start: back.at + back.text.indexOf(":") + 1, end: last.at + last.text.length };
-  }
+  // Your `Not yet:` field (4p4a) and its `Scope:` (4p7b), to replace or add to.
+  const notYet = fieldSpan(rest, /^Not yet:/i);
+  const scope = fieldSpan(rest, /^Scope:/i);
+  const fieldAt = rest.find((l) => FIELD.test(l.text))?.at;
   const step: PlanStep = {
     id: withId?.[1],
     title: (withId?.[2] ?? plain?.[1] ?? first!.text).trim(),
@@ -303,7 +329,18 @@ function readStep(md: string, item: ListItem, found: Located) {
   if (fields.proof) step.proof = fields.proof;
   if (fields["not yet"]) step.notYet = fields["not yet"];
   found.plan.steps.push(step);
-  found.steps.push({ step, mark, notYet, end, indent });
+  found.steps.push({ step, mark, notYet, scope, fieldAt, end, indent });
+}
+
+/** A field: from right after its colon to the end of its last line (it runs until the next
+ * field, as `gather` reads it). */
+function fieldSpan(lines: Body["lines"], name: RegExp): Span | undefined {
+  const at = lines.findIndex((l) => name.test(l.text));
+  if (at < 0) return undefined;
+  const line = lines[at]!;
+  const fieldAfter = lines.slice(at + 1).findIndex((l) => FIELD.test(l.text));
+  const last = lines[fieldAfter < 0 ? lines.length - 1 : at + fieldAfter]!;
+  return { start: line.at + line.text.indexOf(":") + 1, end: last.at + last.text.length };
 }
 
 function readDecision(md: string, item: ListItem, found: Located) {

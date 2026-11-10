@@ -319,6 +319,6 @@ describe("buildTimeline: scope drift (4p7a)", () => {
       { type: "scope_drift", owner: { kind: "feature", id: "f" }, stepId: "P1", paths: ["package.json"] },
     ]);
     expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "scope_drift"]);
-    expect(items.at(-1)).toEqual({ type: "scope_drift", stepId: "P1", paths: ["package.json"] });
+    expect(items.at(-1)).toEqual({ type: "scope_drift", owner: { kind: "feature", id: "f" }, stepId: "P1", paths: ["package.json"] });
   });
 });

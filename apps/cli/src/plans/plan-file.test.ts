@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Plan } from "@kratos/core";
-import { answerQuestion, applyPlanAction, askWhy, markStep, parsePlan, planTemplate, reconcileAgentEdit, sendBack, setDecisionStatus } from "./plan-file.js";
+import { addToScope, answerQuestion, applyPlanAction, askWhy, markStep, parsePlan, planTemplate, reconcileAgentEdit, sendBack, setDecisionStatus } from "./plan-file.js";
 
 const FEATURE = `# CSV export for reports
 
@@ -285,5 +285,30 @@ describe("your side from the plan page (4p4a)", () => {
     );
     expect(applyPlanAction(FEATURE, { kind: "not_yet", stepId: "P1", note: "n" })).toBe(sendBack(FEATURE, "P1", "n"));
     expect(applyPlanAction(FEATURE, { kind: "ask_why", decisionId: "D9" })).toBeUndefined();
+  });
+});
+
+describe("Add to scope (4p7b)", () => {
+  it("appends each path not there yet, backticked, and reads it back", () => {
+    const added = addToScope(FEATURE, "P1", ["README.md", "apps/web/src/pages/reports.tsx", "README.md"])!;
+    expect(changedOnly(FEATURE, added)).toBe(" → , `README.md`");
+    expect(parsePlan(added, "feature").steps[0]!.scope).toEqual(["apps/web/src/pages/reports.tsx", "apps/api/src/export/**", "README.md"]);
+    expect(addToScope(added, "P1", ["README.md"])).toBe(added); // there already
+  });
+
+  it("to a Scope without backticks, plain; to an empty one, the paths; a Scope over two lines, after its last", () => {
+    const plain = "# T\n\n## Steps\n- [ ] **P1. A**\n  Scope: src/a.ts, src/b.ts\n  Accept: works\n";
+    expect(addToScope(plain, "P1", ["src/[id].tsx"])).toBe(plain.replace("src/b.ts", "src/b.ts, src/[id].tsx"));
+    const empty = "# T\n\n## Steps\n- [ ] **P1. A**\n  Scope:\n";
+    expect(addToScope(empty, "P1", ["a.ts"])).toBe("# T\n\n## Steps\n- [ ] **P1. A**\n  Scope: `a.ts`\n");
+    const wrapped = "# T\n\n## Steps\n- [ ] **P1. A**\n  Scope: `a.ts`,\n  `b.ts`\n  Accept: works\n";
+    expect(parsePlan(addToScope(wrapped, "P1", ["c.ts"])!, "feature").steps[0]).toMatchObject({ scope: ["a.ts", "b.ts", "c.ts"], accept: "works" });
+  });
+
+  it("a step without a Scope line gets one, before its other fields, or as its last line", () => {
+    const fields = "# T\n\n## Steps\n- [~] **P1. A** — the goal\n  Accept: works\n- [ ] **P2. B**\n";
+    expect(addToScope(fields, "P1", ["a.ts"])).toBe("# T\n\n## Steps\n- [~] **P1. A** — the goal\n  Scope: `a.ts`\n  Accept: works\n- [ ] **P2. B**\n");
+    expect(addToScope(FEATURE, "P3", ["a.ts", "b.ts"])).toBe(FEATURE.replace("**P3. Stream large exports**", "**P3. Stream large exports**\n  Scope: `a.ts`, `b.ts`"));
+    expect(applyPlanAction(FEATURE, { kind: "add_scope", stepId: "P9", paths: ["a.ts"] })).toBeUndefined();
   });
 });

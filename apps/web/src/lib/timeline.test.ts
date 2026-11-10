@@ -301,12 +301,27 @@ describe("buildTimeline: the agent plans first by itself (4p6c)", () => {
       call("r2", "Read", "read"),
     ]);
     expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "plan_switch", "steps"]); // the reason moved into the line
-    expect(items[2]).toEqual({ type: "plan_switch", id: "p1", reason: "This touches many files, so I'll plan first.", before: "acceptEdits" });
+    expect(items[2]).toEqual({ type: "plan_switch", id: "p1", reason: "This touches many files, so I'll plan first.", before: "acceptEdits", open: true });
+  });
+
+  it("is over once plan mode ends, or a later switch comes: plan mode you pick yourself later isn't its", () => {
+    const log = [
+      { type: "user_prompt" as const, text: "go" },
+      call("p1", "EnterPlanMode", "plan_mode"),
+      { type: "agent_event" as const, event: { kind: "permission_mode" as const, mode: "plan" } },
+    ];
+    expect(buildTimeline(log)[1]).toMatchObject({ open: true });
+    const left = [...log, { type: "agent_event" as const, event: { kind: "permission_mode" as const, mode: "default" } }];
+    expect(buildTimeline(left)[1]).toMatchObject({ open: false });
+    const yours = [...left, { type: "agent_event" as const, event: { kind: "permission_mode" as const, mode: "plan" } }];
+    expect(buildTimeline(yours)[1]).toMatchObject({ open: false });
+    const again = buildTimeline([...left, call("p2", "EnterPlanMode", "plan_mode")]);
+    expect(again.filter((i) => i.type === "plan_switch").map((i) => i.type === "plan_switch" && i.open)).toEqual([false, true]);
   });
 
   it("with nothing said first: no reason; no mode in the log: null", () => {
     const [, line] = buildTimeline([{ type: "user_prompt", text: "go" }, call("p1", "EnterPlanMode", "plan_mode")]);
-    expect(line).toEqual({ type: "plan_switch", id: "p1", before: null });
+    expect(line).toEqual({ type: "plan_switch", id: "p1", before: null, open: true });
   });
 });
 
@@ -320,5 +335,22 @@ describe("buildTimeline: scope drift (4p7a)", () => {
     ]);
     expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "scope_drift"]);
     expect(items.at(-1)).toEqual({ type: "scope_drift", owner: { kind: "feature", id: "f" }, stepId: "P1", paths: ["package.json"] });
+  });
+
+  it("logged once the next turn started, it still goes under its own turn, in order, and the new turn's group goes on", () => {
+    const write = (id: string, target: string) => ({ type: "agent_event" as const, event: { kind: "tool_call" as const, id, tool: "Write", input: {}, action: { type: "edit" as const, target } } });
+    const items = buildTimeline([
+      { type: "user_prompt", text: "one" },
+      write("w1", "a.ts"),
+      { type: "agent_event", event: { kind: "turn_end", reason: "completed" } },
+      { type: "user_prompt", text: "two" }, // a queued prompt: its turn started at once
+      write("w2", "b.ts"),
+      { type: "scope_drift", owner: { kind: "feature", id: "f" }, stepId: "P1", paths: ["a.ts"], turn: 1 },
+      { type: "plan_updated", owner: { kind: "feature", id: "f" }, path: ".kratos/features/f/plan.md", before: "# F\n", after: "# F\n\nmore\n", undone: [], intentChanged: false, turn: 1 },
+      write("w3", "c.ts"),
+    ]);
+    expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "scope_drift", "steps", "prompt", "steps"]);
+    expect(items[3]).toMatchObject({ by: "kratos" });
+    expect(items[5]).toMatchObject({ steps: [{ id: "w2" }, { id: "w3" }] });
   });
 });

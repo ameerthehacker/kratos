@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router";
+import { Link, matchPath, NavLink, useLocation, useNavigate } from "react-router";
 import {
   dragAndDropFeature,
   hotkeysCoreFeature,
@@ -154,11 +154,12 @@ const nodeName = (node: TreeNode) =>
  * "← Filters in the export"). */
 function usePlanFrom(): PlanFrom {
   const { pathname, search, state } = useLocation();
-  const sessionId = /^\/s\/([^/]+)$/.exec(pathname)?.[1];
+  // The router's own patterns (router.tsx), not a second copy of them.
+  const sessionId = matchPath("/s/:sessionId", pathname)?.params.sessionId;
   const session = useKratos((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined));
   // From one plan to another: keep the first one's way back, not a loop between plans.
-  if (pathname.endsWith("/plan")) return (state ?? {}) as PlanFrom;
-  const label = pathname === "/" ? "Home" : session ? sessionTitle(session) : pathname.endsWith("/review") ? "Review changes" : "Back";
+  if (matchPath("/s/:sessionId/plan", pathname) || matchPath("/f/:featureId/plan", pathname)) return (state ?? {}) as PlanFrom;
+  const label = pathname === "/" ? "Home" : session ? sessionTitle(session) : matchPath("/s/:sessionId/review", pathname) ? "Review changes" : "Back";
   return { from: pathname + search, label };
 }
 

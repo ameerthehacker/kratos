@@ -59,9 +59,6 @@ importers:
       open:
         specifier: ^11.0.4
         version: 11.0.4
-      picomatch:
-        specifier: ^4.0.7
-        version: 4.0.7
       pino:
         specifier: ^10.4.0
         version: 10.4.0
@@ -99,9 +96,6 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
-      '@types/picomatch':
-        specifier: ^4.0.3
-        version: 4.0.3
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
@@ -333,10 +327,16 @@ importers:
 
   packages/core:
     dependencies:
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
       zod:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

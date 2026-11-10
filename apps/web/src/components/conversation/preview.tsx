@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Command } from "@/components/conversation/command";
 import { diffLinesOf, foldRows } from "@/lib/diff-rows";
 import type { Step } from "@/lib/timeline";
@@ -11,7 +12,9 @@ export function Preview({ step, showOutput = false }: { step: Step; showOutput?:
   return (
     <div className="flex max-h-72 flex-col gap-1 overflow-auto rounded-lg bg-well px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre">
       {step.edit ? (
-        <EditDiff edit={step.edit} />
+        // Long unchanged runs fold to a count, as in review (3v), only in a plan's change: a whole
+        // file (4p3b). An edit you're asked to allow shows every line of it.
+        <EditDiff edit={step.edit} fold={step.id.startsWith("plan-")} />
       ) : step.raw.command ? (
         <Command text={step.raw.command} />
       ) : (
@@ -22,7 +25,7 @@ export function Preview({ step, showOutput = false }: { step: Step; showOutput?:
   );
 }
 
-function EditDiff({ edit }: { edit: NonNullable<Step["edit"]> }) {
+function EditDiff({ edit, fold }: { edit: NonNullable<Step["edit"]>; fold: boolean }) {
   const isNew = edit.changes.length === 1 && edit.changes[0]!.before === "";
   return (
     <>
@@ -32,25 +35,30 @@ function EditDiff({ edit }: { edit: NonNullable<Step["edit"]> }) {
       {edit.changes.map((change, i) => (
         <div key={i}>
           {i > 0 && <div className="text-faint">⋯</div>}
-          {/* Long unchanged runs fold to a count, as in review (3v): a plan's change is a whole file (4p3b). */}
-          {foldRows(diffLinesOf(change.before, change.after)).map((row, j) =>
-            row.type === "fold" ? (
-              <div key={`fold-${row.id}`} className="text-faint">
-                ⋯ {row.count} unchanged {row.count === 1 ? "line" : "lines"}
-              </div>
-            ) : (
-              <div
-                key={j}
-                className={cn(row.line.kind === "add" ? "text-add" : row.line.kind === "del" ? "text-destructive" : "text-muted-foreground")}
-              >
-                {row.line.kind === "add" ? "+ " : row.line.kind === "del" ? "− " : "  "}
-                {row.line.text}
-              </div>
-            ),
-          )}
+          <ChangeRows before={change.before} after={change.after} fold={fold} />
           {change.truncated && <div className="text-faint">… preview cut short</div>}
         </div>
       ))}
     </>
+  );
+}
+
+/** One change's lines, diffed once per text (the chat redraws what's on screen with every message). */
+function ChangeRows({ before, after, fold }: { before: string; after: string; fold: boolean }) {
+  const rows = useMemo(() => {
+    const lines = diffLinesOf(before, after);
+    return fold ? foldRows(lines) : lines.map((line) => ({ type: "line" as const, line }));
+  }, [before, after, fold]);
+  return rows.map((row, j) =>
+    row.type === "fold" ? (
+      <div key={`fold-${row.id}`} className="text-faint">
+        ⋯ {row.count} unchanged {row.count === 1 ? "line" : "lines"}
+      </div>
+    ) : (
+      <div key={j} className={cn(row.line.kind === "add" ? "text-add" : row.line.kind === "del" ? "text-destructive" : "text-muted-foreground")}>
+        {row.line.kind === "add" ? "+ " : row.line.kind === "del" ? "− " : "  "}
+        {row.line.text}
+      </div>
+    ),
   );
 }

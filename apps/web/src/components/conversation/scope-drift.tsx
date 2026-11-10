@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Check, CircleAlert } from "lucide-react";
 import { Link } from "react-router";
+import { scopeMatcher } from "@kratos/core";
 import { usePlan } from "@/hooks/use-plan";
 import { useKratos } from "@/lib/kratos-store";
 import type { TimelineItem } from "@/lib/timeline";
 
 /** How many paths it lists before "and N more". */
 const SHOWN = 5;
+/** The most paths one Add to scope takes (core's `add_scope`). */
+const MAX_SCOPE_PATHS = 100;
 
 /**
  * A turn changed files outside its step's Scope (4p7a; the design's Plans board §3): a notice
@@ -19,11 +22,14 @@ export function ScopeDrift({ item, reviewHref }: { item: Extract<TimelineItem, {
   const send = useKratos((s) => s.send);
   const plan = usePlan(item.owner.kind, item.owner.id)?.plan;
   const step = plan?.steps.find((s) => s.id === item.stepId);
-  const added = step !== undefined && item.paths.every((path) => step.scope.includes(path));
-  // Sent, until the plan says so — or the server says why not (the step was renamed meanwhile).
+  // In its Scope now — added, or a glob widened over them — by the hub's own rule (core).
+  const added = step !== undefined && item.paths.every(scopeMatcher(step.scope));
+  // Sent, until the plan says so — or the server refuses a plan change (the step was renamed meanwhile).
   const [sent, setSent] = useState<number | null>(null);
   const lastError = useKratos((s) => s.lastError);
-  const busy = sent !== null && !added && !(lastError && lastError.at > sent);
+  const busy = sent !== null && !added && !(lastError?.about === "plan_action" && lastError.at > sent);
+  // More than a plan action takes (core's add_scope): too many to add by hand from here anyway.
+  const addable = item.paths.length <= MAX_SCOPE_PATHS;
   const add = () => {
     setSent(performance.now());
     send({ type: "plan_action", owner: item.owner, action: { kind: "add_scope", stepId: item.stepId, paths: item.paths } });
@@ -70,7 +76,7 @@ export function ScopeDrift({ item, reviewHref }: { item: Extract<TimelineItem, {
             Show diff
           </Link>
         )}
-        {step && !added && (
+        {step && !added && addable && (
           <button
             type="button"
             disabled={busy}

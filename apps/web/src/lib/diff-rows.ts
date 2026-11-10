@@ -21,11 +21,25 @@ const MIN_FOLD = 4;
  * (`this.broadcastSessionList();` → `this.announceSessions();` keeps ~30%). */
 const MIN_KEPT = 0.25;
 
+/** How many lines a change adds and removes, compared as `diffLinesOf` draws them (and the server
+ * counts, D65): a missing final newline isn't a changed line. */
+export function countLines(before: string, after: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(before, after, LINE_DIFF)) {
+    if (part.added) added += part.count ?? 0;
+    if (part.removed) removed += part.count ?? 0;
+  }
+  return { added, removed };
+}
+
+const LINE_DIFF = { ignoreNewlineAtEof: true };
+
 export function diffLinesOf(before: string, after: string): DiffLine[] {
   const lines: DiffLine[] = [];
   let old = 1;
   let now = 1;
-  for (const part of diffLines(before, after, { ignoreNewlineAtEof: true })) {
+  for (const part of diffLines(before, after, LINE_DIFF)) {
     for (const text of splitLines(part.value)) {
       if (part.added) lines.push({ kind: "add", new: now++, text });
       else if (part.removed) lines.push({ kind: "del", old: old++, text });

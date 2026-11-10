@@ -13,15 +13,16 @@ import {
   type PlanSave,
   type PlanStep,
   type ServerMessage,
+  progressOf,
+  scopeMatcher,
 } from "@kratos/core";
 import { slug } from "github-slugger";
-import picomatch from "picomatch";
 import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
 import { featureNudge, type Filing, type SessionFeatureOps } from "./kratos-tools.js";
-import { applyPlanAction, parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
+import { applyPlanAction, intentDiffers, parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
 import { movedNote, planInstructions, type PlanPaths } from "./plans/plan-instructions.js";
 import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
 import type { SessionStore, StoredSnapshot } from "./store/store.js";
@@ -37,8 +38,10 @@ interface TurnPlan {
   base: string | undefined;
   /** Put back when its edit was held mid-turn: said at its end with what that puts back. */
   undone: string[];
-  intentChanged: boolean;
 }
+
+/** A plan's step, as the session's plans have it. */
+type StepOf = { owner: PlanOwner; step: PlanStep };
 
 /** A turn whose plans are held at its end (4p3): running, or ending (being settled). */
 interface LiveTurn {
@@ -73,6 +76,16 @@ const buildLater = (path: string) =>
 /** A plan's file, relative to the project, from its folder under `.kratos/`. */
 const planFile = (folder: string) => `.kratos/${folder}/plan.md`;
 
+/** The steps with an id a turn moved into `[~]` or `[?]`: from what its plan was (`before`, with
+ * your changes) to what it is after the turn. */
+function movedSteps(owner: PlanOwner, before: string | undefined, after: string | undefined): StepOf[] {
+  if (after === undefined || before === after) return [];
+  const was = new Map((before === undefined ? [] : parsePlan(before, owner.kind).steps).map((s) => [s.id, s.mark]));
+  return parsePlan(after, owner.kind)
+    .steps.filter((s) => s.id && (s.mark === "doing" || s.mark === "claimed") && was.get(s.id) !== s.mark)
+    .map((step) => ({ owner, step }));
+}
+
 /** A connected browser tab, as the server sees it. */
 export type Tab = {
   receive(message: ClientMessage): void;
@@ -97,6 +110,13 @@ export class SessionHub {
   /** Turns whose plans are held to who-writes-what at their end (4p3), oldest first: running, or
    * ending (being settled). What changed in their plans by then is their edit. */
   private readonly turns: LiveTurn[] = [];
+  /** Each ended turn's settle, by `session:turn`, giving the steps it moved: its scope check waits
+   * for it (4p7a). */
+  private readonly settledTurns = new Map<string, Promise<StepOf[]>>();
+  /** Each feature plan's progress, by folder, with the text it was read from. */
+  private readonly progressOf = new Map<string, { text: string; progress: { ticked: number; total: number } }>();
+  /** What ended turns still do (their plans settled, their files checked), for `whenIdle`. */
+  private readonly turnWork = new Set<Promise<unknown>>();
   /** Changes to each plan, one after another (4p4a: yours; 4p3: a turn's end): each reads what the
    * one before wrote. */
   private readonly planActions = new Map<string, Promise<void>>();
@@ -160,9 +180,10 @@ export class SessionHub {
   }
 
   /** Resolves once no session is busy — at once if none is (3u5c: restart only then). */
-  whenIdle(): Promise<void> {
-    if (this.busyCount === 0) return Promise.resolve();
-    return new Promise((resolve) => this.idleWaiters.add(resolve));
+  async whenIdle(): Promise<void> {
+    if (this.busyCount > 0) await new Promise<void>((resolve) => this.idleWaiters.add(resolve));
+    // And what ended turns still do (their plans held, their files checked): a restart mustn't cut it.
+    while (this.turnWork.size > 0) await Promise.allSettled([...this.turnWork]);
   }
 
   /** Server shutdown: withdraw every session's open asks and stop every agent. */
@@ -281,26 +302,23 @@ export class SessionHub {
         if (!this.planOwnerInProject(send, message.owner)) return;
         send(this.planMessage(message.owner));
         return;
-      case "plan_action":
+      case "plan_action": {
         if (!this.planOwnerInProject(send, message.owner)) return;
-        this.onPlan(send, message.owner, (folder) => this.applyAction(send, message.owner, folder, message.action)).catch((err) => {
-          this.log.warn({ err, owner: message.owner }, "could not change the plan");
-          send({ type: "error", message: `Could not change the plan: ${err instanceof Error ? err.message : err}` });
-        });
+        const refuse: Send = (m) => send(m.type === "error" ? { ...m, about: "plan_action" } : m);
+        this.onPlan(refuse, message.owner, (folder) => this.applyAction(refuse, message.owner, folder, message.action)).catch((err) =>
+          this.failed(refuse, "change the plan", err, { owner: message.owner }),
+        );
         return;
+      }
       case "save_plan":
         if (!this.planOwnerInProject(send, message.owner)) return;
-        this.onPlan(send, message.owner, (folder) => this.savePlan(send, message.owner, folder, message.markdown, message.base)).catch((err) => {
-          this.log.warn({ err, owner: message.owner }, "could not save the plan");
-          send({ type: "error", message: `Could not save the plan: ${err instanceof Error ? err.message : err}` });
-        });
+        this.onPlan(send, message.owner, (folder) => this.savePlan(send, message.owner, folder, message.markdown, message.base)).catch((err) =>
+          this.failed(send, "save the plan", err, { owner: message.owner }),
+        );
         return;
       case "start_plan":
         if (!this.planOwnerInProject(send, message.owner)) return;
-        this.startPlan(send, message.owner).catch((err) => {
-          this.log.warn({ err, owner: message.owner }, "could not start a plan");
-          send({ type: "error", message: `Could not start the plan: ${err instanceof Error ? err.message : err}` });
-        });
+        this.startPlan(send, message.owner).catch((err) => this.failed(send, "start the plan", err, { owner: message.owner }));
         return;
       case "set_session_feature": {
         if (!this.inProject(send, message.sessionId)) return;
@@ -346,18 +364,18 @@ export class SessionHub {
         const build = message.decision.decision === "allow";
         this.approving.add(message.id);
         // Your edited text (4p6b), when it differs: saved, and the plan the agent is told was approved.
-        const proposed = request.action.plan ?? "";
+        const proposed = request.action.plan ?? runtime.planOfCall(request.toolCallId) ?? "";
         const yours = message.planText !== undefined && message.planText !== proposed ? message.planText : undefined;
-        this.approvePlan(send, runtime.id, yours ?? proposed, message.savePlanAs)
+        // Its refusals name the ask, so its card shows them (and nothing else does).
+        const refuse: Send = (m) => send(m.type === "error" ? { ...m, about: message.id } : m);
+        this.approvePlan(refuse, runtime.id, yours ?? proposed, message.savePlanAs)
           .then((saved) => {
             if (!saved) return; // refused: the ask stays open
             const allow = { decision: "allow" as const, message: buildHere(saved), ...(yours !== undefined ? { plan: yours } : {}) };
-            runtime.decide(message.id, build ? allow : { decision: "deny", message: buildLater(saved.path) });
+            if (build) runtime.decide(message.id, allow);
+            else runtime.decide(message.id, { decision: "deny", message: buildLater(saved.path) }, "saved");
           })
-          .catch((err) => {
-            this.log.warn({ err, session: runtime.id }, "could not save the approved plan");
-            send({ type: "error", message: `Could not save the plan: ${err instanceof Error ? err.message : err}` });
-          })
+          .catch((err) => this.failed(refuse, "save the plan", err, { session: runtime.id }))
           .finally(() => this.approving.delete(message.id));
         return;
       }
@@ -485,7 +503,9 @@ export class SessionHub {
     this.store.setSessionFeature(sessionId, featureId);
     // Its agent, if running, learns where its plans are now: on its next prompt, or (moved by its
     // own tool) in the tool's answer (4p2).
-    if (by === "owner" && before !== featureId) this.runtimes.get(sessionId)?.plansMoved(movedNote(this.planPaths(sessionId)));
+    // The owner moved it: its running agent hears where its plans are with its next prompt, worded
+    // then. The agent moved itself: its tool's answer said so, and any older note is stale.
+    if (before !== featureId) this.runtimes.get(sessionId)?.plansMoved(by === "owner" ? () => movedNote(this.planPaths(sessionId)) : undefined);
     // A turn running now may write its new feature's plan: held at its end like the others (4p3).
     const running = this.runningTurn(sessionId);
     const feature = running && this.planFolders(sessionId).feature;
@@ -608,6 +628,17 @@ export class SessionHub {
   /** Runs changes to one plan one after another: each reads what the one before wrote. Two quick
    * clicks both read the file before either wrote it, and the second undid the first; a turn's end
    * and your change likewise mustn't write over each other. */
+  /** A plan change that failed: logged, and the tab that asked told why. */
+  private failed(send: Send, what: string, err: unknown, context: object): void {
+    this.log.warn({ err, ...context }, `could not ${what}`);
+    send({ type: "error", message: `Could not ${what}: ${err instanceof Error ? err.message : err}` });
+  }
+
+  private afterTurnWork(work: Promise<unknown>): void {
+    this.turnWork.add(work);
+    void work.finally(() => this.turnWork.delete(work));
+  }
+
   private inLine<T>(folder: string, change: () => Promise<T>): Promise<T> {
     const run = (this.planActions.get(folder) ?? Promise.resolve()).then(change);
     const settled = run.then(
@@ -735,50 +766,52 @@ export class SessionHub {
    * order. Paths are git's, from the repository's root: the project's start with its prefix, and
    * ones outside it aren't the plan's.
    */
-  private async checkScope(sessionId: string, end: { tree: string; logSeq: number }): Promise<void> {
+  private async checkScope(sessionId: string, end: { tree: string; logSeq: number; turn: number }): Promise<void> {
     if (!this.snapshots) return;
+    const key = `${sessionId}:${end.turn}`;
+    const moved = (await this.settledTurns.get(key)) ?? [];
+    this.settledTurns.delete(key);
     const before = this.store
       .snapshotsOf(sessionId)
       .filter((s) => s.logSeq !== null && s.logSeq < end.logSeq)
       .sort((a, b) => a.logSeq! - b.logSeq!)
       .at(-1);
     if (!before) return;
-    const inHand = this.stepInHand(sessionId);
+    const inHand = this.stepInHand(sessionId, moved);
     if (!inHand || inHand.step.scope.length === 0) return; // nothing to hold the files against
     const prefix = await this.snapshots.prefix();
     if (prefix === null) return;
-    const inScope = picomatch(inHand.step.scope, { dot: true });
+    const inScope = scopeMatcher(inHand.step.scope);
     const outside = (await this.snapshots.changedPaths(before.tree, end.tree))
       .filter((path) => path.startsWith(prefix))
       .map((path) => path.slice(prefix.length))
       .filter((path) => !inScope(path));
     if (outside.length === 0) return;
-    this.runtimes.get(sessionId)?.addToLog({ type: "scope_drift", owner: inHand.owner, stepId: inHand.step.id!, paths: outside });
+    this.runtimes.get(sessionId)?.addToLog({ type: "scope_drift", owner: inHand.owner, stepId: inHand.step.id!, paths: outside, turn: end.turn });
     this.log.info({ session: sessionId, step: inHand.step.id, outside: outside.length }, "files changed outside the step's scope");
   }
-
-  /** The step a session works on (4p7a): the one it was started on (4p5b), else the one step in
-   * hand (`[~]`) in its plans — none when there's no such step, or several. */
-  private stepInHand(sessionId: string): { owner: PlanOwner; step: PlanStep } | undefined {
+  /**
+   * The step a turn worked on (4p7a): the one its session was started on (4p5b), while it's in the
+   * feature plan; else the one step the turn itself moved into `[~]` or `[?]` (the agent marks it
+   * `[~]`, works, then `[?]` — often all in one turn, so the marks at its end don't say); else the
+   * one `[~]` step in this session's own plan. Never a `[~]` of the feature plan it didn't move:
+   * that may be another session's step.
+   */
+  private stepInHand(sessionId: string, moved: StepOf[]): StepOf | undefined {
     const session = this.store.get(sessionId);
     if (!session) return undefined;
     const { session: own, feature } = this.planFolders(sessionId);
-    const read = (folder: string, kind: PlanKind) => {
-      const text = this.plans.text(folder);
-      return text === undefined ? [] : parsePlan(text, kind).steps.filter((s) => s.id);
-    };
-    const featureSteps = feature ? read(feature.folder, "feature") : [];
-    const featureOwner: PlanOwner | undefined = session.featureId ? { kind: "feature", id: session.featureId } : undefined;
-    const started = session.stepId ? featureSteps.find((s) => s.id === session.stepId) : undefined;
-    if (started && featureOwner) return { owner: featureOwner, step: started };
-    const inHand = [
-      ...(featureOwner ? featureSteps.filter((s) => s.mark === "doing").map((step) => ({ owner: featureOwner, step })) : []),
-      ...read(own, "session").filter((s) => s.mark === "doing").map((step) => ({ owner: { kind: "session" as const, id: sessionId }, step })),
-    ];
-    return inHand.length === 1 ? inHand[0] : undefined;
+    if (session.stepId && feature && session.featureId) {
+      const text = this.plans.text(feature.folder);
+      const started = text === undefined ? undefined : parsePlan(text, "feature").steps.find((s) => s.id === session.stepId);
+      if (started) return { owner: { kind: "feature", id: session.featureId }, step: started };
+    }
+    if (moved.length > 0) return moved.length === 1 ? moved[0] : undefined;
+    const text = this.plans.text(own);
+    const doing = text === undefined ? [] : parsePlan(text, "session").steps.filter((s) => s.id && s.mark === "doing");
+    return doing.length === 1 ? { owner: { kind: "session", id: sessionId }, step: doing[0]! } : undefined;
   }
 
-  /** Whose plan a folder under `.kratos/` holds; undefined for one Kratos doesn't know. */
   private ownerOfPlan(folder: string): PlanOwner | undefined {
     const [kind, name = ""] = folder.split("/");
     if (kind === "sessions") return this.ours(name) ? { kind: "session", id: name } : undefined;
@@ -802,7 +835,7 @@ export class SessionHub {
   /** A plan as a turn sees it at its start. */
   private turnPlan(folder: string): TurnPlan {
     const text = this.plans.text(folder);
-    return { shown: text, base: text, undone: [], intentChanged: false };
+    return { shown: text, base: text, undone: [] };
   }
 
   /** This plan in each live turn that has it, newest turn first: one that started while an older
@@ -816,9 +849,8 @@ export class SessionHub {
    * gives the text to write. What was put back is kept for the turn's end to say. */
   private holdTurn(turn: TurnPlan, text: string): string {
     if (text === turn.base) return text;
-    const { markdown, undone, intentChanged } = reconcileAgentEdit(turn.base ?? "", text);
+    const { markdown, undone } = reconcileAgentEdit(turn.base ?? "", text);
     turn.undone.push(...undone);
-    if (turn.base !== undefined && intentChanged) turn.intentChanged = true;
     return markdown;
   }
 
@@ -828,46 +860,66 @@ export class SessionHub {
    * and written), kept in its session's log as `plan_updated` (the chat's "Updated the plan": the
    * only record, D79), and what was put back is said to the agent with its next prompt.
    */
-  private async planTurnEnded(sessionId: string): Promise<void> {
+  private planTurnEnded(sessionId: string, number: number | undefined): void {
     const turn = this.runningTurn(sessionId);
     if (!turn) return;
     turn.ending = true; // at once: its session's next turn may start before this one is settled
-    try {
-      for (const [folder, plan] of turn.plans) await this.inLine(folder, () => this.settleTurnPlan(turn, folder, plan));
-    } catch (err) {
-      this.log.warn({ err, session: sessionId }, "could not settle the turn's plan changes");
-    } finally {
-      this.turns.splice(this.turns.indexOf(turn), 1);
-    }
+    const settled = (async () => {
+      const moved: StepOf[] = [];
+      try {
+        for (const [folder, plan] of turn.plans) moved.push(...(await this.inLine(folder, () => this.settleTurnPlan(turn, folder, plan, number))));
+      } catch (err) {
+        this.log.warn({ err, session: sessionId }, "could not settle the turn's plan changes");
+      } finally {
+        this.turns.splice(this.turns.indexOf(turn), 1);
+      }
+      return moved;
+    })();
+    this.afterTurnWork(settled);
+    if (number === undefined || !this.snapshots) return;
+    // Its scope check waits for it (it needs the steps the turn moved); only the last few are kept,
+    // in case a snapshot never comes to take its own.
+    for (const key of this.settledTurns.keys()) if (key.startsWith(`${sessionId}:`) && Number(key.split(":")[1]) < number - 2) this.settledTurns.delete(key);
+    this.settledTurns.set(`${sessionId}:${number}`, settled);
   }
-
-  /** One of an ending turn's plans (4p3): held, written back, and in its session's log. */
-  private async settleTurnPlan(turn: LiveTurn, folder: string, plan: TurnPlan): Promise<void> {
+  /** Settles one of a turn's plans; gives the steps with an id the turn moved into `[~]` or `[?]`. */
+  private async settleTurnPlan(turn: LiveTurn, folder: string, plan: TurnPlan, number: number | undefined): Promise<StepOf[]> {
     const after = await this.plans.refresh(folder);
     const owner = this.ownerOfPlan(folder);
-    if (!owner) return;
+    if (!owner) return [];
     const base = plan.base;
     const final = after === undefined ? undefined : this.holdTurn(plan, after);
     if (final !== undefined && final !== after) {
       await this.plans.write(folder, final);
-      // A turn that started since, while this edit was still unheld, may have it in its base: held
-      // there too, so its end doesn't take what was put back for its owner's (a queued prompt's
-      // turn starts the moment this one ends).
+      // A turn that started since, while this edit was still unheld, may have it in its base and
+      // its record: held there too, so its end doesn't take what was put back for its owner's, nor
+      // show it as its own change (a queued prompt's turn starts the moment this one ends).
       for (const newer of this.turns.slice(this.turns.indexOf(turn) + 1)) {
         const its = newer.plans.get(folder);
         if (its?.base !== undefined && its.base !== base) its.base = reconcileAgentEdit(base ?? "", its.base).markdown;
+        if (its?.shown !== undefined && its.shown !== base) its.shown = reconcileAgentEdit(base ?? "", its.shown).markdown;
       }
     }
-    const { shown, undone, intentChanged } = plan;
-    Object.assign(plan, { base: final, shown: final, undone: [], intentChanged: false });
-    if (final === shown && undone.length === 0) return;
+    const { shown, undone } = plan;
+    Object.assign(plan, { base: final, shown: final, undone: [] });
+    const moved = movedSteps(owner, shown, final);
+    if (final === shown && undone.length === 0) return moved;
     const runtime = this.runtimes.get(turn.sessionId);
-    runtime?.addToLog({ type: "plan_updated", owner, path: planFile(folder), before: shown ?? null, after: final ?? null, undone, intentChanged: shown !== undefined && intentChanged });
+    runtime?.addToLog({
+      type: "plan_updated",
+      owner,
+      path: planFile(folder),
+      before: shown ?? null,
+      after: final ?? null,
+      undone,
+      intentChanged: shown !== undefined && final !== undefined && intentDiffers(shown, final),
+      ...(number !== undefined ? { turn: number } : {}),
+    });
     if (undone.length > 0) runtime?.tellAgentNext(`[Kratos] In ${owner.kind === "feature" ? "the feature plan" : "this session's plan"} (${planFile(folder)}) I put back what isn't yours to do: ${undone.join(" ")}`);
     this.log.info({ session: turn.sessionId, folder, undone: undone.length }, "plan changed in a turn");
+    return moved;
   }
 
-  /** Is this one of this project's features? Tells the tab when not. */
   private featureInProject(send: Send, featureId: string): boolean {
     if (this.store.getFeature(featureId)?.projectDir === this.cwd) return true;
     send({ type: "error", message: `No feature ${featureId} in this project` });
@@ -979,9 +1031,9 @@ export class SessionHub {
         onMessage: (message) => this.forward(sessionId, message),
         onChange: () => this.broadcastSessionList(),
         features: this.featureOps(sessionId),
-        onTurn: (edge) => (edge === "start" ? this.planTurnStarted(sessionId) : void this.planTurnEnded(sessionId)),
+        onTurn: (edge, number) => (edge === "start" ? this.planTurnStarted(sessionId) : this.planTurnEnded(sessionId, number)),
         onTurnSnapshot: (end) =>
-          void this.checkScope(sessionId, end).catch((err) => this.log.warn({ err, session: sessionId }, "could not check the turn's scope")),
+          this.afterTurnWork(this.checkScope(sessionId, end).catch((err) => this.log.warn({ err, session: sessionId }, "could not check the turn's scope"))),
         instructions: () => {
           void this.plans.prepare().catch((err) => this.log.warn({ err }, "could not prepare .kratos/ for plans"));
           const paths = this.planPaths(sessionId);
@@ -1020,20 +1072,31 @@ export class SessionHub {
     };
   }
 
+  /** A feature plan's progress (4p5c), read once per text: the list is built on every connect and
+   * every plan edit, and a parse of a big plan takes tens of milliseconds. */
+  private progress(folder: string): { ticked: number; total: number } | undefined {
+    const text = this.plans.text(folder);
+    if (text === undefined) return undefined;
+    const known = this.progressOf.get(folder);
+    if (known?.text === text) return known.progress;
+    const progress = progressOf(parsePlan(text, "feature"));
+    this.progressOf.set(folder, { text, progress });
+    return progress;
+  }
+
   private featureList(): ServerMessage {
     return {
       type: "features",
       list: this.store.listFeatures(this.cwd).map((f) => {
-        const text = f.planDir === null ? undefined : this.plans.text(`features/${f.planDir}`);
-        // Its plan's ticked steps (4p5c): the ones with an id, yours to tick.
-        const steps = text === undefined ? [] : parsePlan(text, "feature").steps.filter((s) => s.id);
+        const folder = f.planDir === null ? undefined : `features/${f.planDir}`;
+        const progress = folder === undefined ? undefined : this.progress(folder);
         return {
           id: f.id,
           title: f.title,
           done: f.doneAt !== null,
           updatedAt: f.updatedAt.getTime(),
-          hasPlan: text !== undefined,
-          ...(text !== undefined ? { progress: { ticked: steps.filter((s) => s.mark === "ticked").length, total: steps.length } } : {}),
+          hasPlan: progress !== undefined,
+          ...(progress ? { progress } : {}),
         };
       }),
     };

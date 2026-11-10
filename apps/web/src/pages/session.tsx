@@ -11,7 +11,7 @@ import { askToNotify } from "@/hooks/use-attention";
 import { AskDock } from "@/components/conversation/ask-dock";
 import { Conversation } from "@/components/conversation/conversation";
 import { DoneButton } from "@/components/done-button";
-import { useSessionPlans } from "@/components/plans-island";
+import { usePlansOffered } from "@/components/plans-island";
 import { Hint } from "@/components/shortcut";
 import { Counts } from "@/components/review/counts";
 import { useChanges } from "@/hooks/use-changes";
@@ -51,6 +51,8 @@ export function SessionPage() {
   const feature = useKratos((s) => (session?.featureId ? s.features.find((f) => f.id === session.featureId) : undefined));
   const agentName = harnesses.find((h) => h.id === session?.harness)?.name ?? "Agent";
   const modes = harnesses.find((h) => h.id === session?.harness)?.permissionModes ?? [];
+  // The agent's planning mode, by its agent-neutral kind (D53): the UI knows no agent's ids.
+  const planMode = modes.find((m) => m.kind === "plan");
   const rememberMode = useHomeChoice((s) => s.rememberMode);
   const shown = viewing === sessionId ? log : NO_LOG;
   // This session's whole history has arrived, and the project dir its steps' paths are shown
@@ -64,10 +66,13 @@ export function SessionPage() {
   // Skip planning (4p6c): back to the mode it had (else the agent's own default), then the agent
   // is told to go ahead — as the answer to its plan if one is waiting, else as a prompt it reads
   // at its next step (D56). Memoized: the chat redraws what's on screen when this changes.
+  // A dangerous mode (Bypass) isn't put back by itself: only the consent dialog turns it on (D53),
+  // so it's Ask then, and you turn Bypass on again if you want it.
   const skipPlanning = useCallback(
     (before: string | null) => {
-      const mode = modes.find((m) => m.id === before) ?? modes.find((m) => m.kind === "ask") ?? modes[0];
-      if (mode) send({ type: "set_permission_mode", mode: mode.id, ...(mode.dangerous ? { confirmDangerous: true } : {}) });
+      const had = modes.find((m) => m.id === before && m.kind !== "plan" && !m.dangerous);
+      const mode = had ?? modes.find((m) => m.kind === "ask") ?? modes.find((m) => !m.dangerous);
+      if (mode) send({ type: "set_permission_mode", mode: mode.id });
       const plan = openAsks(items).find((step) => step.kind === "plan");
       if (plan?.ask) send({ type: "permission_decision", id: plan.ask.id, decision: { decision: "deny", message: SKIP_PLANNING } });
       else send({ type: "prompt", text: SKIP_PLANNING });
@@ -140,7 +145,8 @@ export function SessionPage() {
             agent={agentName}
             status={session?.status}
             queued={queue.length}
-            onSkipPlanning={session?.permissionMode === "plan" ? skipPlanning : undefined}
+            onSkipPlanning={planMode && session?.permissionMode === planMode.id ? skipPlanning : undefined}
+            planModeLabel={planMode?.label}
             reviewHref={sessionId && reviewPath(sessionId)}
           />
         ) : (
@@ -167,7 +173,7 @@ export function SessionPage() {
           <AskDock
             asks={openAsks(items)}
             agent={agentName}
-            where={{ inFeature: !!feature, featureHasPlan: feature?.hasPlan ?? false, featureTitle: feature?.title }}
+            where={{ inFeature: !!feature, featureHasPlan: feature?.hasPlan ?? false, featureTitle: feature?.title, sessionHasPlan: session?.hasPlan }}
             onDecide={(id, decision, savePlanAs, planText) =>
               send({ type: "permission_decision", id, decision, ...(savePlanAs ? { savePlanAs } : {}), ...(planText !== undefined ? { planText } : {}) })
             }
@@ -283,7 +289,7 @@ function SessionHeader({ session }: { session: SessionSummary }) {
 /** Shows or hides the plans island (4p5a, ⌥⌘B), at the header's right end like the sidebar's
  * button at its left; only when the session has a plan to show. */
 function PlansToggle({ sessionId }: { sessionId: string }) {
-  const { offered } = useSessionPlans(sessionId);
+  const offered = usePlansOffered(sessionId);
   const open = usePlansPrefs((s) => s.open);
   const setOpen = usePlansPrefs((s) => s.setOpen);
   if (!offered) return null;

@@ -11,7 +11,7 @@ import {
   QuestionReply,
   QuestionRequest,
 } from "./agent.js";
-import { Plan, PlanAction, PlanKind, PlanSave } from "./plan.js";
+import { Plan, PlanAction, PlanKind, PlanSave, StepId } from "./plan.js";
 
 /**
  * Messages exchanged between the browser UI and the kratos server over WebSocket (path: /ws).
@@ -74,6 +74,10 @@ export const Title = z.string().trim().min(1).max(80);
 
 /** Whose plan (D79): a feature's (what and why, across sessions) or a session's (how it does its part). */
 export const PlanOwner = z.object({ kind: PlanKind, id: z.string() });
+/** Which turn a message logged after its turn's end is about (the review round after 4p7b): the
+ * number of turns the log had ended by then, its own included. Settled once the turn ended, it can
+ * be logged after the next turn has started; the chat puts it under its own. Old logs: none. */
+const TurnNumber = z.number().int().nonnegative().optional();
 export type PlanOwner = z.infer<typeof PlanOwner>;
 
 
@@ -99,7 +103,7 @@ export const ClientMessage = z.discriminatedUnion("type", [
     /** The feature the session it starts belongs to (D73); none = a one-off. */
     featureId: z.string().optional(),
     /** With `featureId`: the step of its plan the session works on (4p5b, "P3"). */
-    stepId: z.string().max(64).regex(/^[A-Za-z]+\d+[a-z]?$/).optional(), // a plan step id, as plan-file.ts reads them
+    stepId: StepId.optional(), // a plan step id, as the reader reads them
     /** Or a new feature, named on the shelf: made when the prompt starts its session, so a name
      * typed and then abandoned leaves no empty folder (D73). Wins over `featureId`. */
     newFeatureTitle: Title.optional(),
@@ -300,7 +304,7 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("plan"), owner: PlanOwner, markdown: z.string().nullable(), plan: Plan.nullable() }),
   /** In a session's log (4p7a): its turn changed files outside the Scope of the step it worked
    * on (`stepId` of `owner`'s plan); `paths` relative to the project. */
-  z.object({ type: z.literal("scope_drift"), owner: PlanOwner, stepId: z.string(), paths: z.array(z.string()) }),
+  z.object({ type: z.literal("scope_drift"), owner: PlanOwner, stepId: z.string(), paths: z.array(z.string()), turn: TurnNumber }),
   /** In a session's log (4p3a): its turn changed a plan. `before` / `after` the file's text (null:
    * none), after Kratos held the edit to who-writes-what (`undone`: what it put back, in words). */
   z.object({
@@ -312,6 +316,7 @@ export const ServerMessage = z.discriminatedUnion("type", [
     after: z.string().nullable(),
     undone: z.array(z.string()),
     intentChanged: z.boolean(),
+    turn: TurnNumber,
   }),
   /** Reply to `ping`: server info + timestamp. */
   z.object({
@@ -350,7 +355,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("permission_resolved"),
     id: z.string(),
-    outcome: z.enum(["allowed", "denied", "cancelled"]),
+    /** `saved`: a proposed plan approved to build later (4p6a) — saved, and denied to the agent so
+     * it stops there, but not refused. */
+    outcome: z.enum(["allowed", "denied", "cancelled", "saved"]),
   }),
   /** The agent asks the owner questions (D54); answer with `question_answer` and this id. */
   z.object({ type: z.literal("question_request"), id: z.string(), request: QuestionRequest }),
@@ -362,7 +369,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
     outcome: z.enum(["answered", "skipped", "cancelled"]),
     answers: z.array(QuestionAnswer).optional(),
   }),
-  z.object({ type: z.literal("error"), message: z.string() }),
+  /** `about`: what it refuses, when it answers one thing a tab sent — an ask's id (a plan that
+   * couldn't be saved), or `plan_action` — so only that thing shows it, not every error since. */
+  z.object({ type: z.literal("error"), message: z.string(), about: z.string().optional() }),
   /** Reply to `get_changes` (3v1, not logged): the session's changed files, or why there are none
    * to show (`unavailable`: not a git repository, the snapshot is gone, git failed). A session
    * whose agent hasn't started a turn yet has no changes. `note`: the files are shown, but some

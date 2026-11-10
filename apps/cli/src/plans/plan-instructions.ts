@@ -59,7 +59,7 @@ Who writes what:
 - The Intent is the owner's once a plan is approved: propose a change instead of rewriting it.${
     feature ? "\n- New steps and decisions belong in the feature plan; this session's plan holds how you do your step." : ""
   }
-- When you plan, write the plan in this format. In plan mode, write it only where plan mode itself tells you to, and present it for the owner's approval; don't write the plan files above while planning: Kratos saves the approved plan where it belongs and tells you where.${
+- When you plan, write the plan in this format. In plan mode, present it for the owner's approval; don't write the plan files above while planning: Kratos saves the approved plan where it belongs and tells you where.${
     feature
       ? " If the feature plan hasn't been started, the plan you write is the feature plan; otherwise it is this session's plan."
       : ""

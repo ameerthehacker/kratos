@@ -1,5 +1,5 @@
 import type { AgentEvent, AttachmentRef, PlanOwner, QuestionAnswer, QuestionRequest, ToolAction } from "@kratos/core";
-import { diffLines } from "diff";
+import { countLines } from "@/lib/diff-rows";
 import type { LogMessage } from "@/lib/kratos-store";
 
 /** A small label under a step: a file's folder, "+12 −3", "✓ 18 passed", "Failed"… */
@@ -46,7 +46,8 @@ export type TimelineItem =
   | { type: "steps"; steps: Step[]; by?: "kratos" }
   /** The agent put itself in plan mode (4p6c): its reason when it gave one just before, and the
    * mode it was in (Skip planning goes back to it; null: never said, the agent's default). */
-  | { type: "plan_switch"; id: string; reason?: string; before: string | null }
+  /** `open`: plan mode hasn't ended since (the mode it switched to is still the log's last). */
+  | { type: "plan_switch"; id: string; reason?: string; before: string | null; open: boolean }
   /** Files the last turn changed outside its step's Scope (4p7a). */
   | { type: "scope_drift"; owner: PlanOwner; stepId: string; paths: string[] }
   | { type: "event"; text: string };
@@ -72,11 +73,25 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
   let thoughts = 0; // thinking has no id of its own
   let plans = 0; // nor does a plan update (4p3a)
   let mode: string | null = null; // the session's mode as the log last said (D53)
+  // The latest switch into plan mode, and the mode it went to (the first said after it).
+  let planning: { item: Extract<TimelineItem, { type: "plan_switch" }>; into?: string } | undefined;
   const addStep = (step: Step) => {
     if (!group) items.push({ type: "steps", steps: (group = []) });
     group.push(step);
   };
   const breakGroup = () => void (group = null);
+  // Where each turn's items end (turn n at endsAt[n - 1]), for what's logged about a turn once the
+  // next one may have started (its plan's change, its files outside the step's scope).
+  const endsAt: number[] = [];
+  const afterTurn = (turn: number | undefined, item: TimelineItem) => {
+    const n = turn === undefined ? -1 : turn - 1;
+    const at = endsAt[n];
+    if (at === undefined || at >= items.length) {
+      breakGroup();
+      items.push(item);
+    } else items.splice(at, 0, item); // under its turn; the group being built goes on
+    for (let t = Math.max(n, 0); n >= 0 && t < endsAt.length; t++) endsAt[t]! += 1;
+  };
 
   for (const message of log) {
     if (message.type === "user_prompt") {
@@ -110,6 +125,8 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
           step.chips.push({ text: DENIED, tone: "bad" });
         }
         if (message.outcome === "cancelled") step.chips.push({ text: "Withdrawn", tone: "muted" });
+        // A plan approved to build later (4p6a): saved, and the agent stopped there — not refused.
+        if (message.outcome === "saved") step.chips.push({ text: "Approved, build later", tone: "ok" });
       }
     } else if (message.type === "prompt_queued") {
       queued.set(message.id, message); // waits in the queue (the queue card is 3t3), not in the chat
@@ -154,12 +171,10 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       step.question = { id: message.id, request };
       questions.set(message.id, step);
     } else if (message.type === "scope_drift") {
-      breakGroup();
-      items.push({ type: "scope_drift", owner: message.owner, stepId: message.stepId, paths: message.paths });
+      afterTurn(message.turn, { type: "scope_drift", owner: message.owner, stepId: message.stepId, paths: message.paths });
     } else if (message.type === "plan_updated") {
       // Kratos's, not the agent's: a group of its own, and the agent's next steps start another.
-      breakGroup();
-      items.push({ type: "steps", steps: [planStep(message, plans++)], by: "kratos" });
+      afterTurn(message.turn, { type: "steps", steps: [planStep(message, plans++)], by: "kratos" });
     } else if (message.type === "question_resolved") {
       const step = questions.get(message.id);
       if (step?.question) {
@@ -178,11 +193,16 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
         addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", intent: "Think", doing: "Thinking", chips: [], raw: { call: event.text }, finished: true });
       } else if (event.kind === "permission_mode") {
         mode = event.mode;
+        if (planning?.into === undefined && planning) planning.into = event.mode;
+        else if (planning && event.mode !== planning.into) planning.item.open = false; // plan mode is over
       } else if (event.kind === "tool_call" && event.action?.type === "plan_mode") {
         // Told, not a step (board §1): a line of its own, its reason the reply just before it.
         breakGroup();
         const reason = items.at(-1)?.type === "reply" ? (items.pop() as { text: string }).text : undefined;
-        items.push({ type: "plan_switch", id: event.id, before: mode, ...(reason ? { reason } : {}) });
+        if (planning) planning.item.open = false; // only the latest can still be skipped
+        const item = { type: "plan_switch" as const, id: event.id, before: mode, open: true, ...(reason ? { reason } : {}) };
+        items.push(item);
+        planning = { item };
       } else if (event.kind === "tool_call") {
         const step = describe(event, cwd);
         steps.set(event.id, step);
@@ -191,9 +211,12 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
         const step = steps.get(event.id);
         if (step) addResult(step, event.output, event.isError);
         if (step && event.attachments?.length) step.images = event.attachments;
-      } else if (event.kind === "turn_end" && event.reason !== "completed") {
-        breakGroup();
-        items.push({ type: "event", text: event.reason === "interrupted" ? "Stopped" : `Stopped: ${event.error ?? "agent error"}` });
+      } else if (event.kind === "turn_end") {
+        if (event.reason !== "completed") {
+          breakGroup();
+          items.push({ type: "event", text: event.reason === "interrupted" ? "Stopped" : `Stopped: ${event.error ?? "agent error"}` });
+        }
+        endsAt.push(items.length);
       }
     }
   }
@@ -202,17 +225,16 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
 
 /** A turn's change to a plan (4p3a), as an edit step: its diff like any file's, and what Kratos put
  * back of the agent's edit. */
+/** Each plan update's +/− (log messages are never changed, so they key it). */
+const planCounts = new WeakMap<object, { added: number; removed: number }>();
+
 function planStep(message: Extract<LogMessage, { type: "plan_updated" }>, n: number): Step {
   const which = message.owner.kind === "feature" ? "the plan" : "the session plan";
   const [before, after] = [message.before ?? "", message.after ?? ""];
-  let added = 0;
-  let removed = 0;
-  // Counted as the preview draws it (diff-rows) and the server counts (D65): a missing final
-  // newline isn't a changed line.
-  for (const part of diffLines(before, after, { ignoreNewlineAtEof: true })) {
-    if (part.added) added += part.count ?? 0;
-    if (part.removed) removed += part.count ?? 0;
-  }
+  // Once per message: the whole log is built again with every new message, and these are whole files.
+  let counted = planCounts.get(message);
+  if (!counted) planCounts.set(message, (counted = countLines(before, after)));
+  const { added, removed } = counted;
   const chips: Chip[] = [{ text: `+${added} −${removed}`, tone: "muted" }];
   if (message.undone.length > 0) chips.push({ text: `${message.undone.length} put back`, tone: "wait" });
   if (message.intentChanged) chips.push({ text: "Intent changed", tone: "wait" });

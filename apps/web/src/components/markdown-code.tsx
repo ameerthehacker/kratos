@@ -17,6 +17,8 @@ export default function MarkdownCode(props: {
   keys?: Record<string, () => void>;
   minHeight?: string;
   maxHeight?: string;
+  /** Fills its box (full screen): `height` 100%, the wrapper too. */
+  fill?: boolean;
   autoFocus?: boolean;
 }) {
   // CodeMirror keeps the keymap it was made with: it calls whatever these are now.
@@ -51,6 +53,8 @@ export default function MarkdownCode(props: {
       // CodeMirror sizes itself in CSS lengths, not classes.
       minHeight={props.minHeight}
       maxHeight={props.maxHeight}
+      height={props.fill ? "100%" : undefined}
+      className={props.fill ? "h-full" : undefined}
     />
   );
 }

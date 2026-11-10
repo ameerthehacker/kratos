@@ -305,10 +305,56 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   written, not escaped: picomatch matches a glob that equals the path before reading it as a
   pattern, so `src/[id].tsx` covers itself and the line stays readable. Backticked, or plain to a
   Scope written without backticks; a step without a Scope line gets one before its other fields.
-  The notice's "added" is read from the plan (every path in the step's Scope as written), not
-  remembered by the notice: it holds after a reload, and a Scope edited back makes it offer Add
-  again. A Scope widened by a glob instead still shows Add (adding is harmless); matching with
-  picomatch in the browser too would fix that, for one more dependency there.
+  The notice's "added" is read from the plan, not remembered by the notice: it holds after a
+  reload, and a Scope edited back makes it offer Add again.
+- Review round before v0.15.0 (owner asked for a thorough review of the plans work):
+  - **One scope rule, in core** (`scopeMatcher`, `picomatch/posix`: no Node parts, so the browser
+    bundles it; picomatch moved from cli to core). A plain entry is the path or, as a folder,
+    everything under it (`src/plans/`, `src/plans`), as the format's `path/or/glob` says; globs
+    are globs. The hub's drift check and the notice's "added" share it, so a Scope widened by a
+    glob counts as added. Instead of: the exact-string check the notice had.
+  - **Which step a turn worked on**: the one its session was started on; else the one step the
+    turn itself moved into `[~]` or `[?]` (from what its plan was to what it is, as the turn's end
+    settles it — the agent marks `[~]`, works and marks `[?]` in one turn, so the marks at its end
+    didn't say); else the one `[~]` in the session's own plan. Never a feature-plan `[~]` it didn't
+    move: that may be another session's step (its drift was flagged in the wrong chat, and Add
+    widened the other session's step). The scope check waits for the turn's settle (by session
+    and turn number). Was the owner's open question from 4p7a; this is the suggested answer.
+  - **A message about a turn carries its number** (`turn` on `plan_updated` and `scope_drift`:
+    the turns the log had ended, its own included). Settled after the turn ended, they can land
+    after the next turn's prompt; the chat puts them under their own turn. Instead of: holding the
+    next prompt's log line back (the CLI starts a queued prompt by itself).
+  - **A refusal names what it refuses** (`error.about`: an ask's id, or `plan_action`): the plan
+    card and the drift notice show only their own, not any error since (a replayed one, another
+    tab's). **"Approve, build later" is its own outcome** (`saved`): the agent is denied, so it
+    stops, but the chat says "Approved, build later", not "You denied this".
+  - **Claude Code's plan-mode file is the adapter's to say**: the shared instructions say "present
+    it for approval"; the Claude adapter adds where its plan mode wants the plan written.
+  - **A presented plan reads full screen** (owner): ⤢ on the card opens it in a dialog with the
+    same Read / Edit and answers; Esc closes it (only it, not the agent's Stop).
+  - **Skip planning (4p6c, D53)**: the log now says the session's mode whenever it changes — also
+    with no agent running, and the mode it starts in (the agent only reports its own changes) —
+    so the mode it puts back is the real one. A dangerous one (Bypass) is never put back by itself:
+    only the consent dialog turns it on (D53), so it's Ask then. Shown by the mode's agent-neutral
+    `kind`, not Claude's id, and only while that switch's plan mode lasts.
+  - **New work withdraws an allowed done (D77)**: the agent's done mark waits for its turn to end;
+    a prompt from the owner before then drops it (the agent hears so). One that waits while the
+    queue drains another way (a removed prompt) runs then.
+  - **"Your plans moved" is worded when sent** (the paths then, not when the move happened), and
+    dropped when the agent moved itself (its tool's answer said so). A slash command goes as
+    typed; waiting notes go with the prompt after it.
+  - **Plan files**: `refresh` returns what's on disk (it read again when a watcher read overtook
+    it); a listener that throws is logged, not an unhandled rejection; text after a step's nested
+    list is read (a Not yet or Scope written there was invisible); code blocks aren't read for
+    fields; an answer's list or fence lines are escaped; the last of two Scope lines is the one
+    changed; an answer line with U+2028 no longer throws (it took the server down).
+  - Not done, and why: `plan_updated` keeps both texts (a patch would be smaller; plans are small
+    and the chat diffs them); every plan goes to every tab and stays in its store, and `.kratos/`
+    is read in full at start (fine at today's sizes); the ask buttons and the Read/Edit switch
+    aren't shared with the review page's (looks only). Revisit with step 3y6.
+- Packages (D7), not logged with 4p4c: `@codemirror/language` (HighlightStyle,
+  syntaxHighlighting) and `@lezer/highlight` (its tags), MIT, CodeMirror's own, for the editor's
+  colors from the theme. Both in the lazy editor chunk.
 - Steps start sessions (4p5b): a session remembers the feature-plan step it was started on
   (`sessions.step_id`, taken with its first prompt in that feature, like the feature; cleared when
   it moves). Home's Up next chips and ▶ on a step (plan page, island) both go through Home with

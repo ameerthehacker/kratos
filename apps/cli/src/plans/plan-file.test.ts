@@ -312,3 +312,44 @@ describe("Add to scope (4p7b)", () => {
     expect(applyPlanAction(FEATURE, { kind: "add_scope", stepId: "P9", paths: ["a.ts"] })).toBeUndefined();
   });
 });
+
+describe("review fixes (after 4p7b)", () => {
+  it("an Answer line with U+2028 or a lone CR in it doesn't throw", () => {
+    const plan = "# T\n\n## Open questions\n- [x] Which store?\n  Answer: SQLite (simple)\n";
+    expect(() => parsePlan(plan, "session")).not.toThrow();
+    expect(parsePlan(plan, "session").questions[0]!.answer).toBe("SQLite (simple)");
+    expect(parsePlan(answerQuestion("# T\n\n## Open questions\n- [ ] Q?\n", "Q?", "a\rb")!, "session").questions[0]!.answer).toContain("a");
+  });
+
+  it("a field after a step's nested list is read, so Not yet and Scope written there aren't lost", () => {
+    const plan = "# T\n\n## Steps\n- [?] **P1. X** — goal\n  - sub a\n  - sub b\n\n  Accept: works\n";
+    const sent = sendBack(plan, "P1", "not yet")!;
+    expect(parsePlan(sent, "feature").steps[0]).toMatchObject({ notYet: "not yet", accept: "works" });
+    expect(sendBack(sent, "P1", "again")).toBe(sent.replace("Not yet: not yet", "Not yet: again")); // replaced, not piled up
+    expect(parsePlan(addToScope(plan, "P1", ["a.ts"])!, "feature").steps[0]!.scope).toEqual(["a.ts"]);
+  });
+
+  it("a code block in a step isn't read for fields", () => {
+    const plan = "# T\n\n## Steps\n- [ ] **P1. X**\n  Scope: `src/**`\n\n  ```yaml\n  scope: read write\n  ```\n";
+    expect(parsePlan(plan, "feature").steps[0]!.scope).toEqual(["src/**"]);
+  });
+
+  it("an answer's list or fence lines stay in the answer, and a new answer replaces them all", () => {
+    const answered = answerQuestion(FEATURE, "Should exports respect the user's timezone?", "Both, in order:\n- do X first\n- then Y")!;
+    expect(parsePlan(answered, "feature").questions[0]!.answer).toBe("Both, in order:\n- do X first\n- then Y");
+    const again = answerQuestion(answered, "Should exports respect the user's timezone?", "Only X.")!;
+    expect(again).toBe(answerQuestion(FEATURE, "Should exports respect the user's timezone?", "Only X."));
+    // The agent rewording a line of your answer is put back.
+    const agent = answered.replace("- then Y", "- then Z");
+    expect(reconcileAgentEdit(answered, agent).markdown).toBe(answered);
+  });
+
+  it("Add to scope changes the Scope that's read (the last of two), and keeps a path with a comma whole", () => {
+    const two = "# T\n\n## Steps\n- [ ] **P1. A**\n  Scope: `old.ts`\n  Scope: `src/**`\n";
+    expect(parsePlan(addToScope(two, "P1", ["a.ts"])!, "feature").steps[0]!.scope).toEqual(["src/**", "a.ts"]);
+    const plain = "# T\n\n## Steps\n- [ ] **P1. A**\n  Scope: src/a.ts, src/b.ts\n";
+    const added = addToScope(plain, "P1", ["docs/a,b.md"])!;
+    expect(parsePlan(added, "feature").steps[0]!.scope).toEqual(["src/a.ts", "src/b.ts", "docs/a,b.md"]);
+    expect(addToScope(added, "P1", ["docs/a,b.md"])).toBe(added);
+  });
+});

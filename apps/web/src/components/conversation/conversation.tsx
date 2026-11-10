@@ -24,9 +24,11 @@ type Props = {
   onSkipPlanning?: (before: string | null) => void;
   /** Where Show diff goes (4p7a): this session's review. */
   reviewHref?: string;
+  /** The agent's planning mode by its own name ("Plan first"), for the switch line. */
+  planModeLabel?: string;
 };
 /** What the list's items, header and footer draw with, besides the item itself. */
-type Context = Props & { raw: boolean; onToggleRaw: () => void; lastSwitch?: string };
+type Context = Props & { raw: boolean; onToggleRaw: () => void };
 
 /**
  * A session's conversation, drawn like the owner's chat design (D45): your prompts as bubbles,
@@ -39,12 +41,12 @@ type Context = Props & { raw: boolean; onToggleRaw: () => void; lastSwitch?: str
  */
 export function Conversation(props: Props) {
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
-  const { items, agent, status, queued, onSkipPlanning, reviewHref } = props;
+  const { items, agent, status, queued, onSkipPlanning, reviewHref, planModeLabel } = props;
   // A new object only when something drawn changes: Virtuoso redraws every item on screen when
   // its context changes, and the page re-renders for other reasons (the composer, the queue…).
   const context = useMemo<Context>(
-    () => ({ items, agent, status, queued, onSkipPlanning, reviewHref, raw, onToggleRaw: () => setRaw((r) => !r), lastSwitch: lastSwitchId(items) }),
-    [items, agent, status, queued, onSkipPlanning, reviewHref, raw],
+    () => ({ items, agent, status, queued, onSkipPlanning, reviewHref, planModeLabel, raw, onToggleRaw: () => setRaw((r) => !r) }),
+    [items, agent, status, queued, onSkipPlanning, reviewHref, planModeLabel, raw],
   );
   // Pinned to the newest message until you scroll up, and again once you're back at the bottom
   // (use-stick-to-bottom, D76): it watches the content's size, so a new message, a growing step or
@@ -132,15 +134,6 @@ const COMPONENTS: Components<TimelineItem, Context> = {
   ),
 };
 
-/** The agent's latest switch into plan mode (4p6c): the only one Skip planning can still undo. */
-function lastSwitchId(items: TimelineItem[]): string | undefined {
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]!;
-    if (item.type === "plan_switch") return item.id;
-  }
-  return undefined;
-}
-
 function Item({ item, context }: { item: TimelineItem; context: Context }) {
   switch (item.type) {
     case "prompt":
@@ -155,9 +148,10 @@ function Item({ item, context }: { item: TimelineItem; context: Context }) {
       // Kratos's own steps (a plan it held to who-writes-what, 4p3b) are headed as its, not the agent's.
       return <StepGroup agent={item.by === "kratos" ? "Kratos" : context.agent} steps={item.steps} raw={context.raw} onToggleRaw={context.onToggleRaw} />;
     case "plan_switch": {
-      // Only the latest switch, while the session still plans: an earlier one is over.
-      const skip = item.id === context.lastSwitch && context.onSkipPlanning;
-      return <PlanSwitch item={item} agent={context.agent} onSkip={skip ? () => skip(item.before) : undefined} />;
+      // Only the latest switch, while its plan mode lasts and the session still plans: an earlier
+      // one is over, and plan mode you picked yourself later isn't the agent's to skip.
+      const skip = item.open && context.onSkipPlanning;
+      return <PlanSwitch item={item} agent={context.agent} mode={context.planModeLabel} onSkip={skip ? () => skip(item.before) : undefined} />;
     }
     case "scope_drift":
       return <ScopeDrift item={item} reviewHref={context.reviewHref} />;

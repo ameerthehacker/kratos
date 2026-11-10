@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, Check, CircleAlert, FileCode } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Check, CircleAlert, FileCode } from "lucide-react";
+import { useNavigate, useParams } from "react-router";
 import { HotkeysProvider, useAppHotkeys, useHotkey, type AppHotkeyId } from "@tanstack/react-hotkeys";
 import { useMediaQuery } from "usehooks-ts";
 import type { ChangedFile } from "@kratos/core";
+import { BackLink } from "@/components/back-link";
 import { sessionTitle } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
 import { ChangeBlocks, Counts, SKIPPED } from "@/components/review/counts";
@@ -56,7 +57,7 @@ export function ReviewPage() {
       <div className="flex h-screen gap-2.5 bg-canvas p-2.5 text-body antialiased">
         {/* Only the file list scrolls (owner): the way back, the title and the progress stay put. */}
         <aside aria-label="Changed files" className="hidden w-80 flex-none flex-col gap-1.5 overflow-hidden rounded-3xl bg-background py-3.5 md:flex">
-          <BackLink to={back} className="ml-2.5" />
+          <BackLink to={back} label="Back to the session" shortcut="review.back" className="ml-2.5" />
           <div className="flex flex-none flex-col gap-2.5 px-5 pt-3.5 pb-4.5">
             <h1 className="font-heading text-2xl font-semibold tracking-tight">Review changes</h1>
             {files.length > 0 && (
@@ -86,7 +87,7 @@ export function ReviewPage() {
         <main aria-label="Diff" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-3xl bg-background">
           <header className="flex min-h-16 items-center gap-3 px-6 py-3">
             {/* Without the file list (narrow), the way back is here. Picking files there: 3v3. */}
-            <BackLink to={back} className="-ml-3 md:hidden" />
+            <BackLink to={back} label="Back to the session" shortcut="review.back" className="-ml-3 md:hidden" />
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{session && sessionTitle(session)}</span>
             {wide && (
               <Hint label="Split or unified" id="review.layout">
@@ -130,18 +131,6 @@ function Notice({ icon, children }: { icon?: ReactNode; children: ReactNode }) {
       )}
       <p className="max-w-md text-balance">{children}</p>
     </div>
-  );
-}
-
-function BackLink({ to, className }: { to: string; className?: string }) {
-  return (
-    // Hugs its text (owner: a full-width bar on hover looked heavy).
-    <Link to={to} className={cn("group flex h-9 flex-none items-center gap-2 self-start rounded-lg pr-1.5 pl-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", className)}>
-      <ArrowLeft className="size-4" aria-hidden="true" />
-      Back to the session
-      {/* Its key on hover (the design). */}
-      <Shortcut id="review.back" variant="secondary" className="invisible group-hover:visible group-focus-visible:visible" />
-    </Link>
   );
 }
 

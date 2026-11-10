@@ -1,7 +1,7 @@
 import { Link, Outlet, useMatch, useNavigate } from "react-router";
 import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { KratosLogo } from "@/components/kratos-logo";
-import { PlansIsland, useSessionPlans } from "@/components/plans-island";
+import { PlansIsland, usePlansOffered } from "@/components/plans-island";
 import { ConnectionDot, ProjectMenu } from "@/components/project-menu";
 import { QuickSettings } from "@/components/quick-settings";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
@@ -40,7 +40,7 @@ export function Layout() {
   useHotkey(appHotkeys["session.new"], () => navigate("/"));
   // A session's plans island (4p5a): beside the main island, only where there's a plan to show.
   const sessionId = useMatch("/s/:sessionId")?.params.sessionId;
-  const { offered } = useSessionPlans(sessionId);
+  const offered = usePlansOffered(sessionId);
   useHotkey(appHotkeys["plans.toggle"], () => usePlansPrefs.getState().setOpen(!usePlansPrefs.getState().open), { enabled: offered });
   // Home and a session both have the box (#prompt); "/" while typing stays a "/" (the library).
   useHotkey(appHotkeys["prompt.focus"], () => document.getElementById("prompt")?.focus());

@@ -61,7 +61,15 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
     const existed = known.has(folder);
     if (markdown === undefined) known.delete(folder);
     else known.set(folder, markdown);
-    for (const listener of listeners) listener(folder, markdown, existed);
+    // One listener's failure is its own: the others still hear, and it isn't an unhandled
+    // rejection in a watcher callback (which ends the process).
+    for (const listener of listeners) {
+      try {
+        listener(folder, markdown, existed);
+      } catch (err) {
+        log.warn({ err, folder }, "a plan change couldn't be handled");
+      }
+    }
   };
 
   const folderOf = (path: string) => relative(root, path).split(sep).join("/");
@@ -126,10 +134,17 @@ export function diskPlans(projectDir: string, log: Logger = silentLogger): PlanF
     taken: (folder) => existsSync(join(root, folder)),
     prepare: () => prepare(),
     async refresh(folder) {
-      const n = next(folder); // newer than any watcher read under way
-      const text = await readFile(join(root, folder, PLAN), "utf8").catch(() => undefined);
-      if (latest.get(folder) === n) notify(folder, text);
-      return known.get(folder);
+      // What's on disk now. A read or write that starts meanwhile makes this one old: read again,
+      // rather than give what was known before (a watcher read under way hasn't told it yet).
+      for (let tries = 0; ; tries++) {
+        const n = next(folder); // newer than any watcher read under way
+        const text = await readFile(join(root, folder, PLAN), "utf8").catch(() => undefined);
+        if (latest.get(folder) === n) {
+          notify(folder, text);
+          return text;
+        }
+        if (tries === 3) return text; // a busy file: this read is as new as any
+      }
     },
     async write(folder, markdown) {
       await prepare(folder);

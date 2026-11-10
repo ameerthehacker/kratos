@@ -1947,6 +1947,29 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             · Add to scope"; Add → the plan's line is ``Scope: `src/greet.js`, `README.md` `` and
             the notice "· added to its scope" with a check, the button gone; after a reload the
             same. ~60 lines + ~60 of tests.
+  - [x] **4r. Review before v0.15.0** (owner: "thorough code review, extensive bug hunting, fix
+        all, then release") — of everything since v0.14.0 (4m3–4m5, all of 4p), by eleven review
+        angles; ~35 findings after merging the duplicates, the decisions in D79's review round.
+        Fixed: the server-killing U+2028 answer; the step a turn worked on (its own `[~]`/`[?]`
+        moves, never another session's `[~]` — the 4p7a open question); directory Scopes; notices
+        and plan changes under their own turn; a phantom "Updated the plan" in a queued turn; a
+        stale `refresh`; fields after a nested list; answers with lists; Skip planning's mode (and
+        no Bypass without consent); an allowed done after new work; a stale "plans moved" note;
+        slash commands with notes; a withdrawn call's open ask; refusals shown only where they
+        belong; "build later" shown as denied; Esc in the plan card stopping the agent; Home's
+        step chips across features; note lengths; Add to scope over 100 paths; the plan's code
+        unhighlighted; edit asks folded; turbo dropping `KRATOS_PROJECT`; the playground's first
+        commit under a global signing key; the Claude plan-mode note in shared instructions; a
+        slow regex on approved plans. Cleanups: one step-id rule, one progress rule, one scope
+        rule (core); one back link; the progress list cached; `get_plan` once per connection.
+        Owner, same round: a presented plan reads full screen (⤢).
+        **Proof:** 343 tests (new: scope matcher, the step rule, directory scopes, phantom update,
+        late items' place, plan-file edge cases, a throwing listener, mode logging, done withdrawn,
+        moved note, slash command, withdrawn call); typecheck 7/7, build 5/5. The review agent's
+        refresh race script: on disk "B", `refresh()` now "B" (was "A"). Live, real `claude`
+        (Haiku, plan mode): the card's ⤢ opened the plan full screen, its code highlighted; Esc
+        closed it with the session still "Needs approval"; Esc in the note field left it waiting;
+        "Approve, build later" → the chip "Approved, build later", the ask `saved`.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
       `requestPermission`), using the D24 model: steps carry an estimate (agent must split before
       coding if it exceeds the budget); budget = review load (in-scope insertions, config/lockfiles/

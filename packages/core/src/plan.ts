@@ -10,6 +10,11 @@ import { z } from "zod";
 export const StepMark = z.enum(["todo", "doing", "claimed", "ticked"]);
 export type StepMark = z.infer<typeof StepMark>;
 
+/** A step's id as plans write it (`P3`, `S2`, `P3a` for a split), one rule for the reader and the
+ * protocol: an id the reader takes, a session can be started on. */
+export const STEP_ID = "[A-Za-z]+\\d+[a-z]?";
+export const StepId = z.string().max(64).regex(new RegExp(`^${STEP_ID}$`));
+
 export const PlanStep = z.object({
   /** `P3`, `S2`. A step with an id is yours to tick; one without is the agent's own (D79). */
   id: z.string().optional(),
@@ -82,6 +87,16 @@ export function approvedPlan(where: { inFeature: boolean; featureHasPlan: boolea
   if (!where.inFeature) return { save: "session", or: "feature" };
   if (!where.featureHasPlan) return { save: "feature", or: "session" };
   return { save: "session" };
+}
+
+/** The steps that are yours to tick (D79): the ones with an id. */
+export const ownersSteps = (plan: Pick<Plan, "steps">): PlanStep[] => plan.steps.filter((s) => s.id);
+
+/** A plan's progress (4p5c): of its steps with an id, how many you've ticked. One rule for the
+ * folder's n/m, the island's and the plan page's. */
+export function progressOf(plan: Pick<Plan, "steps">): { ticked: number; total: number } {
+  const steps = ownersSteps(plan);
+  return { ticked: steps.filter((s) => s.mark === "ticked").length, total: steps.length };
 }
 
 export const Plan = z.object({

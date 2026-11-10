@@ -631,7 +631,7 @@ describe("Claude Code adapter: host tools (D77)", () => {
     await session.stop();
     expect(args.slice(args.indexOf("--append-system-prompt"), args.indexOf("--append-system-prompt") + 2)).toEqual([
       "--append-system-prompt",
-      "Plans live in .kratos/.\nWrite them this way.",
+      expect.stringMatching(/^Plans live in \.kratos\/\.\nWrite them this way\.\n\nIn Claude Code's plan mode, write the plan/),
     ]);
     expect((await runTurn("args", async () => ({ decision: "allow" }))).find((e) => e.kind === "tool_result")).not.toMatchObject({
       output: expect.stringContaining("--append-system-prompt"),

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { approvedPlan, type PermissionDecision, type PlanSave } from "@kratos/core";
-import { keepPlanning, PlanReview, type PlanWhere } from "@/components/conversation/plan-review";
+import { keepPlanning, PlanReview, type PlanAnswers, type PlanWhere } from "@/components/conversation/plan-review";
 import { Preview } from "@/components/conversation/preview";
 import { Shortcut } from "@/components/shortcut";
 import { useKratos } from "@/lib/kratos-store";
@@ -23,8 +23,9 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
   const step = props.asks[0];
   const askId = step?.ask?.id;
   // Refused since you answered (a plan it couldn't save, 4p6a): the ask is open again, saying why.
+  // Only a refusal of this ask: any other error (a replayed one, another tab's) isn't its.
   const lastError = useKratos((s) => s.lastError);
-  const refused = sent && sent.askId === askId && lastError && lastError.at > sent.at ? lastError.message : undefined;
+  const refused = sent && sent.askId === askId && lastError?.about === askId && lastError.at > sent.at ? lastError.message : undefined;
   const busy = sent?.askId === askId && !refused;
   const decide = (decision: PermissionDecision, savePlanAs?: PlanSave, planText?: string) => {
     if (!askId) return;
@@ -46,11 +47,17 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
   const edited = isPlan && planDraft !== undefined && planDraft !== (step?.plan ?? "") ? planDraft : undefined;
   // A plan presented without its text (or edited down to nothing): nothing to approve, only Keep planning.
   const emptyPlan = isPlan && !step?.plan?.trim();
-  const noApprove = emptyPlan || (edited !== undefined && !edited.trim());
+  // A plan's answers, built once here: the card's buttons and ⌘↵ / ⌘⌫ send the same ones.
+  const answers: PlanAnswers = {
+    approve: () => decide({ decision: "allow" }, saveAs, edited),
+    buildLater: () => decide({ decision: "deny", message: "build later" }, saveAs, edited),
+    keepPlanning: () => decide(keepPlanning(planNote, emptyPlan, edited)),
+    canApprove: !emptyPlan && !(edited !== undefined && !edited.trim()),
+  };
   const appHotkeys = useAppHotkeys();
   // ⌘↵ in the prompt with text to send is the prompt's "send now": it handles it first.
-  useHotkey(appHotkeys["ask.allow"], () => decide({ decision: "allow" }, isPlan ? saveAs : undefined, edited), {
-    enabled: !!askId && !busy && !noApprove,
+  useHotkey(appHotkeys["ask.allow"], () => (isPlan ? answers.approve() : decide({ decision: "allow" })), {
+    enabled: !!askId && !busy && (!isPlan || answers.canApprove),
     ignoreDefaultPrevented: true,
   });
   // ⌘⌫ while typing deletes the line, as always; we only take it when there's nothing to delete.
@@ -59,7 +66,8 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
     (event) => {
       if (typing(event.target)) return;
       event.preventDefault();
-      decide(isPlan ? keepPlanning(planNote, emptyPlan, edited) : DENY);
+      if (isPlan) answers.keepPlanning();
+      else decide(DENY);
     },
     { enabled: !!askId && !busy, preventDefault: false },
   );
@@ -81,7 +89,7 @@ export function AskDock(props: { asks: Step[]; agent: string; onDecide: Decide; 
         saveAs={saveAs}
         other={other}
         onSwitch={() => setSwitched(switched === askId ? null : (askId ?? null))}
-        decide={decide}
+        answers={answers}
       />
     );
   }

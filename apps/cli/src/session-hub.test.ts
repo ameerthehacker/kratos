@@ -786,7 +786,7 @@ describe("SessionHub: the agent's Kratos tools (4m3, D77)", () => {
   type Result = { text: string; isError?: boolean };
   /** Call one of the tools Kratos gave this agent, as the agent would (its input already checked). */
   const call = (agent: FakeSession, name: string, input: object): Promise<Result> =>
-    agent.options.tools!.find((t) => t.name === name)!.call(input as never, { toolCallId: "call-1", signal: new AbortController().signal });
+    agent.options.tools!.find((t) => t.name === name)!.call(input as never, { toolCallId: "call-1", toolName: `mcp__kratos__${name}`, signal: new AbortController().signal });
   const lastAsk = (t: ReturnType<ReturnType<typeof setup>["tab"]>) =>
     t.seen.findLast((m): m is Extract<ServerMessage, { type: "permission_request" }> => m.type === "permission_request");
 
@@ -914,6 +914,32 @@ describe("SessionHub: the agent's Kratos tools (4m3, D77)", () => {
     await tick();
     expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(true);
     expect(agents[0]!.interrupts).toBe(0);
+  });
+
+  it("an allowed done is off when the owner sends more work before the turn ends; the agent hears so", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "all finished" });
+    const finishing = call(agents[0]!, "mark_session_done", {});
+    await tick();
+    a.receive({ type: "permission_decision", id: lastAsk(a)!.id, decision: { decision: "allow" } });
+    await finishing;
+    a.receive({ type: "prompt", text: "one more thing" }); // queued: new work
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    expect(a.list.find((s) => s.id === a.viewing)?.done).toBe(false);
+    expect(agents[0]!.prompts[1]).toBe("[Kratos] The owner sent more work, so what you marked done isn't, after all.\n\none more thing");
+  });
+
+  it("a call withdrawn before it asks settles at once: no ask left open, nothing changed", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "go" });
+    const withdrawn = new AbortController();
+    withdrawn.abort();
+    const result = await agents[0]!.options.tools!.find((t) => t.name === "mark_session_done")!.call({} as never, { toolCallId: "c", signal: withdrawn.signal });
+    expect(result).toMatchObject({ isError: true });
+    expect(a.list.find((s) => s.id === a.viewing)?.status).toBe("working"); // not "needs approval"
   });
 });
 
@@ -1094,6 +1120,21 @@ describe("SessionHub: permission modes (D53)", () => {
     const late = tab();
     late.receive({ type: "prompt", text: "after restart" });
     expect(agents.at(-1)!.options).toMatchObject({ permissionMode: "default", conversation: { resume: true } });
+  });
+
+  it("the log says the mode a session starts in and every change, also with no agent running (Skip planning reads it)", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    const modes = () => a.seen.flatMap((m) => (m.type === "agent_event" && m.event.kind === "permission_mode" ? [m.event.mode] : []));
+    a.receive({ type: "prompt", text: "first", newSession: true, permissionMode: "acceptEdits" });
+    expect(modes()).toEqual(["acceptEdits"]);
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await agents[0]!.stop(); // its process ends
+    await tick();
+    a.receive({ type: "set_permission_mode", mode: "default" }); // no agent runs: kept, and logged
+    expect(modes()).toEqual(["acceptEdits", "default"]);
+    a.receive({ type: "prompt", text: "second" });
+    expect(modes()).toEqual(["acceptEdits", "default"]); // said already
   });
 
   it("refuses Bypass without explicit consent — live or from Home — and allows it with consent", async () => {
@@ -1840,6 +1881,39 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
     expect(a.seen.filter((m) => m.type === "user_prompt").map((m) => (m as { text: string }).text)).toEqual(["first", "second"]);
   });
 
+  it("moved by the owner, then by its agent's own tool: the owner's note is stale, not sent", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    a.receive({ type: "create_feature", title: "Alpha" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id }); // the owner, mid-turn
+    const filing = agents[0]!.options.tools!.find((t) => t.name === "file_session")!.call({ newFeatureTitle: "Beta" } as never, { toolCallId: "f", signal: new AbortController().signal });
+    await tick();
+    const ask = a.seen.findLast((m) => m.type === "permission_request") as Extract<ServerMessage, { type: "permission_request" }>;
+    a.receive({ type: "permission_decision", id: ask.id, decision: { decision: "allow" } });
+    expect((await filing).text).toContain("Beta".toLowerCase());
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "prompt", text: "second" });
+    expect(agents[0]!.prompts[1]).toBe("second");
+  });
+
+  it("a slash command goes as typed; a waiting note goes with the prompt after it", async () => {
+    const { agents, tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "first" });
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
+    a.receive({ type: "prompt", text: "/compact" });
+    expect(agents[0]!.prompts[1]).toBe("/compact");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await tick();
+    a.receive({ type: "prompt", text: "go on" });
+    expect(agents[0]!.prompts[2]).toMatch(/^\[Kratos\] This session is now part of the feature “Reports”.*\n\ngo on$/s);
+  });
+
   it("the note on a queued prompt the agent never reads waits for the next prompt; sent again with one re-queued", async () => {
     const { agents, tab } = setup();
     const a = tab();
@@ -1902,6 +1976,7 @@ describe("SessionHub: a turn's plan changes, held and in its chat (4p3, D79)", (
         after: "# Session plan\n\n## Steps\n- [?] **S1. One**\n- [x] my own item\n",
         undone: ["S1: only you tick a step; marked [?] for you to check."],
         intentChanged: false,
+        turn: 1,
       },
     ]);
     a.receive({ type: "prompt", text: "next" });
@@ -1973,7 +2048,7 @@ describe("SessionHub: you decide, from the plan page (4p4a, D79)", () => {
 
     a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P9" } });
     await tick();
-    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P9 in this plan" });
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P9 in this plan", about: "plan_action" });
     a.receive({ type: "plan_action", owner: { kind: "session", id: "nope" }, action: { kind: "tick", stepId: "P1" } });
     expect(a.seen.at(-1)).toEqual({ type: "error", message: "No session nope in this project" });
   });
@@ -2076,6 +2151,8 @@ describe("SessionHub: a turn's plans, whatever happens during it (4p3, D79)", ()
     agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     for (let i = 0; i < 4; i++) await tick();
     expect(memory.text(folder)).toContain("- [?] **S1. One**"); // not "you ticked it"
+    // The put-back is turn 1's change only: turn 2, which didn't touch the plan, shows none.
+    expect(a.seen.filter((m) => m.type === "plan_updated").map((m) => m.type === "plan_updated" && m.turn)).toEqual([1]);
   });
 
   it("moved into a feature mid-turn: the feature plan its agent writes is held at the turn's end", async () => {
@@ -2155,9 +2232,9 @@ describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
     if (featureTitle) {
       a.receive({ type: "create_feature", title: featureTitle });
       a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: a.features[0]!.id });
-      if (featurePlan) ctx.plans.edit(`features/${featureTitle.toLowerCase()}`, featurePlan);
     }
-    a.receive({ type: "prompt", text: "plan a sketchpad" });
+    a.receive({ type: "prompt", text: "plan a sketchpad" }); // its agent's instructions name the feature's plan folder
+    if (featureTitle && featurePlan) ctx.plans.edit(`features/${featureTitle.toLowerCase()}`, featurePlan);
     const asked = ctx.agents[0]!.ask(proposal);
     await tick();
     return { ...ctx, a, asked, askId: a.lastAskId() };
@@ -2215,7 +2292,7 @@ describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
     second.a.receive({ type: "permission_decision", id: second.askId, decision: { decision: "allow" }, savePlanAs: "feature" });
     await tick();
     await tick();
-    expect(second.a.seen.at(-1)).toEqual({ type: "error", message: "“Sketch” already has a plan, and plan mode doesn't replace it. Save this one as the session's plan." });
+    expect(second.a.seen.at(-1)).toEqual({ type: "error", message: "“Sketch” already has a plan, and plan mode doesn't replace it. Save this one as the session's plan.", about: second.askId }); // its card shows it
     expect(answered).toBe(false); // the ask stays open: choose again
     expect(second.plans.text("features/sketch")).toBe("# Ours\n");
     second.a.receive({ type: "permission_decision", id: second.askId, decision: { decision: "allow" }, savePlanAs: "session" });
@@ -2251,7 +2328,7 @@ describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
     void asked.decision.then(() => (answered = true));
     a.receive({ type: "permission_decision", id: a.lastAskId(), decision: { decision: "allow" }, savePlanAs: "feature" });
     await tick();
-    expect(a.seen.at(-1)).toEqual({ type: "error", message: "The plan came without its text, so there's nothing to save. Keep planning and ask for the whole plan." });
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "The plan came without its text, so there's nothing to save. Keep planning and ask for the whole plan.", about: a.lastAskId() });
     expect(answered).toBe(false);
     expect(a.features).toEqual([]); // not even the feature it would have gone to
   });
@@ -2335,7 +2412,7 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
   };
   /** A feature "Reports" whose plan has P1 (Scope `src/**`, `README.md`) and P2 (no Scope), and a
    * session started on `step`; its turn edits `edits`. */
-  async function turnOn(step: string | undefined, edits: string[], plan?: string) {
+  async function turnOn(step: string | undefined, edits: string[], plan?: string, agentEdit?: (plan: string) => string) {
     const snapshots = new FakeSnapshots();
     const ctx = setup(snapshots);
     const a = ctx.tab();
@@ -2347,6 +2424,7 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
     a.receive({ type: "prompt", text: "go", newSession: true, featureId: feature, ...(step ? { stepId: step } : {}) });
     await settle(); // its start snapshot
     for (const path of edits) snapshots.edit(path);
+    if (agentEdit) ctx.plans.edit("features/reports", agentEdit(ctx.plans.text("features/reports")!));
     ctx.agents[0]!.emit({ kind: "turn_end", reason: "completed" });
     await settle(); // its end snapshot, then the check
     return { ...ctx, a, feature, snapshots };
@@ -2354,7 +2432,7 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
 
   it("files outside the step's Scope: a notice in the session's log, paths from the project", async () => {
     const { a, feature } = await turnOn("P1", ["src/export.ts", "README.md", "package.json", "apps/web/x.tsx"]);
-    expect(drift(a.seen)).toEqual([{ type: "scope_drift", owner: { kind: "feature", id: feature }, stepId: "P1", paths: ["package.json", "apps/web/x.tsx"] }]);
+    expect(drift(a.seen)).toEqual([{ type: "scope_drift", owner: { kind: "feature", id: feature }, stepId: "P1", paths: ["package.json", "apps/web/x.tsx"], turn: 1 }]);
   });
 
   it("all inside, a step without a Scope, or no step: nothing", async () => {
@@ -2363,10 +2441,20 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
     expect(drift((await turnOn(undefined, ["anything.ts"])).a.seen)).toEqual([]);
   });
 
-  it("no step started on: the one step in hand ([~]) is held to", async () => {
-    const plan = "# Reports\n\n## Steps\n- [~] **P1. Export**\n  Scope: `src/**`\n- [ ] **P2. Docs**\n";
-    const { a } = await turnOn(undefined, ["src/a.ts", "docs/x.md"], plan);
-    expect(drift(a.seen)).toMatchObject([{ stepId: "P1", paths: ["docs/x.md"] }]);
+  it("no step started on: the step the turn moved to [~] or [?] is held to, not a [~] it didn't move", async () => {
+    // It marks P1 [~], works, marks it [?] — all in one turn: the marks at its end don't say.
+    const plan = "# Reports\n\n## Steps\n- [ ] **P1. Export**\n  Scope: `src/**`\n- [ ] **P2. Docs**\n";
+    const moved = await turnOn(undefined, ["src/a.ts", "docs/x.md"], plan, (text) => text.replace("- [ ] **P1.", "- [?] **P1."));
+    expect(drift(moved.a.seen)).toMatchObject([{ stepId: "P1", paths: ["docs/x.md"] }]);
+    // P1 [~] already: another session's step, maybe; this turn didn't take it.
+    const theirs = await turnOn(undefined, ["docs/x.md"], plan.replace("- [ ] **P1.", "- [~] **P1."));
+    expect(drift(theirs.a.seen)).toEqual([]);
+  });
+
+  it("a folder or a plain path in Scope covers the files under it (the format's path/or/glob)", async () => {
+    const plan = "# Reports\n\n## Steps\n- [ ] **P1. Export**\n  Scope: `src/export/`, `docs`\n";
+    const { a } = await turnOn("P1", ["src/export/a.ts", "docs/deep/x.md", "src/other.ts"], plan);
+    expect(drift(a.seen)).toMatchObject([{ stepId: "P1", paths: ["src/other.ts"] }]);
   });
 
   it("a queued turn's span is from the last turn's end: only its own files count", async () => {
@@ -2412,6 +2500,6 @@ describe("SessionHub: scope drift (4p7a, D79)", () => {
     expect(drift(a.seen)).toHaveLength(1); // the first turn's only
     a.receive({ type: "plan_action", owner, action: { kind: "add_scope", stepId: "P7", paths: ["a.ts"] } });
     await tick();
-    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P7 in this plan" });
+    expect(a.seen.at(-1)).toEqual({ type: "error", message: "No step P7 in this plan", about: "plan_action" });
   });
 });

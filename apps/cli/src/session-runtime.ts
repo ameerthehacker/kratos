@@ -19,16 +19,22 @@ import type { Logger } from "./logger.js";
 import { kratosTools, type SessionFeatureOps } from "./kratos-tools.js";
 import type { SessionStore } from "./store/store.js";
 
-type Outcome = "allowed" | "denied" | "cancelled";
+type Outcome = "allowed" | "denied" | "cancelled" | "saved";
 
-/** What Kratos tells the agent with a prompt (4p2, 4p3a): its plans moved, what it put back. */
-type Notes = { moved?: string; agent: string[] };
+/** What Kratos tells the agent with a prompt (4p2, 4p3a): its plans moved (worded when it's sent,
+ * so it names where they are then), what it put back. */
+type Notes = { moved?: () => string; agent: string[] };
+const NO_NOTES: Notes = { agent: [] };
 
 /** The prompt as the agent gets it: the notes first, when there are any. */
 const withNotes = (text: string, { moved, agent }: Notes): string => {
-  const notes = [moved, ...agent].filter(Boolean);
+  const notes = [moved?.(), ...agent].filter(Boolean);
   return notes.length > 0 ? `${notes.join("\n")}\n\n${text}` : text;
 };
+
+/** A slash command (`/compact`) is the agent's own: notes in front would make it plain text, so
+ * they wait for the next prompt. */
+const isCommand = (text: string) => text.trimStart().startsWith("/");
 
 /**
  * The agent's turn (D68): idle, or running with the steps (tool calls) it has run so far. Step
@@ -92,7 +98,7 @@ export class SessionRuntime {
   private readonly logger: Logger;
   /** Said to the running agent with the next prompt: its plans moved under it (4p2). A fresh start
    * drops it (its instructions are current). */
-  private plansNote: string | undefined;
+  private plansNote: (() => string) | undefined;
   /** Said to the agent with the next prompt, whenever that is (4p3a: what was put back). */
   private agentNotes: string[] = [];
 
@@ -112,11 +118,14 @@ export class SessionRuntime {
       features?: SessionFeatureOps;
       /** Kratos's standing instructions for the agent (4p2: its plans), as they are when it starts. */
       instructions?: () => string | undefined;
-      /** A turn starts or ends (4p3a: what its plans were, and what it changed). */
-      onTurn?: (edge: "start" | "end") => void;
+      /** A turn starts or ends (4p3a: what its plans were, and what it changed). `turn`, at its
+       * end: its number, the turns the log has ended (what's logged about it later says so);
+       * none for a turn whose agent died before ending it. */
+      onTurn?: (edge: "start" | "end", turn?: number) => void;
       /** A turn's end snapshot is stored (4p7a): what it changed can be read now. `logSeq` is its
-       * place in the log, which tells which snapshot came before it (two can be taken at once). */
-      onTurnSnapshot?: (end: { tree: string; logSeq: number }) => void;
+       * place in the log, which tells which snapshot came before it (two can be taken at once);
+       * `turn` its number, as `onTurn` gave it. */
+      onTurnSnapshot?: (end: { tree: string; logSeq: number; turn: number }) => void;
     },
   ) {
     this.logger = deps.log.child({ component: "session", session: id });
@@ -182,9 +191,11 @@ export class SessionRuntime {
     this.deps.store.setTitle(this.id, text); // the first prompt, until the agent names it (3z4)
     const refs = this.storeFiles(files);
     const attachments = refs.length > 0 ? { attachments: refs } : {};
+    // New work: a done the agent was allowed, still waiting for its turn to end, is off (4m3).
+    this.withdrawDone();
     if (this.session && this.turn.state === "running") {
       const id = randomUUID();
-      const notes = this.takeNotes();
+      const notes = isCommand(text) ? NO_NOTES : this.takeNotes();
       this.queue.set(id, { text, files, agentId: id, notes });
       this.publish({ type: "prompt_queued", id, text, ...attachments });
       this.logger.info({ prompt: id, queued: this.queue.size }, "prompt queued");
@@ -197,12 +208,13 @@ export class SessionRuntime {
       return;
     }
     this.publish({ type: "user_prompt", text, ...attachments });
+    this.logMode(); // the mode it starts in, if the log doesn't say it yet
     this.turn = { state: "running", startedBy: "prompt" };
     this.deps.onTurn?.("start");
     this.startSnapshot();
     // Start the agent on the first prompt, and again (resuming) after it has ended.
     const session = (this.session ??= this.start());
-    const forAgent = withNotes(text, this.takeNotes()); // after start: a fresh start already knows
+    const forAgent = withNotes(text, isCommand(text) ? NO_NOTES : this.takeNotes()); // after start: a fresh start already knows
     this.toAgent(() => session.send(forAgent, files));
     this.deps.onChange();
     if (first) void this.name(text);
@@ -224,6 +236,14 @@ export class SessionRuntime {
 
   private runAfterTurn(): void {
     for (const change of this.afterTurn.splice(0)) change();
+  }
+
+  /** The owner gave it more work: what was waiting to mark it done is dropped, and the agent hears so. */
+  private withdrawDone(): void {
+    if (this.afterTurn.length === 0) return;
+    this.afterTurn = [];
+    this.tellAgentNext("[Kratos] The owner sent more work, so what you marked done isn't, after all.");
+    this.logger.info("a waiting done mark withdrawn: new work");
   }
 
   /** Name the session again, from the conversation so far (3z4: the owner's Regenerate). */
@@ -355,7 +375,23 @@ export class SessionRuntime {
     if (mode === this.mode) return;
     this.mode = mode;
     this.deps.store.setPermissionMode(this.id, mode);
+    this.logMode();
     this.deps.onChange();
+  }
+
+  /** The log says the session's mode whenever it changes — also when no agent runs (the agent only
+   * reports its own changes), and the one a session starts in — so the chat knows the mode a
+   * plan switch came from (Skip planning puts it back, 4p6c). */
+  private logMode(): void {
+    if (this.mode === null || this.mode === this.loggedMode()) return;
+    this.publish({ type: "agent_event", event: { kind: "permission_mode", mode: this.mode } }, { activity: false });
+  }
+  private loggedMode(): string | null {
+    for (let i = this.log.length - 1; i >= 0; i--) {
+      const m = this.log[i]!;
+      if (m.type === "agent_event" && m.event.kind === "permission_mode") return m.event.mode;
+    }
+    return null;
   }
 
   private keepEffort(effort: string): void {
@@ -386,8 +422,8 @@ export class SessionRuntime {
   }
 
   /** Answer one of this session's asks. Returns false if the ask isn't (or no longer) ours. */
-  decide(askId: string, decision: PermissionDecision): boolean {
-    return this.settle(askId, decision.decision === "allow" ? "allowed" : "denied", decision);
+  decide(askId: string, decision: PermissionDecision, outcome?: "saved"): boolean {
+    return this.settle(askId, outcome ?? (decision.decision === "allow" ? "allowed" : "denied"), decision);
   }
 
   /** Is this one of this session's open questions? */
@@ -421,7 +457,7 @@ export class SessionRuntime {
   /** The session moved into or out of a feature (4p2). A running agent's standing instructions
    * still name the old plans, so its next prompt says where they are now; one that starts later
    * gets the new instructions anyway. */
-  plansMoved(note: string): void {
+  plansMoved(note: (() => string) | undefined): void {
     this.plansNote = this.session ? note : undefined;
   }
 
@@ -432,6 +468,27 @@ export class SessionRuntime {
   }
 
   /** Put a message in this session's log (Kratos's own news about it, like a plan it changed). */
+  /** The plan a call proposed (4p6a), as its tool call carried it: the CLI may attach it to the
+   * call, the ask, or both, and the card shows whichever has it. */
+  planOfCall(toolCallId: string | undefined): string | undefined {
+    if (!toolCallId) return undefined;
+    for (let i = this.log.length - 1; i >= 0; i--) {
+      const m = this.log[i]!;
+      if (m.type === "agent_event" && m.event.kind === "tool_call" && m.event.id === toolCallId) return m.event.action?.type === "plan" ? m.event.action.plan : undefined;
+    }
+    return undefined;
+  }
+
+  /** How many turns the log had ended by `seq` (all of it by default): a turn's number, at its end. */
+  turnsEnded(seq = this.log.length): number {
+    let ended = 0;
+    for (let i = 0; i < seq; i++) {
+      const m = this.log[i]!;
+      if (m.type === "agent_event" && m.event.kind === "turn_end") ended++;
+    }
+    return ended;
+  }
+
   addToLog(message: ServerMessage): void {
     this.publish(message);
   }
@@ -506,7 +563,7 @@ export class SessionRuntime {
           this.logger.debug({ event }, "turn ended");
           this.turn = { state: "idle" };
           void this.takeSnapshot("turn_end");
-          this.deps.onTurn?.("end");
+          this.deps.onTurn?.("end", this.turnsEnded());
           if (this.queue.size === 0) this.runAfterTurn();
           this.deps.onChange();
         }
@@ -521,7 +578,7 @@ export class SessionRuntime {
       this.runAfterTurn(); // nothing runs here any more
       if (this.turn.state === "running") {
         this.turn = { state: "idle" };
-        this.deps.onTurn?.("end");
+        this.deps.onTurn?.("end"); // it ended with no turn_end in the log: no number of its own
         this.deps.onChange();
       }
     }
@@ -568,6 +625,7 @@ export class SessionRuntime {
       this.giveBack(queued.notes);
       this.publish({ type: "prompt_removed", id, reason: stopped ? "stopped" : "removed" });
       this.logger.info({ prompt: id, stopped }, "queued prompt removed");
+      if (this.turn.state === "idle" && this.queue.size === 0) this.runAfterTurn(); // nothing left to wait for
     }
     this.returnStopped();
     this.requeueHeld();
@@ -642,7 +700,7 @@ export class SessionRuntime {
       if (tree === null) return; // not a git repository
       this.deps.store.addSnapshot(this.id, kind, tree, logSeq);
       this.logger.debug({ kind, tree, ms: Date.now() - started }, "snapshot taken");
-      if (kind === "turn_end") this.deps.onTurnSnapshot?.({ tree, logSeq });
+      if (kind === "turn_end") this.deps.onTurnSnapshot?.({ tree, logSeq, turn: this.turnsEnded(logSeq) });
     } catch (err) {
       this.logger.warn({ err, kind }, "snapshot failed");
     }
@@ -678,11 +736,10 @@ export class SessionRuntime {
     this.logger.debug({ ask: askId, tool: request.tool }, "permission asked");
     this.publish({ type: "permission_request", id: askId, request });
     this.deps.onChange();
-    signal.addEventListener(
-      "abort",
-      () => this.settle(askId, "cancelled", { decision: "deny", message: "The agent withdrew this request" }),
-      { once: true },
-    );
+    const withdrawn = () => this.settle(askId, "cancelled", { decision: "deny", message: "The agent withdrew this request" });
+    // Withdrawn before it was asked (a host tool's call cancelled before it ran): settled at once.
+    if (signal.aborted) withdrawn();
+    else signal.addEventListener("abort", withdrawn, { once: true });
     return decision;
   }
 
@@ -694,7 +751,9 @@ export class SessionRuntime {
     this.logger.debug({ question: questionId, count: request.questions.length }, "questions asked");
     this.publish({ type: "question_request", id: questionId, request });
     this.deps.onChange();
-    signal.addEventListener("abort", () => this.settleQuestion(questionId, "cancelled", { outcome: "skipped" }), { once: true });
+    const withdrawn = () => this.settleQuestion(questionId, "cancelled", { outcome: "skipped" });
+    if (signal.aborted) withdrawn();
+    else signal.addEventListener("abort", withdrawn, { once: true });
     return reply;
   }
 

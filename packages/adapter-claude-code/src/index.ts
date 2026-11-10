@@ -28,6 +28,12 @@ import {
 } from "./protocol.js";
 
 /** Drives the owner's installed `claude` CLI in its stream-json RPC mode (D20, D23). */
+/** Claude Code's plan mode names a plan file of its own and hands what's in it to the approval ask
+ * (4p6a, D79): told to write no plan file, it presented an empty plan; told nothing, it wrote a
+ * second copy where Kratos keeps plans. So: the plan goes there, in Kratos's format. */
+const PLAN_MODE_NOTE =
+  "In Claude Code's plan mode, write the plan (in the plan format above) to the plan file plan mode names: that file is how it reaches the owner for approval. Not to Kratos's plan files.";
+
 export function createClaudeCodeAdapter(options: { claudePath?: string } = {}): AgentAdapter {
   const claudePath = options.claudePath ?? which.sync("claude", { nothrow: true });
   if (!claudePath) {
@@ -179,8 +185,9 @@ function startSession(
     "--allow-dangerously-skip-permissions",
     // Kratos's own tools, as an in-process MCP server (D77).
     ...(tools.length > 0 ? ["--mcp-config", hostServerConfig()] : []),
-    // Kratos's standing instructions (4p2), after Claude Code's own system prompt.
-    ...(instructions ? ["--append-system-prompt", instructions] : []),
+    // Kratos's standing instructions (4p2), after Claude Code's own system prompt, with what's
+    // Claude Code's own about planning.
+    ...(instructions ? ["--append-system-prompt", `${instructions}\n\n${PLAN_MODE_NOTE}`] : []),
   ];
   const proc = new JsonLinesProcess(claudePath, args, { cwd, env: cliEnv() });
   let currentModel = model ?? CLAUDE_DEFAULT_MODEL; // for checking effort levels against
@@ -428,5 +435,5 @@ function approvedInput(tool: string, input: Record<string, unknown>, plan: strin
   if (tool !== "ExitPlanMode") return input;
   const text = plan ?? (typeof input.plan === "string" ? input.plan : undefined);
   if (text === undefined) return input;
-  return { ...input, plan: message ? `${text.replace(/\s+$/, "")}\n\n---\n${message}` : text };
+  return { ...input, plan: message ? `${text.trimEnd()}\n\n---\n${message}` : text };
 }

@@ -100,3 +100,17 @@ describe("diskPlans (4p1a, D79)", () => {
     ]);
   });
 });
+
+describe("diskPlans: review fixes (after 4p7b)", () => {
+  it("a listener that throws doesn't stop the others hearing, nor end the process", async () => {
+    const { plans, changes } = project();
+    plans.onChange(() => {
+      throw new Error("boom");
+    });
+    const after: string[] = [];
+    plans.onChange((folder) => after.push(folder));
+    await plans.write("sessions/s1", "# A\n");
+    expect(changes).toEqual([["sessions/s1", "# A\n"]]);
+    expect(after).toEqual(["sessions/s1"]);
+  });
+});

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ListTodo, Map as MapIcon, Maximize2, X } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import type { FeatureSummary, Plan, PlanStep, SessionSummary } from "@kratos/core";
+import { ownersSteps, progressOf, type FeatureSummary, type Plan, type PlanStep, type SessionSummary } from "@kratos/core";
 import { StepRow, startOnStep, type Act } from "@/components/plan-parts";
 import { sessionTitle } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
@@ -18,6 +18,16 @@ export function useSessionPlans(sessionId: string | undefined) {
   const featurePlan = usePlan("feature", feature?.hasPlan ? feature.id : undefined)?.plan ?? undefined;
   const sessionPlan = usePlan("session", session?.hasPlan ? session.id : undefined)?.plan ?? undefined;
   return { session, feature, featurePlan, sessionPlan, offered: Boolean(featurePlan || sessionPlan) };
+}
+
+/** Whether a session has a plan to show (its own, or its feature's): from the lists' flags, so the
+ * toggle and ⌥⌘B don't load the plans themselves. */
+export function usePlansOffered(sessionId: string | undefined): boolean {
+  return useKratos((s) => {
+    const session = s.sessions.find((x) => x.id === sessionId);
+    if (!session) return false;
+    return session.hasPlan || (session.featureId !== null && s.features.some((f) => f.id === session.featureId && f.hasPlan));
+  });
 }
 
 /**
@@ -77,8 +87,8 @@ export function PlansIsland({ sessionId }: { sessionId: string }) {
  * session on it). */
 function FeaturePart({ feature, plan, stepId, from, act }: { feature: FeatureSummary; plan: Plan; stepId: string | null; from: PlanFrom; act: Act }) {
   const navigate = useNavigate();
-  const steps = plan.steps.filter((s) => s.id); // yours to tick
-  const ticked = steps.filter((s) => s.mark === "ticked").length;
+  const steps = ownersSteps(plan);
+  const { ticked } = progressOf(plan);
   const mine = stepId ? steps.find((s) => s.id === stepId && s.mark !== "ticked") : undefined; // a ticked one is done, not now
   const now = [...(mine ? [mine] : []), ...steps.filter((s) => s !== mine && (s.mark === "claimed" || s.mark === "doing"))];
   const next = steps.find((s) => s.mark === "todo");
@@ -129,7 +139,7 @@ function SessionPart({ session, plan, from, act }: { session: SessionSummary; pl
       {plan.steps.length === 0 ? (
         <p className="text-xs text-muted-foreground">No steps yet.</p>
       ) : (
-        plan.steps.map((step, i) => <StepRow key={step.id ?? i} step={step} act={act} compact />)
+        plan.steps.map((step, i) => <StepRow key={`${i}:${step.id}`} step={step} act={act} compact />) // ids may repeat
       )}
     </section>
   );

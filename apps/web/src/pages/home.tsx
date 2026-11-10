@@ -38,12 +38,14 @@ export function HomePage() {
   const step = featureId && stepParam ? featurePlan?.steps.find((s) => s.id === stepParam && startable(s)) : undefined;
   // Picking another step replaces the last one's prompt, if it's still there untouched.
   const [insert, setInsert] = useState<{ text: string; key: number; replaces?: string }>();
+  // Which step it filled the prompt for, by feature too: every plan has a P1.
   const filledFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!step?.id || filledFor.current === step.id) return;
-    filledFor.current = step.id;
+    const which = step?.id && `${featureId}:${step.id}`;
+    if (!which || filledFor.current === which) return;
+    filledFor.current = which;
     setInsert((current) => ({ text: `Work on ${step.id} of the plan: ${step.title}.`, key: (current?.key ?? 0) + 1, replaces: current?.text }));
-  }, [step?.id, step?.title]);
+  }, [featureId, step?.id, step?.title]);
   const { choice: remembered, setChoice } = useHomeChoice();
   const choice = currentChoice(remembered, harnesses);
   const harness = harnesses.find((h) => h.id === choice?.harness);

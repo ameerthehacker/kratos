@@ -11,7 +11,8 @@
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["KRATOS_PROJECT", "KRATOS_DB"]
     }
   }
 }

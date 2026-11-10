@@ -1,6 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Heading, ListItem, RootContent } from "mdast";
-import type { DecisionStatus, Plan, PlanAction, PlanDecision, PlanKind, PlanQuestion, PlanStep, StepMark } from "@kratos/core";
+import { STEP_ID, type DecisionStatus, type Plan, type PlanAction, type PlanDecision, type PlanKind, type PlanQuestion, type PlanStep, type StepMark } from "@kratos/core";
 
 /**
  * Plan files (D79): read them, change one thing in them, and hold an agent's edit to who-writes-
@@ -39,9 +39,13 @@ interface Located {
 /** A list item's bullet and optional `[c]` box. The box isn't Markdown we parse (`[~]`, `[?]`). */
 const BULLET = /^([-*+]|\d+[.)])([ \t]+)(?:\[([ xX~?])\][ \t]+)?/;
 /** `**P3. Title** rest` and `**Title** rest`. */
-const ID_HEAD = /^\*\*([A-Za-z]+\d+[a-z]?)\.\s*(.+?)\*\*\s*(.*)$/;
+const ID_HEAD = new RegExp(`^\\*\\*(${STEP_ID})\\.\\s*(.+?)\\*\\*\\s*(.*)$`);
 const PLAIN_HEAD = /^\*\*(.+?)\*\*\s*(.*)$/;
-const FIELD = /^(Scope|Accept|Proof|Answer|Not yet):\s*(.*)$/i;
+// `[\s\S]`, not `.`: a line may hold U+2028 or a lone CR, which `.` stops at (and `exec` fails on).
+const FIELD = /^(Scope|Accept|Proof|Answer|Not yet):\s*([\s\S]*)$/i;
+/** An answer's later line that Markdown would read as a list or a code fence (and the reader skip):
+ * written with a backslash before it, read without. */
+const BLOCK_START = /^(?:[-*+]|\d+[.)]|`{3}|~{3})/;
 const STATUS = /^\((proposed|accepted)\)\s*/i;
 /** The dash or colon between a title and its text. */
 const LEAD = /^(?:[—–:]|-(?!\S))\s*/;
@@ -124,9 +128,14 @@ export function addToScope(markdown: string, id: string, paths: string[]): strin
   if (found.scope) {
     const was = markdown.slice(found.scope.start, found.scope.end);
     // An empty `Scope:` gets them; a list gets them after its last.
+    // A Scope without backticks is split on commas: a path with one is written backticked, the
+    // others with it (backticks there mean only backticked parts are read).
+    const plain = !was.includes("`") && !more.some((path) => path.includes(","));
     const edit = !was.trim()
       ? { ...found.scope, text: ` ${ticked(more)}` }
-      : { start: found.scope.end, end: found.scope.end, text: `, ${was.includes("`") ? ticked(more) : more.join(", ")}` };
+      : plain || was.includes("`")
+        ? { start: found.scope.end, end: found.scope.end, text: `, ${plain ? more.join(", ") : ticked(more)}` }
+        : { ...found.scope, text: ` ${ticked([...found.step.scope, ...more])}` };
     return splice(markdown, [edit]);
   }
   const line = `Scope: ${ticked(more)}`;
@@ -150,6 +159,11 @@ export function applyPlanAction(markdown: string, action: PlanAction): string | 
     case "add_scope":
       return addToScope(markdown, action.stepId, action.paths);
   }
+}
+
+/** Whether two texts of a plan differ in their Intent (or Approach), as read: the chat says so. */
+export function intentDiffers(before: string, after: string): boolean {
+  return squash(parsePlan(before, "session").intent) !== squash(parsePlan(after, "session").intent);
 }
 
 export interface Reconciled {
@@ -284,7 +298,6 @@ interface Body {
 
 function body(md: string, item: ListItem): Body {
   const from = start(item);
-  const nested = item.children.find((c) => c.type === "list");
   const content = item.children.filter((c) => c.type !== "list");
   const to = content.length ? end(content[content.length - 1]!) : from;
   const head = BULLET.exec(md.slice(from, to));
@@ -292,12 +305,16 @@ function body(md: string, item: ListItem): Body {
   // The box character, or where a box would go when the item has none.
   const boxAt = head?.[3] !== undefined ? from + head[0].indexOf("[") + 1 : bulletEnd;
   const mark = head?.[3] !== undefined ? { start: boxAt, end: boxAt + 1 } : { start: bulletEnd, end: bulletEnd };
+  // Its own text: not its nested lists (other items), wherever they are, nor its code blocks (a
+  // `scope:` line in a snippet isn't a field). A field written after a nested list is read too.
   const lines: Body["lines"] = [];
-  let at = bulletEnd;
-  for (const raw of md.slice(bulletEnd, nested ? Math.min(to, start(nested)) : to).split("\n")) {
-    const lead = raw.length - raw.trimStart().length;
-    if (raw.trim()) lines.push({ text: raw.trim(), at: at + lead });
-    at += raw.length + 1;
+  for (const child of content.filter((c) => c.type !== "code")) {
+    let at = Math.max(bulletEnd, start(child));
+    for (const raw of md.slice(at, end(child)).split("\n")) {
+      const lead = raw.length - raw.trimStart().length;
+      if (raw.trim()) lines.push({ text: raw.trim(), at: at + lead });
+      at += raw.length + 1;
+    }
   }
   const column = (item.position?.start.column ?? 1) - 1;
   // The item's content column (CommonMark): the bullet plus its 1–4 spaces (5+ means 1 and code).
@@ -335,7 +352,9 @@ function readStep(md: string, item: ListItem, found: Located) {
 /** A field: from right after its colon to the end of its last line (it runs until the next
  * field, as `gather` reads it). */
 function fieldSpan(lines: Body["lines"], name: RegExp): Span | undefined {
-  const at = lines.findIndex((l) => name.test(l.text));
+  // The last one: with two, the reader keeps the last (`gather`), so that's the one to change.
+  let at = -1;
+  lines.forEach((l, i) => name.test(l.text) && (at = i));
   if (at < 0) return undefined;
   const line = lines[at]!;
   const fieldAfter = lines.slice(at + 1).findIndex((l) => FIELD.test(l.text));
@@ -375,7 +394,7 @@ function readQuestion(md: string, item: ListItem, found: Located) {
   let answer: Span | undefined;
   if (at >= 0) {
     const [line, ...more] = rest.slice(at);
-    question.answer = [FIELD.exec(line!.text)![2]!, ...more.map((l) => l.text)].filter(Boolean).join("\n");
+    question.answer = [FIELD.exec(line!.text)?.[2] ?? "", ...more.map((l) => l.text.replace(/^\\(?=[-*+]|\d+[.)]|`{3}|~{3})/, ""))].filter(Boolean).join("\n");
     const last = more.length ? more[more.length - 1]! : line!;
     // From right after `Answer:` to the end of its last line; a new answer is written as ` text`.
     answer = { start: line!.at + line!.text.indexOf(":") + 1, end: last.at + last.text.length };
@@ -428,7 +447,11 @@ function boxSplice(at: Span, mark: StepMark): Edit {
 
 /** Writes a question's answer, its later lines indented under the item; adds `Answer:` if missing. */
 function answerSplice(q: Located["questions"][number], answer: string): Edit {
-  const text = answer.trim().split("\n").join(`\n${q.indent}`);
+  const text = answer
+    .trim()
+    .split("\n")
+    .map((line, i) => (i > 0 && BLOCK_START.test(line.trimStart()) ? `\\${line.trimStart()}` : line))
+    .join(`\n${q.indent}`);
   return q.answer ? { ...q.answer, text: ` ${text}` } : { start: q.end, end: q.end, text: `\n${q.indent}Answer: ${text}` };
 }
 

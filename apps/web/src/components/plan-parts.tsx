@@ -85,6 +85,7 @@ export function StepRow({ step, act, compact, onStart }: { step: PlanStep; act: 
             <NoteField
               placeholder="What's missing? The agent reads it in the plan"
               submit="Send back"
+              max={NOTE_MAX}
               onDone={(note) => {
                 setSendingBack(false);
                 if (note) act({ kind: "not_yet", stepId: id, note });
@@ -105,11 +106,15 @@ export function StepRow({ step, act, compact, onStart }: { step: PlanStep; act: 
   );
 }
 
+/** The longest note and answer a plan action takes (core's PlanAction). */
+export const NOTE_MAX = 500;
+export const ANSWER_MAX = 2000;
+
 export const Actions = ({ children }: { children: ReactNode }) => <div className="flex items-center gap-1.5 pt-1">{children}</div>;
 
 /** A note in place (4p4a): Enter sends it (`optional`: also empty), Esc drops it — not also the
  * page's Esc (back). */
-export function NoteField(props: { placeholder: string; submit: string; initial?: string; optional?: boolean; onDone: (note: string | null) => void }) {
+export function NoteField(props: { placeholder: string; submit: string; initial?: string; optional?: boolean; max: number; onDone: (note: string | null) => void }) {
   const [note, setNote] = useState(props.initial ?? "");
   return (
     <form
@@ -123,6 +128,7 @@ export function NoteField(props: { placeholder: string; submit: string; initial?
         autoFocus
         value={note}
         onChange={(e) => setNote(e.target.value)}
+        maxLength={props.max} // the plan action's own limit (core): longer would be refused, and lost
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
           e.preventDefault(); // the page's Esc skips a handled one

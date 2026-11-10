@@ -33,7 +33,7 @@ type KratosState = {
   returned?: string;
   /** The server's last refusal to this tab, and when (4p6a: an answer to an ask it couldn't take
    * — the ask stays open and says why). */
-  lastError?: { message: string; at: number };
+  lastError?: { message: string; at: number; about?: string };
   /** Kratos's own update status (3u5); shown by the UI in 3u5d. */
   update?: UpdateStatus;
   /** The owner's settings (3w), as Kratos keeps them; until the server says, none. */
@@ -124,7 +124,7 @@ export const useKratos = create<KratosState>((set, get) => ({
         return set((state) => ({ viewed: { ...state.viewed, [message.sessionId]: message.files } }));
       case "error":
         clientLog("warn", `server error: ${message.message}`);
-        return set({ lastError: { message: message.message, at: performance.now() } });
+        return set({ lastError: { message: message.message, at: performance.now(), ...(message.about ? { about: message.about } : {}) } });
       default:
         if (!get().ready) return void replay.push(message); // part of a replay: in at `session_ready`
         return set((state) => ({ log: [...state.log, message] }));

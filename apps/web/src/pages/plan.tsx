@@ -1,15 +1,16 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { ArrowLeft, Check, CircleAlert, ListTodo, Map as MapIcon, MessageSquare, Package, Pencil } from "lucide-react";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { Check, CircleAlert, ListTodo, Map as MapIcon, MessageSquare, Package, Pencil } from "lucide-react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotkeys";
 import { Streamdown } from "streamdown";
-import type { FeatureSummary, Plan, PlanDecision, PlanKind, PlanQuestion } from "@kratos/core";
+import { progressOf, type FeatureSummary, type Plan, type PlanDecision, type PlanKind, type PlanQuestion } from "@kratos/core";
+import { BackLink } from "@/components/back-link";
 import { FeatureDoneButton } from "@/components/feature-done-button";
-import { Actions, Field, MarkDot, NoteField, StepRow, startOnStep, startable, type Act } from "@/components/plan-parts";
+import { ANSWER_MAX, Actions, Field, MarkDot, NOTE_MAX, NoteField, StepRow, startOnStep, startable, type Act } from "@/components/plan-parts";
 import { sessionTitle } from "@/components/session-status";
-import { Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
 import { usePlan } from "@/hooks/use-plan";
+import { codePlugin } from "@/lib/appearance";
 import { useKratos } from "@/lib/kratos-store";
 import { SCOPES } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -55,11 +56,7 @@ function PlanView({ kind, id }: { kind: PlanKind; id: string | undefined }) {
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 pb-12">
           <div className="flex items-center gap-2">
-            <Link to={back} className="group flex h-9 items-center gap-2 rounded-lg pr-1.5 pl-2.5 -ml-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              {backLabel}
-              <Shortcut id="plan.back" variant="secondary" className="invisible group-hover:visible group-focus-visible:visible" />
-            </Link>
+            <BackLink to={back} label={backLabel} shortcut="plan.back" className="-ml-2.5 self-center" />
             <span className="flex-1" />
             {plan?.markdown != null && !editing && (
               <Button size="sm" variant="ghost" className="rounded-full px-3" onClick={() => setEditing(true)}>
@@ -104,12 +101,11 @@ function KindChip({ kind }: { kind: PlanKind }) {
 
 /** What the plan belongs to, above its title: a feature's progress, or a session's feature. */
 function Context({ kind, plan, featureTitle }: { kind: PlanKind; plan: Plan; featureTitle?: string }) {
-  const gated = plan.steps.filter((s) => s.id);
-  const ticked = gated.filter((s) => s.mark === "ticked").length;
+  const { ticked, total } = progressOf(plan);
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
       {kind === "session" && !featureTitle ? <MessageSquare className="size-3" aria-hidden="true" /> : <Package className="size-3" aria-hidden="true" />}
-      {kind === "feature" ? `Feature · ${ticked} of ${gated.length} ticked` : (featureTitle ?? "One-off")}
+      {kind === "feature" ? `Feature · ${ticked} of ${total} ticked` : (featureTitle ?? "One-off")}
     </span>
   );
 }
@@ -134,9 +130,9 @@ function NoPlan({ kind, owner, done, onStart }: { kind: PlanKind; owner?: string
 
 function PlanBody(props: { plan: Plan; kind: PlanKind; context: ReactNode; feature?: FeatureSummary; act: Act; onStart?: (stepId: string) => void }) {
   const { plan, kind, context, feature, act, onStart } = props;
-  const gated = plan.steps.filter((s) => s.id);
   // Every step yours to tick is ticked: the feature can be finished (never automatic, D73).
-  const finished = feature && !feature.done && gated.length > 0 && gated.every((s) => s.mark === "ticked");
+  const { ticked, total } = progressOf(plan);
+  const finished = feature && !feature.done && total > 0 && ticked === total;
   return (
     <article className="flex flex-col gap-7">
       <header className="flex flex-col gap-1">
@@ -148,7 +144,7 @@ function PlanBody(props: { plan: Plan; kind: PlanKind; context: ReactNode; featu
         <div className="flex items-center gap-3 rounded-2xl bg-add/10 px-4 py-3 ring-1 ring-add/25">
           <Check className="size-4 flex-none text-add" aria-hidden="true" />
           <p className="flex-1 text-sm">
-            All {gated.length} {gated.length === 1 ? "step" : "steps"} ticked{plan.decisions.some((d) => d.status === "proposed") ? ", but decisions are still waiting for you" : ""}.
+            All {total} {total === 1 ? "step" : "steps"} ticked{plan.decisions.some((d) => d.status === "proposed") ? ", but decisions are still waiting for you" : ""}.
           </p>
           <FeatureDoneButton feature={feature} labelled />
         </div>
@@ -167,7 +163,7 @@ function PlanBody(props: { plan: Plan; kind: PlanKind; context: ReactNode; featu
 
       {plan.intent && (
         <Section title={kind === "feature" ? "Intent" : "Approach"}>
-          <Streamdown mode="static" className="min-w-0 text-secondary-foreground">
+          <Streamdown mode="static" plugins={{ code: codePlugin }} className="min-w-0 text-secondary-foreground">
             {plan.intent}
           </Streamdown>
         </Section>
@@ -181,7 +177,7 @@ function PlanBody(props: { plan: Plan; kind: PlanKind; context: ReactNode; featu
 
       {(kind === "feature" || plan.decisions.length > 0) && (
         <Section title="Decisions">
-          {plan.decisions.length === 0 ? <Empty>None yet.</Empty> : plan.decisions.map((d, i) => <DecisionCard key={d.id ?? i} decision={d} act={act} />)}
+          {plan.decisions.length === 0 ? <Empty>None yet.</Empty> : plan.decisions.map((d, i) => <DecisionCard key={`${i}:${d.id}`} decision={d} act={act} />)}
         </Section>
       )}
 
@@ -226,6 +222,7 @@ function DecisionCard({ decision, act }: { decision: PlanDecision; act: Act }) {
             placeholder="Anything to add? (optional)"
             submit="Ask why"
             optional
+            max={NOTE_MAX}
             onDone={(note) => {
               setAsking(false);
               if (note !== null) act({ kind: "ask_why", decisionId: id, ...(note ? { note } : {}) });
@@ -258,6 +255,7 @@ function QuestionRow({ question, act }: { question: PlanQuestion; act: Act }) {
             <NoteField
               placeholder="Your answer"
               submit="Answer"
+              max={ANSWER_MAX}
               initial={question.answer} // the agent's suggestion, to take or change
               onDone={(answer) => {
                 setAnswering(false);

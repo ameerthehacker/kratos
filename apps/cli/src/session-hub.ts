@@ -20,7 +20,7 @@ import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
 import { SessionRuntime } from "./session-runtime.js";
-import type { Filing, SessionFeatureOps } from "./kratos-tools.js";
+import { featureNudge, type Filing, type SessionFeatureOps } from "./kratos-tools.js";
 import { applyPlanAction, parsePlan, planTemplate, reconcileAgentEdit } from "./plans/plan-file.js";
 import { movedNote, planInstructions, type PlanPaths } from "./plans/plan-instructions.js";
 import { memoryPlans, type PlanFiles } from "./plans/plan-files.js";
@@ -984,7 +984,8 @@ export class SessionHub {
           void this.checkScope(sessionId, end).catch((err) => this.log.warn({ err, session: sessionId }, "could not check the turn's scope")),
         instructions: () => {
           void this.plans.prepare().catch((err) => this.log.warn({ err }, "could not prepare .kratos/ for plans"));
-          return planInstructions(this.planPaths(sessionId));
+          const paths = this.planPaths(sessionId);
+          return `${planInstructions(paths)}\n\n${featureNudge({ inFeature: paths.feature !== undefined })}`;
         },
       });
       this.runtimes.set(sessionId, runtime);

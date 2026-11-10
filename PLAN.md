@@ -1080,7 +1080,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       playground rev-parse --show-toplevel` is the playground; this repo ignores it
       (`.gitignore:9`); Kratos started on it reports it as the project. Your running `pnpm dev`
       still uses the old script until you restart it. D80.
-- [ ] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
+- [x] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a
       chat message: sessions update its steps and decisions, you tick steps done. Features first
@@ -1207,7 +1207,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
         stopped (idle) and the session was done. Same for a feature ("1 of its sessions is still
         working…"): the folder stayed as it was on Keep working; confirm left feature and session
         done, agent idle. Typecheck 7/7, build 5/5.
-  - [ ] **4m. The agent manages features** (owner, 2026-11-08) — Kratos gives the agent tools of
+  - [x] **4m. The agent manages features** (owner, 2026-11-08) — Kratos gives the agent tools of
         its own: read the features and what its session belongs to; create a feature, move its
         own session into a feature (or back to a one-off), mark its session done, mark its
         feature done. Owner's calls: every change asks first, an Allow / Deny card with the exact
@@ -1287,9 +1287,33 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
           pill lost its session modes. **Proof:** 239 tests; typecheck 7/7, build 5/5; live again
           with the real `claude` in Bypass: the card, Allow, "You allowed this", the session in
           its new feature, no shelf in the session.
-    - [ ] **4m5. The nudge** — once per session, the agent is told it can offer to file the work
-          in a feature or mark it done, and must ask.
-  - [ ] **4p. The plan, a source of truth** (owner, 2026-11-08; replaces 4d–4k; board §1–8,
+    - [x] **4m5. The nudge** (~50 + tests) — once per session, the agent is told it can offer to
+          file the work in a feature or mark it done, and must ask. It goes in the standing
+          instructions the agent starts with (4p2's way in, given once per session, not repeated
+          per turn), a "Features (Kratos)" section beside Plans: the tools by name; when each fits
+          — a one-off whose work outgrows one session (more than a step or two, or work the owner
+          will come back to) → offer to file it (check `list_features` for one it belongs to
+          first); a session whose work is finished and accepted (its steps ticked, or the owner
+          said so) → offer to mark it done; a feature whose plan has every step ticked → offer to
+          mark the feature done. Calling the tool is the asking (its card is the question, with
+          the reason); at the end of a reply, not mid-work; each offer at most once per session,
+          and never again after a Deny unless the owner brings it up. Worded for where the session
+          is: a one-off isn't told about its feature, a session in one isn't told to file itself.
+          Scope: `apps/cli/src/kratos-tools.ts` (the text, beside the tools it names) + test,
+          `session-hub.ts` (joined to the plan instructions). Accept: tests (one-off vs in a
+          feature; joined into what the agent starts with); live with the real `claude`: a
+          one-off asked for multi-part work offers to file it via the card, unasked; typecheck,
+          test, build.
+          **Proof:** 3 tests of the text (one-off vs in a feature; the asking rules in both) + the
+          hub's instruction tests now see it in what a one-off and a session in a feature start
+          with. 325 pass, typecheck 7/7, build 5/5. Live, real `claude` (Haiku), a one-off on a
+          throwaway repo asked for "a small notes CLI I'll keep growing over the next weeks…
+          start with just `add`": it did the work, then called `list_features`, then
+          `file_session` as its last act — the card "Create the feature “Notes CLI” and move this
+          session into it", reason "The notes CLI will grow over several weeks (list, delete,
+          search, tags)…". Denied ("Not now."); the next prompt (`list`) did its work and
+          didn't offer again. ~30 lines + ~35 of tests.
+  - [x] **4p. The plan, a source of truth** (owner, 2026-11-08; replaces 4d–4k; board §1–8,
         D79) — the plan is the one place a piece of work's intent, steps, decisions and open
         questions live; nothing about it lives only in a chat. It's the source of truth when four
         things hold, and each layer below adds one: **(1)** it has a shape Kratos can read
@@ -1929,7 +1953,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       docs/excluded globs free); live budget meter in the UI; warn the agent at 80%; over budget →
       UI gate with **Extend** (+N lines, reason logged) / **Checkpoint** (commit what works, continue
       as a new step) / **Split** / **Revert**. Approve/reject between steps; checkpoints via git.
-- [ ] **6. Decision ledger** — decisions captured as structured events, shown in UI, flippable.
+- [x] **6. Decision ledger** — decisions captured as structured events, shown in UI, flippable.
       Now planned as 4p4 (decisions live in the feature's plan).
 - [ ] **7. Dogfood** — build step 8+ of Kratos using Kratos.
 

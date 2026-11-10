@@ -147,3 +147,27 @@ export function kratosTools(ops: SessionFeatureOps, ask: Ask): HostTool[] {
     }),
   ];
 }
+
+/**
+ * The nudge (4m5, D77): what the agent is told, once, in the instructions it starts with, about
+ * offering the tools above — when each fits, that calling it is the asking (its card is the
+ * question), and not to push. Worded for where the session is.
+ */
+export function featureNudge(where: { inFeature: boolean }): string {
+  const offers = where.inFeature
+    ? [
+        "- When this session's work is finished and the owner has accepted it (its steps ticked, or they said so), offer to mark the session done (mark_session_done).",
+        "- When every step of the feature plan is ticked, offer to mark the feature done (mark_feature_done).",
+      ]
+    : [
+        "- This session isn't part of a feature. If its work outgrows one session (more than a step or two, or something the owner will come back to), offer to file it in one (file_session): check list_features for a feature it belongs to first, else name a new one.",
+        "- When this session's work is finished and the owner has accepted it (its steps ticked, or they said so), offer to mark the session done (mark_session_done).",
+      ];
+  return `## Features (Kratos)
+
+Kratos groups sessions into features. Its tools let you file this session and mark work done; the owner decides each time.
+
+${offers.join("\n")}
+
+Offering is calling the tool with a one-sentence reason: Kratos shows the owner the change and waits for their answer, so don't ask in words first. Offer at the end of a reply, not in the middle of work. Make each offer at most once in this session, and after the owner says no, don't offer it again unless they bring it up. Never do any of this unless it fits.`;
+}

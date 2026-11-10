@@ -1806,6 +1806,9 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
     const instructions = agents[0]!.options.instructions!;
     expect(instructions).toContain("The feature plan, for “CSV export”: what and why, shared by every session working on it: .kratos/features/csv-export/plan.md");
     expect(instructions).toContain(`.kratos/sessions/${a.viewing}/plan.md`);
+    expect(instructions).toContain("## Features (Kratos)"); // the nudge (4m5), for a session in a feature
+    expect(instructions).toContain("mark_feature_done");
+    expect(instructions).not.toContain("file_session");
     expect(store.getFeature(feature)!.planDir).toBe("csv-export"); // known before anyone starts the plan
     expect(agents[0]!.prompts).toEqual(["plan this"]);
   });
@@ -1816,6 +1819,7 @@ describe("SessionHub: every session reads its plans (4p2, D79)", () => {
     a.receive({ type: "prompt", text: "quick fix" });
     expect(agents[0]!.options.instructions).toContain(`This session's plan: .kratos/sessions/${a.viewing}/plan.md (this session isn't part of a feature`);
     expect(agents[0]!.options.instructions).not.toContain(".kratos/features/");
+    expect(agents[0]!.options.instructions).toContain("offer to file it in one (file_session)"); // the nudge (4m5), for a one-off
   });
 
   it("moved by the owner while its agent runs: the next prompt tells the agent, once; the chat shows it as typed", async () => {

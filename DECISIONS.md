@@ -404,6 +404,16 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   hono…) are its dependencies but never bundled (esbuild takes what's imported; the binary still
   builds). Known cost: its `Server` builds an Ajv validator per session, used only for
   elicitation, which we don't use; fine at one per session.
+- The nudge (4m5): a "Features (Kratos)" section in the standing instructions the agent starts
+  with (beside Plans, 4p2), so it's said once per session, not per turn. Worded for where the
+  session is (a one-off may offer to file itself, after `list_features`; a session in a feature
+  may offer to finish it or its feature). Calling the tool *is* the asking — the card is the
+  question, so no "shall I?" in words first; at the end of a reply, each offer at most once,
+  none again after a Deny. Instead of: Kratos spotting the moment itself (a one-off whose plan
+  grows past N steps, every step ticked) and saying so in a note on the next prompt — more
+  precise, but rules of ours to tune, and the agent judges "this outgrew one session" better
+  from the conversation. Reverse: drop `featureNudge` from the instructions; the tools still
+  work when asked.
 - Reverse: stop declaring the server; we answer `mcp_message` with "unsupported" again.
 
 ### D76. The chat sticks to the bottom with use-stick-to-bottom (step 3z3, owner) — **replaces D71's following, keeps D75's jump**

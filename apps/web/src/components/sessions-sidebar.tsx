@@ -453,7 +453,14 @@ function FeatureRow({ node, item, box }: { node: Extract<TreeNode, { kind: "feat
             <span className="sr-only">{statusLabel(status)}</span>
           </span>
         ) : (
-          count > 0 && <span className="font-mono text-xs text-faint group-hover/row:hidden">{count}</span>
+          // Its plan's ticked steps (4p5c, board §3), else how many sessions it holds here.
+          (feature.progress?.total ? (
+            <span className="font-mono text-xs text-faint group-hover/row:hidden" title={`${feature.progress.ticked} of ${feature.progress.total} steps ticked`}>
+              {feature.progress.ticked}/{feature.progress.total}
+            </span>
+          ) : (
+            count > 0 && <span className="font-mono text-xs text-faint group-hover/row:hidden">{count}</span>
+          ))
         )}
       </div>
       <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 opacity-0 group-hover/row:opacity-100">

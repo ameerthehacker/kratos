@@ -1626,7 +1626,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             covers a whole list, not its marks): only the marks are styled now. Seen: our `[~]` /
             `[?]` aren't GFM, so they show as link brackets. 289 pass, typecheck 7/7, build 5/5.
             ~120 lines (the editor moved to `components/plan-editor.tsx`).
-    - [ ] **4p5. The plan drives the work** (board §3, §5, §8) — split (~400 lines in one go):
+    - [x] **4p5. The plan drives the work** (board §3, §5, §8) — split (~400 lines in one go):
       - [x] **4p5a. The plans island** (~250) — in a session, a right island (an island like the
             others: rounded, on the canvas, `w-80`, hidden below `lg`) beside the main one, made
             by the layout for `/s/:id`: "Plans", its keys and ×; the feature plan (when the
@@ -1719,8 +1719,19 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             the instructions). 312 pass, typecheck 7/7, build 5/5; headless: P2 then P3 → only P3's
             prompt; ⌘↵ → the P3 session started, the box and `&step` cleared; a link to waiting P4
             fills nothing.
-      - [ ] **4p5c. Progress on the folder** (~40) — a feature's folder shows `n/m` ticked
-            (`FeatureSummary.progress`, read from its plan).
+      - [x] **4p5c. Progress on the folder** (~50 + a test; board §3) — a feature's folder in the
+            sidebar shows its plan's `n/m` ticked (the steps with an id) where it showed its session
+            count, the count staying for a feature with no plan or no steps.
+            `FeatureSummary.progress {ticked, total}`, read from the plan as the server has it; a
+            feature plan's every change sends the feature list (its count can move with any edit),
+            a session plan's only when it appears or goes (as now). Scope: core `protocol.ts`; cli
+            `session-hub.ts` + test; web `components/sessions-sidebar.tsx`, the tree test's
+            fixture. Accept: hub test (the count follows a tick and an edit); headless: folders
+            with and without a plan; typecheck, test, build.
+            **Proof:** hub test (none without a plan, 0/0 from the template, 0/2 when the agent's
+            edit has two id'd steps and an item of its own, 1/2 after your tick). 313 pass,
+            typecheck 7/7, build 5/5. Headless on the 4p5b project: "Reports · 1/4" and "No plan
+            yet" with no count; P4 ticked from another tab → "Reports · 2/4" at once. ~40 lines.
     - [x] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) — split:
       - [x] **4p6a. The plan review card** (~300 + tests) — a proposed plan is its own kind of ask,
             agent-neutral: `ToolAction` gets `plan` (the plan's Markdown); the Claude adapter maps

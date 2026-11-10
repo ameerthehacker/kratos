@@ -233,6 +233,8 @@ export const FeatureSummary = z.object({
   updatedAt: z.number(),
   /** Its feature plan has been started (D79). */
   hasPlan: z.boolean(),
+  /** Its plan's steps with an id, and how many you've ticked (4p5c); absent without a plan. */
+  progress: z.object({ ticked: z.number(), total: z.number() }).optional(),
 });
 export type FeatureSummary = z.infer<typeof FeatureSummary>;
 

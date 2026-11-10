@@ -2301,3 +2301,21 @@ describe("SessionHub: a session started on a step (4p5b, D79)", () => {
     expect(a.list.find((s) => s.id === a.viewing)).toMatchObject({ featureId: billing, stepId: null });
   });
 });
+
+describe("SessionHub: a feature's ticked count (4p5c, D79)", () => {
+  it("follows its plan: none without one, then each tick and edit", async () => {
+    const { tab, plans } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    const owner = { kind: "feature" as const, id: a.features[0]!.id };
+    expect(a.features[0]!.progress).toBeUndefined();
+    a.receive({ type: "start_plan", owner });
+    await tick();
+    expect(a.features[0]!.progress).toEqual({ ticked: 0, total: 0 });
+    plans.edit("features/reports", "# Reports\n\n## Steps\n- [?] **P1. Export**\n- [ ] **P2. Filters**\n- [ ] my own item\n");
+    expect(a.features[0]!.progress).toEqual({ ticked: 0, total: 2 }); // the agent's own items don't count
+    a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } });
+    await tick();
+    expect(a.features[0]!.progress).toEqual({ ticked: 1, total: 2 });
+  });
+});

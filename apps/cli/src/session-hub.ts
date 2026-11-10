@@ -718,8 +718,10 @@ export class SessionHub {
     const owner = this.ownerOfPlan(folder);
     if (!owner) return; // a folder Kratos didn't make: made by hand, or another project's database
     this.broadcast(this.planOf(owner, markdown));
-    if (existed === (markdown !== undefined)) return; // an edit: who has a plan is unchanged
-    this.broadcast(owner.kind === "session" ? this.sessionList() : this.featureList());
+    // A feature's folder shows its plan's ticked count (4p5c): any edit may move it. A session's
+    // list only says whether it has a plan.
+    if (owner.kind === "feature") return this.broadcast(this.featureList());
+    if (existed !== (markdown !== undefined)) this.broadcast(this.sessionList());
   }
 
   /** Whose plan a folder under `.kratos/` holds; undefined for one Kratos doesn't know. */
@@ -964,13 +966,19 @@ export class SessionHub {
   private featureList(): ServerMessage {
     return {
       type: "features",
-      list: this.store.listFeatures(this.cwd).map((f) => ({
-        id: f.id,
-        title: f.title,
-        done: f.doneAt !== null,
-        updatedAt: f.updatedAt.getTime(),
-        hasPlan: f.planDir !== null && this.plans.text(`features/${f.planDir}`) !== undefined,
-      })),
+      list: this.store.listFeatures(this.cwd).map((f) => {
+        const text = f.planDir === null ? undefined : this.plans.text(`features/${f.planDir}`);
+        // Its plan's ticked steps (4p5c): the ones with an id, yours to tick.
+        const steps = text === undefined ? [] : parsePlan(text, "feature").steps.filter((s) => s.id);
+        return {
+          id: f.id,
+          title: f.title,
+          done: f.doneAt !== null,
+          updatedAt: f.updatedAt.getTime(),
+          hasPlan: text !== undefined,
+          ...(text !== undefined ? { progress: { ticked: steps.filter((s) => s.mark === "ticked").length, total: steps.length } } : {}),
+        };
+      }),
     };
   }
 

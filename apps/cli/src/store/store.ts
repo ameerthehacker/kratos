@@ -91,9 +91,16 @@ export class SessionStore {
    * the feature up in its list; the session's own place doesn't change. */
   setSessionFeature(sessionId: string, featureId: string | null): void {
     this.db.transaction((tx) => {
-      tx.update(sessions).set({ featureId }).where(eq(sessions.id, sessionId)).run();
+      // Its step was the old feature's: dropped when the feature changes, kept on a move to the same one.
+      const before = tx.select({ featureId: sessions.featureId }).from(sessions).where(eq(sessions.id, sessionId)).get();
+      tx.update(sessions).set(before?.featureId === featureId ? { featureId } : { featureId, stepId: null }).where(eq(sessions.id, sessionId)).run();
       if (featureId) tx.update(features).set({ updatedAt: new Date() }).where(eq(features.id, featureId)).run();
     });
+  }
+
+  /** The feature plan's step a session works on (4p5b), set when it starts on one. */
+  setSessionStep(sessionId: string, stepId: string | null): void {
+    this.db.update(sessions).set({ stepId }).where(eq(sessions.id, sessionId)).run();
   }
 
   /** Start a feature in a project (D73). */

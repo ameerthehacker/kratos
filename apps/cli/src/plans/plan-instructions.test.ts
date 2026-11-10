@@ -33,6 +33,9 @@ describe("planInstructions (4p2, D79)", () => {
     expect(text).toContain("This session's plan: how this session does its part");
     expect(text).toContain("New steps and decisions belong in the feature plan");
     expect(text).toContain("If the feature plan hasn't been started, the plan you write is the feature plan");
+    expect(text).not.toContain("was started on step");
+    const onStep = planInstructions({ session: "s.md", feature: { title: "CSV export", path: "f.md", step: { id: "P3", title: "Stream large exports" } } });
+    expect(onStep).toContain("- This session was started on step P3 (“Stream large exports”) of the feature plan: that's its part."); // 4p5b
   });
 
   it("the note after a move says where the plans are now", () => {

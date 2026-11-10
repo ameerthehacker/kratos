@@ -99,6 +99,13 @@
       "when": 1794203543712,
       "tag": "0013_drop_plan_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1794285503024,
+      "tag": "0014_session_step",
+      "breakpoints": true
     }
   ]
 }

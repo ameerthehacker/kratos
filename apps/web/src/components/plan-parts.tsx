@@ -1,10 +1,16 @@
 import { useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, Play } from "lucide-react";
 import type { PlanAction, PlanStep, StepMark } from "@kratos/core";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /** A plan's parts shared by its page (4p1b, 4p4a) and the plans island (4p5a). */
+
+/** A step a new session can start on (4p5b): one of yours to tick, not done or waiting for you. */
+export const startable = (step: PlanStep) => step.id !== undefined && (step.mark === "todo" || step.mark === "doing");
+
+/** Home with a feature picked and a step to start on (4p5b): the link ▶ follows. */
+export const startOnStep = (featureId: string, stepId: string) => `/?${new URLSearchParams({ feature: featureId, step: stepId })}`;
 
 /** Your change to a plan, sent as `plan_action` (4p4a). */
 export type Act = (action: PlanAction) => void;
@@ -34,18 +40,32 @@ export function MarkDot({ mark }: { mark: StepMark }) {
 }
 
 /** A plan step: its mark, id, title and fields; on a `[?]` step, Tick / Not yet (4p4a). `compact`
- * (the plans island, 4p5a): the title and what it waits on, without its Scope / Accept / Proof. */
-export function StepRow({ step, act, compact }: { step: PlanStep; act: Act; compact?: boolean }) {
+ * (the plans island, 4p5a): the title and what it waits on, without its Scope / Accept / Proof.
+ * `onStart` (4p5b): ▶, a new session on this step. */
+export function StepRow({ step, act, compact, onStart }: { step: PlanStep; act: Act; compact?: boolean; onStart?: () => void }) {
   const [sendingBack, setSendingBack] = useState(false);
   const id = step.id;
   return (
     <div className={cn("-mx-2.5 flex gap-2.5 rounded-xl px-2.5 py-2", step.mark === "claimed" && "bg-card ring-1 ring-wait/35")}>
       <MarkDot mark={step.mark} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className={cn("text-sm", step.mark === "ticked" && "text-muted-foreground")}>
-          {step.id && <span className="mr-1.5 font-mono text-xs text-muted-foreground">{step.id}</span>}
-          {step.title}
-        </p>
+        <div className="flex items-start gap-2">
+          <p className={cn("min-w-0 flex-1 text-sm", step.mark === "ticked" && "text-muted-foreground")}>
+            {step.id && <span className="mr-1.5 font-mono text-xs text-muted-foreground">{step.id}</span>}
+            {step.title}
+          </p>
+          {onStart && (
+            <button
+              type="button"
+              onClick={onStart}
+              aria-label={`Start ${step.id ?? "this step"} in a new session`}
+              title="Start in a new session"
+              className="flex size-6 flex-none items-center justify-center rounded-full bg-secondary text-secondary-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <Play className="size-2.5 fill-current" aria-hidden="true" />
+            </button>
+          )}
+        </div>
         {step.goal && !compact && <p className="text-xs text-muted-foreground">{step.goal}</p>}
         {step.scope.length > 0 && !compact && (
           <div className="flex flex-wrap gap-1.5">

@@ -7,8 +7,9 @@
 export interface PlanPaths {
   /** This session's own plan: how it does its part. */
   session: string;
-  /** Its feature's plan (what and why, across sessions), when it's in one. */
-  feature?: { title: string; path: string };
+  /** Its feature's plan (what and why, across sessions), when it's in one; `step`: the step of it
+   * this session was started on (4p5b). */
+  feature?: { title: string; path: string; step?: { id: string; title?: string } };
 }
 
 export const PLAN_FORMAT = `# <title>
@@ -33,6 +34,7 @@ export function planInstructions({ session, feature }: PlanPaths): string {
     ? [
         `- The feature plan, for “${feature.title}”: what and why, shared by every session working on it: ${feature.path}`,
         `- This session's plan: how this session does its part (usually one step of the feature plan): ${session}`,
+        ...(feature.step ? [`- This session was started on step ${feature.step.id}${feature.step.title ? ` (“${feature.step.title}”)` : ""} of the feature plan: that's its part.`] : []),
       ]
     : [`- This session's plan: ${session} (this session isn't part of a feature; its plan is the whole plan)`];
   return `## Plans (Kratos)

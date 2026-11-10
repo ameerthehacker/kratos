@@ -2269,3 +2269,35 @@ describe("SessionHub: approving a proposed plan (4p6a, D79)", () => {
     expect(plans.text(`sessions/${a.viewing}`)).toBe(PLAN);
   });
 });
+
+describe("SessionHub: a session started on a step (4p5b, D79)", () => {
+  it("remembers its step, and its agent is told it; a later prompt's step is ignored", () => {
+    const { agents, tab, plans } = setup();
+    const a = tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "start_plan", owner: { kind: "feature", id: feature } }); // names its folder
+    plans.edit("features/reports", "# Reports\n\n## Steps\n- [x] **P1. Export**\n- [ ] **P2. Filters in the export**\n");
+    a.receive({ type: "prompt", text: "Work on P2 of the plan: Filters in the export.", newSession: true, featureId: feature, stepId: "P2" });
+    expect(a.list.find((s) => s.id === a.viewing)).toMatchObject({ featureId: feature, stepId: "P2" });
+    expect(agents[0]!.options.instructions).toContain("- This session was started on step P2 (“Filters in the export”) of the feature plan: that's its part.");
+    a.receive({ type: "prompt", text: "more", featureId: feature, stepId: "P1" });
+    expect(a.list.find((s) => s.id === a.viewing)!.stepId).toBe("P2");
+  });
+
+  it("a one-off takes no step; moving the session to another feature drops it", () => {
+    const { tab } = setup();
+    const a = tab();
+    a.receive({ type: "prompt", text: "quick", stepId: "P1" });
+    expect(a.list.find((s) => s.id === a.viewing)!.stepId).toBeNull();
+    a.receive({ type: "create_feature", title: "Reports" });
+    a.receive({ type: "create_feature", title: "Billing" });
+    const [billing, reports] = a.features.map((f) => f.id);
+    a.receive({ type: "prompt", text: "on a step", newSession: true, featureId: reports, stepId: "P1" });
+    expect(a.list.find((s) => s.id === a.viewing)!.stepId).toBe("P1");
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: reports! }); // where it is already
+    expect(a.list.find((s) => s.id === a.viewing)!.stepId).toBe("P1");
+    a.receive({ type: "set_session_feature", sessionId: a.viewing, featureId: billing! });
+    expect(a.list.find((s) => s.id === a.viewing)).toMatchObject({ featureId: billing, stepId: null });
+  });
+});

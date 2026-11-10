@@ -35,8 +35,9 @@ export function PromptCard(props: {
    * queues (D56). */
   onStop?: () => void;
   /** Text to add to the box (a queued prompt being edited, or what Stop gave back); a new `key`
-   * adds it again. */
-  insert?: { text: string; key: number };
+   * adds it again. `replaces`: text it takes the place of when the box still holds just that (a
+   * step's prompt filled on Home, then another step picked, 4p5b). */
+  insert?: { text: string; key: number; replaces?: string };
   /** The shelf (D73, board §5): a tray tucked under the card for choices made once per session,
    * leaving the card for writing. */
   shelf?: ReactNode;
@@ -48,7 +49,9 @@ export function PromptCard(props: {
 
   // Text handed back (Edit on a queued prompt, or Stop): add it to what's already in the box.
   useEffect(() => {
-    if (props.insert) setText((current) => (current.trim() ? `${current.trimEnd()}\n\n${props.insert!.text}` : props.insert!.text));
+    const insert = props.insert;
+    if (!insert) return;
+    setText((current) => (current.trim() && current.trim() !== insert.replaces ? `${current.trimEnd()}\n\n${insert.text}` : insert.text));
   }, [props.insert]);
 
   const submit = (event?: FormEvent, now = false) => {

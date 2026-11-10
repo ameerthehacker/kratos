@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `step_id` text;

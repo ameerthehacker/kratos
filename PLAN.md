@@ -1681,10 +1681,44 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             each turn that edits the plan shows the agent's "Edited plan.md" and then "Kratos ·
             Updated the plan" — the second repeats the first when nothing was put back (owner's
             call: keep, or show it only when something was put back).
-      - [ ] **4p5b. Steps start sessions** (~150) — "Start in new session" on a step (plan page,
-            island's Up next) and Home's "Up next" chips for a picked feature (board §5): a new
-            session in the feature, tagged with its step (`sessions.step_id` + migration), its
-            first prompt "Work on P3 of the plan: <title>"; the island's Now is then that step.
+      - [x] **4p5b. Steps start sessions** (~250 + tests; board §3, §5) — Home with a feature
+            picked shows **Up next**: chips for its plan's next steps (not ticked, not waiting for
+            you; three at most, in order). A chip fills the prompt ("Work on P3 of the plan:
+            <title>.") and tags the new session with the step — kept in the URL with the feature
+            (`/?feature=<id>&step=P3`), like the feature is. "Start in new session" (▶) on a step
+            of the feature plan's page and on the island's Up next opens Home that way. The
+            session remembers its step (`sessions.step_id` + migration, `SessionSummary.stepId`,
+            `prompt.stepId` taken with a session's first prompt in a feature, like `featureId`);
+            its agent's instructions name it ("this session works on P3 — <title> — of the
+            feature plan"); the island's Now shows it first. Scope: core `protocol.ts`; cli
+            `store/schema.ts` + migration, `store.ts`, `session-hub.ts` + tests,
+            `plans/plan-instructions.ts` + test; web `pages/home.tsx`, `pages/plan.tsx`,
+            `components/plans-island.tsx`, `components/plan-parts.tsx`. Accept: hub tests (a
+            session started on a step remembers it and its instructions name it; a later prompt's
+            step is ignored; a one-off can't have one); headless: Home's chips for a picked
+            feature, a chip fills the prompt, ▶ on the plan page lands on Home with it picked, the
+            new session's island leads with its step; typecheck, test, build.
+            **Proof:** 2 hub tests (started on P2 → remembered, its instructions "started on step P2
+            (“Filters in the export”) of the feature plan"; a later prompt's step ignored; a one-off
+            takes none; moving to another feature drops it) + an instructions test. 312 pass,
+            typecheck 7/7, build 5/5. Headless on a throwaway project (P1 ticked, P2 / P3 to do, P4
+            waiting): Home with the feature → Up next "P2 Filters in the export", "P3 Stream large
+            exports" (not the ticked or waiting ones); P3 → `&step=P3`, the box "Work on P3 of the
+            plan: Stream large exports."; the plan page's ▶ only on P2 and P3; ▶ P2 → Home
+            `?feature=…&step=P2`, the box filled for P2; Enter → the new session, its row
+            `step_id = P2`, its island's Now "P2 Filters in the export" first, then P4 (waiting).
+            ~200 lines + ~50 of tests.
+            **Review round** (owner): 8 findings, 7 fixed — moving a session to the feature it's
+            already in wiped its step (kept now); switching chips stacked both prompts (a chip's
+            prompt now replaces the last one while the box still holds it); ⌘↵ kept `&step` for
+            the next prompt (dropped after sending); `prompt.stepId` took any 20 characters (now
+            the plan's id format); the island's Now kept a ticked step first and hid Up next (only
+            while it's not ticked); the ▶ link built by hand twice (one `startOnStep`); Home took
+            `&step=` for any step (mine: only one still to do, as the chips and ▶ offer). Left:
+            the hub doesn't check the step is in the plan (the id format keeps free text out of
+            the instructions). 312 pass, typecheck 7/7, build 5/5; headless: P2 then P3 → only P3's
+            prompt; ⌘↵ → the P3 session started, the box and `&step` cleared; a link to waiting P4
+            fills nothing.
       - [ ] **4p5c. Progress on the folder** (~40) — a feature's folder shows `n/m` ticked
             (`FeatureSummary.progress`, read from its plan).
     - [x] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) — split:

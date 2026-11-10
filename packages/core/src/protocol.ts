@@ -98,6 +98,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
     confirmDangerous: z.boolean().optional(),
     /** The feature the session it starts belongs to (D73); none = a one-off. */
     featureId: z.string().optional(),
+    /** With `featureId`: the step of its plan the session works on (4p5b, "P3"). */
+    stepId: z.string().max(64).regex(/^[A-Za-z]+\d+[a-z]?$/).optional(), // a plan step id, as plan-file.ts reads them
     /** Or a new feature, named on the shelf: made when the prompt starts its session, so a name
      * typed and then abandoned leaves no empty folder (D73). Wins over `featureId`. */
     newFeatureTitle: Title.optional(),
@@ -213,6 +215,8 @@ export const SessionSummary = z.object({
   done: z.boolean(),
   /** The feature it belongs to (D73); null = a one-off. */
   featureId: z.string().nullable(),
+  /** The feature plan's step it was started on (4p5b); null = none. */
+  stepId: z.string().nullable(),
   /** The agent is naming it (3z4): its title may change in a moment. */
   titling: z.boolean(),
   /** It has its own session plan (D79). */

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import type { AttachmentUpload, Harness } from "@kratos/core";
@@ -12,6 +12,9 @@ import { PROMPT_KEYS } from "@/lib/shortcuts";
 import { RecentList } from "@/components/recent-list";
 import { useHomeChoice } from "@/lib/home-choice";
 import { useKratos } from "@/lib/kratos-store";
+import { usePlan } from "@/hooks/use-plan";
+import { startable } from "@/components/plan-parts";
+import { cn } from "@/lib/utils";
 
 /** `/` — new work (owner's design): sending starts a new session; Recent lists all sessions. */
 export function HomePage() {
@@ -25,6 +28,22 @@ export function HomePage() {
   const [params, setParams] = useSearchParams();
   const newFeatureTitle = params.get("new")?.trim() || null;
   const featureId = newFeatureTitle ? null : (features.find((f) => f.id === params.get("feature") && !f.done)?.id ?? null);
+  // Its plan's next steps (4p5b): a chip, or ▶ on a step elsewhere (`&step=P3`), starts the
+  // session on one — the prompt filled once, the session tagged with it.
+  const feature = features.find((f) => f.id === featureId);
+  const featurePlan = usePlan("feature", feature?.hasPlan ? feature.id : undefined)?.plan ?? undefined;
+  const upNext = featurePlan?.steps.filter(startable).slice(0, 3) ?? [];
+  const stepParam = params.get("step");
+  // Only a step still to do, as the chips and ▶ offer: an old link to a finished one tags nothing.
+  const step = featureId && stepParam ? featurePlan?.steps.find((s) => s.id === stepParam && startable(s)) : undefined;
+  // Picking another step replaces the last one's prompt, if it's still there untouched.
+  const [insert, setInsert] = useState<{ text: string; key: number; replaces?: string }>();
+  const filledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!step?.id || filledFor.current === step.id) return;
+    filledFor.current = step.id;
+    setInsert((current) => ({ text: `Work on ${step.id} of the plan: ${step.title}.`, key: (current?.key ?? 0) + 1, replaces: current?.text }));
+  }, [step?.id, step?.title]);
   const { choice: remembered, setChoice } = useHomeChoice();
   const choice = currentChoice(remembered, harnesses);
   const harness = harnesses.find((h) => h.id === choice?.harness);
@@ -76,6 +95,9 @@ export function HomePage() {
     else if (newFeatureTitle) {
       awaitedFeature.current = { title: newFeatureTitle, existing: new Set(features.map((f) => f.id)) };
       choose({}); // not a second one with the same name
+    } else if (step && featureId) {
+      filledFor.current = null; // the step went with this one: the next starts on none, unless picked again
+      choose({ feature: featureId });
     }
     askToNotify(); // once, from this click: so Kratos can tell you when the agent needs you
     send({
@@ -87,6 +109,7 @@ export function HomePage() {
       effort: choice?.effort ?? undefined,
       permissionMode: permissionMode ?? undefined,
       featureId: featureId ?? undefined,
+      stepId: step?.id,
       newFeatureTitle: newFeatureTitle ?? undefined,
       ...(attachments.length > 0 ? { attachments } : {}),
       confirmDangerous: dangerous || undefined,
@@ -99,7 +122,29 @@ export function HomePage() {
     <main className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
         <h1 className="text-center font-heading text-display font-semibold">What should we build?</h1>
+        {upNext.length > 0 && (
+          // Close to the box it fills (the design's "Up next", board §5b).
+          <div className="-mb-6 flex flex-wrap items-center gap-2" role="group" aria-label="Up next in the plan">
+            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Up next</span>
+            {upNext.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                aria-pressed={step?.id === s.id}
+                onClick={() => choose(step?.id === s.id ? { feature: featureId! } : { feature: featureId!, step: s.id! })}
+                className={cn(
+                  "flex h-8 max-w-full items-center gap-1.5 rounded-full px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring",
+                  step?.id === s.id ? "bg-primary/15 text-foreground ring-1 ring-primary/40" : "bg-secondary text-secondary-foreground hover:bg-accent",
+                )}
+              >
+                <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
+                <span className="truncate">{s.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <PromptCard
+          insert={insert}
           chips={
             <>
               <AgentPicker harnesses={harnesses} value={choice ?? { harness: "", model: null }} onChange={setChoice} />

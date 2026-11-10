@@ -5,7 +5,7 @@ import { HotkeysProvider, useAppHotkeys, useHotkey } from "@tanstack/react-hotke
 import { Streamdown } from "streamdown";
 import type { FeatureSummary, Plan, PlanDecision, PlanKind, PlanQuestion } from "@kratos/core";
 import { FeatureDoneButton } from "@/components/feature-done-button";
-import { Actions, Field, MarkDot, NoteField, StepRow, type Act } from "@/components/plan-parts";
+import { Actions, Field, MarkDot, NoteField, StepRow, startOnStep, startable, type Act } from "@/components/plan-parts";
 import { sessionTitle } from "@/components/session-status";
 import { Shortcut } from "@/components/shortcut";
 import { Button } from "@/components/ui/button";
@@ -83,6 +83,8 @@ function PlanView({ kind, id }: { kind: PlanKind; id: string | undefined }) {
               context={<Context kind={kind} plan={plan.plan} featureTitle={feature?.title} />}
               feature={kind === "feature" ? feature : undefined}
               act={(action) => id && send({ type: "plan_action", owner: { kind, id }, action })}
+              // A feature plan's step to do: ▶ starts a session on it, from Home (4p5b).
+              onStart={kind === "feature" && feature && !feature.done ? (stepId) => navigate(startOnStep(feature.id, stepId)) : undefined}
             />
           )}
         </div>
@@ -130,7 +132,8 @@ function NoPlan({ kind, owner, done, onStart }: { kind: PlanKind; owner?: string
   );
 }
 
-function PlanBody({ plan, kind, context, feature, act }: { plan: Plan; kind: PlanKind; context: ReactNode; feature?: FeatureSummary; act: Act }) {
+function PlanBody(props: { plan: Plan; kind: PlanKind; context: ReactNode; feature?: FeatureSummary; act: Act; onStart?: (stepId: string) => void }) {
+  const { plan, kind, context, feature, act, onStart } = props;
   const gated = plan.steps.filter((s) => s.id);
   // Every step yours to tick is ticked: the feature can be finished (never automatic, D73).
   const finished = feature && !feature.done && gated.length > 0 && gated.every((s) => s.mark === "ticked");
@@ -171,7 +174,9 @@ function PlanBody({ plan, kind, context, feature, act }: { plan: Plan; kind: Pla
       )}
 
       <Section title="Steps">
-        {plan.steps.length === 0 ? <Empty>No steps yet.</Empty> : plan.steps.map((step, i) => <StepRow key={step.id ?? i} step={step} act={act} />)}
+        {plan.steps.length === 0 ? <Empty>No steps yet.</Empty> : plan.steps.map((step, i) => (
+              <StepRow key={`${step.id ?? ""}:${i}`} step={step} act={act} onStart={onStart && startable(step) ? () => onStart(step.id!) : undefined} />
+            ))}
       </Section>
 
       {(kind === "feature" || plan.decisions.length > 0) && (

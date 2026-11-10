@@ -26,6 +26,8 @@ export const sessions = sqliteTable(
     doneAt: integer("done_at", { mode: "timestamp_ms" }),
     /** The feature it belongs to (D73); null = a one-off. Can change: "Move to feature…". */
     featureId: text("feature_id").references(() => features.id),
+    /** The feature plan's step it was started on (4p5b: "P3"); null = none. Cleared when it moves. */
+    stepId: text("step_id"),
     /** Set the first time the agent process starts; from then on, starts must resume. */
     agentStartedAt: integer("agent_started_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

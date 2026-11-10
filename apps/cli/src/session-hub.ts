@@ -212,6 +212,8 @@ export class SessionHub {
           this.store.setSessionFeature(target.id, featureId);
           this.broadcast(this.featureList());
         }
+        // The step it starts on (4p5b): only with the feature it starts in, like the feature.
+        if (!target.hasPrompts && featureId && featureId === message.featureId && message.stepId) this.store.setSessionStep(target.id, message.stepId);
         // New work on a done session means it isn't done (owner, 3d2), nor is its feature (D73).
         if (this.store.get(target.id)?.doneAt) this.store.setDone(target.id, false);
         this.reopenFeatureOf(target.id);
@@ -561,7 +563,13 @@ export class SessionHub {
   /** Where a session's plans are, relative to the project (4p2). */
   private planPaths(sessionId: string): PlanPaths {
     const { session, feature } = this.planFolders(sessionId);
-    return feature ? { session: planFile(session), feature: { title: feature.title, path: planFile(feature.folder) } } : { session: planFile(session) };
+    if (!feature) return { session: planFile(session) };
+    // The step it was started on (4p5b), with its title as the feature plan says it now.
+    const stepId = this.store.get(sessionId)?.stepId;
+    const text = stepId ? this.plans.text(feature.folder) : undefined;
+    const title = text === undefined ? undefined : parsePlan(text, "feature").steps.find((s) => s.id === stepId)?.title;
+    const step = stepId ? { id: stepId, ...(title ? { title } : {}) } : undefined;
+    return { session: planFile(session), feature: { title: feature.title, path: planFile(feature.folder), ...(step ? { step } : {}) } };
   }
 
   /** Writes the template, unless there's a plan already. A feature's folder is named now, from its
@@ -946,6 +954,7 @@ export class SessionHub {
         queued: this.runtimes.get(s.id)?.queuedCount ?? 0,
         done: s.doneAt !== null,
         featureId: s.featureId,
+        stepId: s.stepId,
         titling: this.runtimes.get(s.id)?.titling ?? false,
         hasPlan: this.plans.text(`sessions/${s.id}`) !== undefined,
       })),

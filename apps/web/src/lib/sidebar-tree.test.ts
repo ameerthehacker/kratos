@@ -14,6 +14,7 @@ const session = (id: string, updatedAt: number, more: Partial<SessionSummary> = 
   queued: 0,
   done: false,
   featureId: null,
+  stepId: null,
   titling: false,
   hasPlan: false,
   ...more,

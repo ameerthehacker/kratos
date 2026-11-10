@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { ListTodo, Map as MapIcon, Maximize2, X } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type { FeatureSummary, Plan, PlanStep, SessionSummary } from "@kratos/core";
-import { StepRow, type Act } from "@/components/plan-parts";
+import { StepRow, startOnStep, type Act } from "@/components/plan-parts";
 import { sessionTitle } from "@/components/session-status";
 import { Hint, Shortcut } from "@/components/shortcut";
 import { usePlan } from "@/hooks/use-plan";
@@ -54,6 +54,7 @@ export function PlansIsland({ sessionId }: { sessionId: string }) {
         <FeaturePart
           feature={feature}
           plan={featurePlan}
+          stepId={session.stepId}
           from={from}
           act={(action) => send({ type: "plan_action", owner: { kind: "feature", id: feature.id }, action })}
         />
@@ -71,12 +72,15 @@ export function PlansIsland({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** Its feature plan: how far along, and the step in hand — waiting for your tick, or being worked
- * on — or, with none, the next to do. */
-function FeaturePart({ feature, plan, from, act }: { feature: FeatureSummary; plan: Plan; from: PlanFrom; act: Act }) {
+/** Its feature plan: how far along, and the step in hand — this session's own first (4p5b), then
+ * those waiting for your tick or being worked on — or, with none, the next to do (▶ starts a
+ * session on it). */
+function FeaturePart({ feature, plan, stepId, from, act }: { feature: FeatureSummary; plan: Plan; stepId: string | null; from: PlanFrom; act: Act }) {
+  const navigate = useNavigate();
   const steps = plan.steps.filter((s) => s.id); // yours to tick
   const ticked = steps.filter((s) => s.mark === "ticked").length;
-  const now = steps.filter((s) => s.mark === "claimed" || s.mark === "doing");
+  const mine = stepId ? steps.find((s) => s.id === stepId && s.mark !== "ticked") : undefined; // a ticked one is done, not now
+  const now = [...(mine ? [mine] : []), ...steps.filter((s) => s !== mine && (s.mark === "claimed" || s.mark === "doing"))];
   const next = steps.find((s) => s.mark === "todo");
   return (
     <section aria-label="Feature plan" className="flex flex-col gap-3 px-5 pt-2">
@@ -96,7 +100,12 @@ function FeaturePart({ feature, plan, from, act }: { feature: FeatureSummary; pl
         </Group>
       ) : next ? (
         <Group label="Up next">
-          <StepRow step={next} act={act} compact />
+          <StepRow
+            step={next}
+            act={act}
+            compact
+            onStart={feature.done ? undefined : () => navigate(startOnStep(feature.id, next.id!))}
+          />
         </Group>
       ) : (
         steps.length > 0 && <p className="text-xs text-muted-foreground">All {steps.length} steps ticked.</p>

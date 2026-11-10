@@ -289,6 +289,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   built from messages that exist: `set_permission_mode` back to the mode the log last showed
   (else the agent's "ask" mode), then the agent is told to go ahead — a deny of its waiting plan,
   or a prompt it reads at its next step (D56). No server change.
+- Steps start sessions (4p5b): a session remembers the feature-plan step it was started on
+  (`sessions.step_id`, taken with its first prompt in that feature, like the feature; cleared when
+  it moves). Home's Up next chips and ▶ on a step (plan page, island) both go through Home with
+  `&step=P3` in the URL beside the feature — the prompt filled for you to send or change, rather
+  than a session started behind your back. Its agent's instructions name the step; the island's
+  Now leads with it.
 - The plans island (4p5a): a third island the layout adds beside the main one on `/s/:id`, only
   when the session has a plan to show (its feature's, its own, or both): the feature plan's
   progress and its steps waiting for you / in hand (with Tick / Not yet) or the next to do, and

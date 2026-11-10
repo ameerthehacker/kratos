@@ -1947,8 +1947,8 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             · Add to scope"; Add → the plan's line is ``Scope: `src/greet.js`, `README.md` `` and
             the notice "· added to its scope" with a check, the button gone; after a reload the
             same. ~60 lines + ~60 of tests.
-  - [x] **4r. Review before v0.15.0** (owner: "thorough code review, extensive bug hunting, fix
-        all, then release") — of everything since v0.14.0 (4m3–4m5, all of 4p), by eleven review
+  - [x] **4r. Review before v0.16.0** (owner: "thorough code review, extensive bug hunting, fix
+        all, then release") — of everything since v0.14.0 (4m3–4m5, all of 4p; v0.15.0 had shipped 4m3 meanwhile), by eleven review
         angles; ~35 findings after merging the duplicates, the decisions in D79's review round.
         Fixed: the server-killing U+2028 answer; the step a turn worked on (its own `[~]`/`[?]`
         moves, never another session's `[~]` — the 4p7a open question); directory Scopes; notices

@@ -307,7 +307,7 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   Scope written without backticks; a step without a Scope line gets one before its other fields.
   The notice's "added" is read from the plan, not remembered by the notice: it holds after a
   reload, and a Scope edited back makes it offer Add again.
-- Review round before v0.15.0 (owner asked for a thorough review of the plans work):
+- Review round before v0.16.0 (owner asked for a thorough review of the plans work):
   - **One scope rule, in core** (`scopeMatcher`, `picomatch/posix`: no Node parts, so the browser
     bundles it; picomatch moved from cli to core). A plain entry is the path or, as a folder,
     everything under it (`src/plans/`, `src/plans`), as the format's `path/or/glob` says; globs

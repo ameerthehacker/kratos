@@ -1687,7 +1687,7 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             first prompt "Work on P3 of the plan: <title>"; the island's Now is then that step.
       - [ ] **4p5c. Progress on the folder** (~40) — a feature's folder shows `n/m` ticked
             (`FeatureSummary.progress`, read from its plan).
-    - [ ] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) — split:
+    - [x] **4p6. Plan mode writes the plan** (board §1–2, §8; was 4d, 4e, 4g, 4f's approval) — split:
       - [x] **4p6a. The plan review card** (~300 + tests) — a proposed plan is its own kind of ask,
             agent-neutral: `ToolAction` gets `plan` (the plan's Markdown); the Claude adapter maps
             `ExitPlanMode` to it. The ask dock shows it as a document card instead of raw JSON:
@@ -1781,8 +1781,34 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             Live (Haiku, plan mode, keys sent in headless Chrome): Esc in the editor → back to
             Read, the card open, nothing stopped; ⌘⌫ → the line cleared, the card open; ⌘↵ → approved,
             the agent working, the saved plan with the edit. 308 pass, typecheck 7/7, build 5/5.
-      - [ ] **4p6c. The agent switches to plan by itself** (board §1) — a line in the chat with
-            its reason and Skip planning.
+      - [x] **4p6c. The agent switches to plan by itself** (~150 + tests; board §1) — found by a
+            spike (claude 2.1.308, Haiku, asked for a many-file change): it calls `EnterPlanMode`
+            with `{}` (no reason of its own), no ask comes (the CLI lets it through), the mode
+            becomes `plan` (the chip follows, D53), and its plan then arrives as 4p6a's card. So:
+            `ToolAction` gets `plan_mode` (the agent puts itself in planning; the Claude adapter
+            maps `EnterPlanMode`), and the chat shows it as a line of its own, not a step (board
+            §1, "tell, don't ask"): "<agent> switched to Plan first", its reason when it said one
+            just before (its text right before the call), "Nothing changes in your files until you
+            approve the plan.", and Skip planning while the session is still planning from it.
+            Skip planning: the mode goes back to the one it had (from the log; else the agent's
+            default) with `set_permission_mode`, and the agent is told to go ahead — a prompt "The
+            owner skipped planning: …" (read at its next step, D56), or, if its plan is already
+            waiting, a deny with the same words. No server change. Scope: core `agent.ts`; adapter
+            `tool-action.ts` + test; web `lib/timeline.ts` + test, `components/conversation/
+            {conversation.tsx, plan-switch.tsx (new)}`, `pages/session.tsx`. Accept: adapter and
+            timeline tests (the line, its reason, the mode before; no step); live with the real
+            `claude`: it plans by itself → the line; Skip planning → mode back, it builds without
+            a plan; typecheck, test, build.
+            **Proof:** adapter test (`EnterPlanMode` → `plan_mode`), 2 timeline tests (a line of
+            its own between the agent's steps, the reply just before it as its reason, the mode
+            it left; none said → no reason, `null`). 310 pass, typecheck 7/7, build 5/5. Live,
+            real `claude` (Haiku) asked for a many-file change "plan it first": it entered plan
+            mode by itself → in headless Chrome the line "Claude Code switched to Plan first ·
+            Nothing changes in your files until you approve the plan · Skip planning", the chip on
+            Plan; Skip planning (no plan waiting yet: the prompt way) → the mode back to `default`,
+            the button gone, and in the same turn it built the library, `bin/calc.js` (`divide 6 3`
+            → `2`), `package.json` and the README — no plan saved. It gave no reason before
+            switching, so the line had none. ~130 lines + ~40 of tests.
             Found (owner's playground test, 2026-11-09, claude 2.1.308): `ExitPlanMode` reaches us
             as an ordinary `can_use_tool` ask (today: the generic Allow / Deny card with raw JSON)
             with input `{plan, planFilePath}` — the plan as Markdown, and Claude Code's own copy in

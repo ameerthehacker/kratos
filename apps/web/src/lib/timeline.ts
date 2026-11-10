@@ -44,6 +44,9 @@ export type TimelineItem =
   | { type: "prompt"; text: string; attachments?: AttachmentRef[]; read?: ReadMark }
   | { type: "reply"; text: string }
   | { type: "steps"; steps: Step[]; by?: "kratos" }
+  /** The agent put itself in plan mode (4p6c): its reason when it gave one just before, and the
+   * mode it was in (Skip planning goes back to it; null: never said, the agent's default). */
+  | { type: "plan_switch"; id: string; reason?: string; before: string | null }
   | { type: "event"; text: string };
 
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
@@ -66,6 +69,7 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
   let group: Step[] | null = null;
   let thoughts = 0; // thinking has no id of its own
   let plans = 0; // nor does a plan update (4p3a)
+  let mode: string | null = null; // the session's mode as the log last said (D53)
   const addStep = (step: Step) => {
     if (!group) items.push({ type: "steps", steps: (group = []) });
     group.push(step);
@@ -167,6 +171,13 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
         items.push({ type: "reply", text: event.text });
       } else if (event.kind === "thinking") {
         addStep({ id: `think-${thoughts++}`, kind: "think", title: "Thought it through", intent: "Think", doing: "Thinking", chips: [], raw: { call: event.text }, finished: true });
+      } else if (event.kind === "permission_mode") {
+        mode = event.mode;
+      } else if (event.kind === "tool_call" && event.action?.type === "plan_mode") {
+        // Told, not a step (board §1): a line of its own, its reason the reply just before it.
+        breakGroup();
+        const reason = items.at(-1)?.type === "reply" ? (items.pop() as { text: string }).text : undefined;
+        items.push({ type: "plan_switch", id: event.id, before: mode, ...(reason ? { reason } : {}) });
       } else if (event.kind === "tool_call") {
         const step = describe(event, cwd);
         steps.set(event.id, step);

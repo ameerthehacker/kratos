@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, FileCode, LoaderCircle, PanelRight, Pencil, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { useShallow } from "zustand/react/shallow";
@@ -61,6 +61,19 @@ export function SessionPage() {
   const items = useMemo(() => buildTimeline(shown, cwd, agentName), [shown, cwd, agentName]);
   const queue = useMemo(() => openQueue(shown), [shown]);
   const working = session !== undefined && session.status !== "idle";
+  // Skip planning (4p6c): back to the mode it had (else the agent's own default), then the agent
+  // is told to go ahead — as the answer to its plan if one is waiting, else as a prompt it reads
+  // at its next step (D56). Memoized: the chat redraws what's on screen when this changes.
+  const skipPlanning = useCallback(
+    (before: string | null) => {
+      const mode = modes.find((m) => m.id === before) ?? modes.find((m) => m.kind === "ask") ?? modes[0];
+      if (mode) send({ type: "set_permission_mode", mode: mode.id, ...(mode.dangerous ? { confirmDangerous: true } : {}) });
+      const plan = openAsks(items).find((step) => step.kind === "plan");
+      if (plan?.ask) send({ type: "permission_decision", id: plan.ask.id, decision: { decision: "deny", message: SKIP_PLANNING } });
+      else send({ type: "prompt", text: SKIP_PLANNING });
+    },
+    [modes, items, send],
+  );
   // Text going back into the composer (D56): a queued prompt being edited, or what Stop dropped.
   const [insert, setInsert] = useState<{ text: string; key: number }>();
   const putBack = (text: string) => setInsert((current) => ({ text, key: (current?.key ?? 0) + 1 }));
@@ -121,7 +134,14 @@ export function SessionPage() {
         {/* Only once the whole history is here (the server says so), keyed by session: it then opens
             at its bottom instead of scrolling through the replay (owner, 3d9). */}
         {ready ? (
-          <Conversation key={sessionId} items={items} agent={agentName} status={session?.status} queued={queue.length} />
+          <Conversation
+            key={sessionId}
+            items={items}
+            agent={agentName}
+            status={session?.status}
+            queued={queue.length}
+            onSkipPlanning={session?.permissionMode === "plan" ? skipPlanning : undefined}
+          />
         ) : (
           // Faded in late, so a quick open doesn't flash it (3y6a). The fade is on the box: one
           // element can't run both animations.
@@ -199,6 +219,9 @@ export function SessionPage() {
     </HotkeysProvider>
   );
 }
+
+/** What the agent hears when you skip the plan it chose to make (4p6c). */
+const SKIP_PLANNING = "The owner skipped planning: leave plan mode and make the change directly, without a plan.";
 
 /** The open session's title bar (3d2): what it is, its status, and Mark as done / Reopen. Its
  * title has a small menu (3z4): have the agent name it again, or rename it yourself. */

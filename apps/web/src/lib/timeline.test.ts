@@ -286,3 +286,26 @@ describe("buildTimeline: a proposed plan (4p6a)", () => {
     expect(openAsks(items)[0]?.plan).toBe(plan);
   });
 });
+
+describe("buildTimeline: the agent plans first by itself (4p6c)", () => {
+  const call = (id: string, tool: string, type: "plan_mode" | "read") => ({ type: "agent_event" as const, event: { kind: "tool_call" as const, id, tool, input: {}, action: { type } } });
+  it("is a line of its own, not a step, with its reason just before it and the mode it left", () => {
+    const items = buildTimeline([
+      { type: "user_prompt", text: "turn math.js into a library" },
+      { type: "agent_event", event: { kind: "permission_mode", mode: "acceptEdits" } },
+      call("r1", "Read", "read"),
+      { type: "agent_event", event: { kind: "text", text: "This touches many files, so I'll plan first." } },
+      call("p1", "EnterPlanMode", "plan_mode"),
+      { type: "agent_event", event: { kind: "permission_mode", mode: "plan" } },
+      { type: "agent_event", event: { kind: "tool_result", id: "p1", output: "Entered plan mode.", isError: false } },
+      call("r2", "Read", "read"),
+    ]);
+    expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "plan_switch", "steps"]); // the reason moved into the line
+    expect(items[2]).toEqual({ type: "plan_switch", id: "p1", reason: "This touches many files, so I'll plan first.", before: "acceptEdits" });
+  });
+
+  it("with nothing said first: no reason; no mode in the log: null", () => {
+    const [, line] = buildTimeline([{ type: "user_prompt", text: "go" }, call("p1", "EnterPlanMode", "plan_mode")]);
+    expect(line).toEqual({ type: "plan_switch", id: "p1", before: null });
+  });
+});

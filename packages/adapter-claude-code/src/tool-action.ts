@@ -47,6 +47,8 @@ export function toolAction(tool: string, input: unknown): ToolAction {
       return { type: "task", description: str("description") };
     case "ExitPlanMode": // plan mode's end: the plan, for approval (4p6a)
       return { type: "plan", plan: str("plan") };
+    case "EnterPlanMode": // the agent puts itself in plan mode, without asking (4p6c)
+      return { type: "plan_mode" };
     default:
       return { type: "other" };
   }

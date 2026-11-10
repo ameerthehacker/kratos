@@ -6,15 +6,24 @@ import { Virtuoso, type Components, type ItemContent } from "react-virtuoso";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
 import { PromptBubble } from "@/components/conversation/prompt-bubble";
+import { PlanSwitch } from "@/components/conversation/plan-switch";
 import { StepGroup } from "@/components/conversation/step-group";
 import { WorkingIndicator } from "@/components/conversation/working-indicator";
 import { codePlugin } from "@/lib/appearance";
 import type { SessionSummary } from "@kratos/core";
 import { currentActivity, type TimelineItem } from "@/lib/timeline";
 
-type Props = { items: TimelineItem[]; agent: string; status?: SessionSummary["status"]; queued?: number };
+type Props = {
+  items: TimelineItem[];
+  agent: string;
+  status?: SessionSummary["status"];
+  queued?: number;
+  /** Skip planning (4p6c), while the session is still planning from the agent's own switch: with
+   * the mode it had before. */
+  onSkipPlanning?: (before: string | null) => void;
+};
 /** What the list's items, header and footer draw with, besides the item itself. */
-type Context = Props & { raw: boolean; onToggleRaw: () => void };
+type Context = Props & { raw: boolean; onToggleRaw: () => void; lastSwitch?: string };
 
 /**
  * A session's conversation, drawn like the owner's chat design (D45): your prompts as bubbles,
@@ -27,12 +36,12 @@ type Context = Props & { raw: boolean; onToggleRaw: () => void };
  */
 export function Conversation(props: Props) {
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
-  const { items, agent, status, queued } = props;
+  const { items, agent, status, queued, onSkipPlanning } = props;
   // A new object only when something drawn changes: Virtuoso redraws every item on screen when
   // its context changes, and the page re-renders for other reasons (the composer, the queue…).
   const context = useMemo<Context>(
-    () => ({ items, agent, status, queued, raw, onToggleRaw: () => setRaw((r) => !r) }),
-    [items, agent, status, queued, raw],
+    () => ({ items, agent, status, queued, onSkipPlanning, raw, onToggleRaw: () => setRaw((r) => !r), lastSwitch: lastSwitchId(items) }),
+    [items, agent, status, queued, onSkipPlanning, raw],
   );
   // Pinned to the newest message until you scroll up, and again once you're back at the bottom
   // (use-stick-to-bottom, D76): it watches the content's size, so a new message, a growing step or
@@ -120,6 +129,15 @@ const COMPONENTS: Components<TimelineItem, Context> = {
   ),
 };
 
+/** The agent's latest switch into plan mode (4p6c): the only one Skip planning can still undo. */
+function lastSwitchId(items: TimelineItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (item.type === "plan_switch") return item.id;
+  }
+  return undefined;
+}
+
 function Item({ item, context }: { item: TimelineItem; context: Context }) {
   switch (item.type) {
     case "prompt":
@@ -133,6 +151,11 @@ function Item({ item, context }: { item: TimelineItem; context: Context }) {
     case "steps":
       // Kratos's own steps (a plan it held to who-writes-what, 4p3b) are headed as its, not the agent's.
       return <StepGroup agent={item.by === "kratos" ? "Kratos" : context.agent} steps={item.steps} raw={context.raw} onToggleRaw={context.onToggleRaw} />;
+    case "plan_switch": {
+      // Only the latest switch, while the session still plans: an earlier one is over.
+      const skip = item.id === context.lastSwitch && context.onSkipPlanning;
+      return <PlanSwitch item={item} agent={context.agent} onSkip={skip ? () => skip(item.before) : undefined} />;
+    }
     case "event":
       return (
         <div className="flex items-center gap-2.5 text-sm text-muted-foreground">

@@ -15,7 +15,8 @@ import { z } from "zod";
  * Claude calls them `Read` and `Bash`.
  */
 export const ToolAction = z.object({
-  type: z.enum(["read", "edit", "run", "search", "web", "task", "plan", "other"]),
+  // `plan`: a plan for your approval (4p6a); `plan_mode`: the agent puts itself in planning (4p6c).
+  type: z.enum(["read", "edit", "run", "search", "web", "task", "plan", "plan_mode", "other"]),
   /** What it acts on: a file path, search pattern, URL or query. */
   target: z.string().optional(),
   /** For `run`: the shell command. */

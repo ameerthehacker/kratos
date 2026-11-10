@@ -13,6 +13,7 @@ const LOOK: Record<Step["kind"], { icon: LucideIcon; tint: string }> = {
   web: { icon: Globe, tint: "text-run" },
   task: { icon: GitFork, tint: "text-primary" },
   plan: { icon: ListTodo, tint: "text-run" },
+  plan_mode: { icon: ListTodo, tint: "text-run" }, // a line of its own, not a step (4p6c)
   think: { icon: Ellipsis, tint: "text-faint" },
   question: { icon: MessageCircleQuestion, tint: "text-muted-foreground" },
   other: { icon: Wrench, tint: "text-muted-foreground" },

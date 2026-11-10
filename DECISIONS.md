@@ -283,6 +283,12 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   it in `ExitPlanMode`'s input, and Claude Code then quotes it back as "Approved Plan (edited by
   user)". Keep planning with edits sends them as "start from this version". Only the hub sets
   an allow's `plan`, after saving: one a tab sends on a plain allow is dropped.
+  The agent planning first by itself (4p6c, board §1 "tell, don't ask"): `EnterPlanMode` comes
+  with `{}` and no ask (spiked), so it's a `plan_mode` action the chat shows as a line, not a
+  step — its reason being the agent's text right before, when it said one. Skip planning is
+  built from messages that exist: `set_permission_mode` back to the mode the log last showed
+  (else the agent's "ask" mode), then the agent is told to go ahead — a deny of its waiting plan,
+  or a prompt it reads at its next step (D56). No server change.
 - The plans island (4p5a): a third island the layout adds beside the main one on `/s/:id`, only
   when the session has a plan to show (its feature's, its own, or both): the feature plan's
   progress and its steps waiting for you / in hand (with Tick / Not yet) or the next to do, and

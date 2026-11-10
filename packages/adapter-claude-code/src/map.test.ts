@@ -48,6 +48,8 @@ describe("toEvents: assistant messages", () => {
     expect(action("ExitPlanMode", { plan: "# Plan\n\n## Steps\n", planFilePath: "/Users/x/.claude/plans/a.md" })).toEqual({
       type: "plan", plan: "# Plan\n\n## Steps\n",
     });
+    // …and its start, when Claude decides to plan first (4p6c): it sends no input of its own.
+    expect(action("EnterPlanMode", {})).toEqual({ type: "plan_mode" });
     expect(action("SomethingNew", {})).toEqual({ type: "other" });
   });
 

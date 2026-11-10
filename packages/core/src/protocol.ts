@@ -298,6 +298,9 @@ export const ServerMessage = z.discriminatedUnion("type", [
   /** A plan, to the tab that asked (`get_plan`) and to every tab whenever its file changes (4p1a).
    * `markdown` is the file as written, `plan` what Kratos read from it; both null: no plan. */
   z.object({ type: z.literal("plan"), owner: PlanOwner, markdown: z.string().nullable(), plan: Plan.nullable() }),
+  /** In a session's log (4p7a): its turn changed files outside the Scope of the step it worked
+   * on (`stepId` of `owner`'s plan); `paths` relative to the project. */
+  z.object({ type: z.literal("scope_drift"), owner: PlanOwner, stepId: z.string(), paths: z.array(z.string()) }),
   /** In a session's log (4p3a): its turn changed a plan. `before` / `after` the file's text (null:
    * none), after Kratos held the edit to who-writes-what (`undone`: what it put back, in words). */
   z.object({

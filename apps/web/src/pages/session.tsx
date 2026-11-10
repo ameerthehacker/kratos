@@ -141,6 +141,7 @@ export function SessionPage() {
             status={session?.status}
             queued={queue.length}
             onSkipPlanning={session?.permissionMode === "plan" ? skipPlanning : undefined}
+            reviewHref={sessionId && reviewPath(sessionId)}
           />
         ) : (
           // Faded in late, so a quick open doesn't flash it (3y6a). The fade is on the box: one
@@ -304,6 +305,9 @@ function PlansToggle({ sessionId }: { sessionId: string }) {
   );
 }
 
+/** The review page of a session's changes (3v2): the changes button's and the scope-drift notice's way in. */
+const reviewPath = (sessionId: string) => `/s/${sessionId}/review`;
+
 /** The way into reviewing what this session changed (3v2, the design's "4 files +25 −5"); hidden
  * until it has changed something. */
 function ChangesButton({ sessionId }: { sessionId: string }) {
@@ -311,7 +315,7 @@ function ChangesButton({ sessionId }: { sessionId: string }) {
   if (files.length === 0) return null;
   return (
     <Link
-      to={`/s/${sessionId}/review`}
+      to={reviewPath(sessionId)}
       className="inline-flex h-8 flex-none items-center gap-2 rounded-full bg-secondary px-3 text-sm text-secondary-foreground hover:bg-input hover:text-foreground"
     >
       <FileCode className="size-3.5" aria-hidden="true" />

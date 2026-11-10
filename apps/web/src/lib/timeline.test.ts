@@ -309,3 +309,16 @@ describe("buildTimeline: the agent plans first by itself (4p6c)", () => {
     expect(line).toEqual({ type: "plan_switch", id: "p1", before: null });
   });
 });
+
+describe("buildTimeline: scope drift (4p7a)", () => {
+  it("is a notice of its own under the turn", () => {
+    const items = buildTimeline([
+      { type: "user_prompt", text: "do P1" },
+      { type: "agent_event", event: { kind: "tool_call", id: "w", tool: "Write", input: {}, action: { type: "edit", target: "package.json" } } },
+      { type: "agent_event", event: { kind: "turn_end", reason: "completed" } },
+      { type: "scope_drift", owner: { kind: "feature", id: "f" }, stepId: "P1", paths: ["package.json"] },
+    ]);
+    expect(items.map((i) => i.type)).toEqual(["prompt", "steps", "scope_drift"]);
+    expect(items.at(-1)).toEqual({ type: "scope_drift", stepId: "P1", paths: ["package.json"] });
+  });
+});

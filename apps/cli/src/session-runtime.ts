@@ -114,6 +114,9 @@ export class SessionRuntime {
       instructions?: () => string | undefined;
       /** A turn starts or ends (4p3a: what its plans were, and what it changed). */
       onTurn?: (edge: "start" | "end") => void;
+      /** A turn's end snapshot is stored (4p7a): what it changed can be read now. `logSeq` is its
+       * place in the log, which tells which snapshot came before it (two can be taken at once). */
+      onTurnSnapshot?: (end: { tree: string; logSeq: number }) => void;
     },
   ) {
     this.logger = deps.log.child({ component: "session", session: id });
@@ -639,6 +642,7 @@ export class SessionRuntime {
       if (tree === null) return; // not a git repository
       this.deps.store.addSnapshot(this.id, kind, tree, logSeq);
       this.logger.debug({ kind, tree, ms: Date.now() - started }, "snapshot taken");
+      if (kind === "turn_end") this.deps.onTurnSnapshot?.({ tree, logSeq });
     } catch (err) {
       this.logger.warn({ err, kind }, "snapshot failed");
     }

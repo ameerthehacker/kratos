@@ -9,10 +9,13 @@ import {
   type Harness,
   type PlanAction,
   type PlanOwner,
+  type PlanKind,
   type PlanSave,
+  type PlanStep,
   type ServerMessage,
 } from "@kratos/core";
 import { slug } from "github-slugger";
+import picomatch from "picomatch";
 import { memoryFiles, type AttachmentFiles } from "./attachment-files.js";
 import type { Snapshots } from "./changes/git-snapshots.js";
 import { silentLogger, type Logger } from "./logger.js";
@@ -724,6 +727,57 @@ export class SessionHub {
     if (existed !== (markdown !== undefined)) this.broadcast(this.sessionList());
   }
 
+  /**
+   * A turn's files against its step's Scope (4p7a): the span from the snapshot before its end (its
+   * start, or the last turn's end for a queued one) to its end; the step it worked on (`stepInHand`).
+   * Files outside every Scope glob go in its log as `scope_drift`. "Before" is by log position, not
+   * by when it was stored: a turn's end and the next one's start snapshot can finish in either
+   * order. Paths are git's, from the repository's root: the project's start with its prefix, and
+   * ones outside it aren't the plan's.
+   */
+  private async checkScope(sessionId: string, end: { tree: string; logSeq: number }): Promise<void> {
+    if (!this.snapshots) return;
+    const before = this.store
+      .snapshotsOf(sessionId)
+      .filter((s) => s.logSeq !== null && s.logSeq < end.logSeq)
+      .sort((a, b) => a.logSeq! - b.logSeq!)
+      .at(-1);
+    if (!before) return;
+    const inHand = this.stepInHand(sessionId);
+    if (!inHand || inHand.step.scope.length === 0) return; // nothing to hold the files against
+    const prefix = await this.snapshots.prefix();
+    if (prefix === null) return;
+    const inScope = picomatch(inHand.step.scope, { dot: true });
+    const outside = (await this.snapshots.changedPaths(before.tree, end.tree))
+      .filter((path) => path.startsWith(prefix))
+      .map((path) => path.slice(prefix.length))
+      .filter((path) => !inScope(path));
+    if (outside.length === 0) return;
+    this.runtimes.get(sessionId)?.addToLog({ type: "scope_drift", owner: inHand.owner, stepId: inHand.step.id!, paths: outside });
+    this.log.info({ session: sessionId, step: inHand.step.id, outside: outside.length }, "files changed outside the step's scope");
+  }
+
+  /** The step a session works on (4p7a): the one it was started on (4p5b), else the one step in
+   * hand (`[~]`) in its plans — none when there's no such step, or several. */
+  private stepInHand(sessionId: string): { owner: PlanOwner; step: PlanStep } | undefined {
+    const session = this.store.get(sessionId);
+    if (!session) return undefined;
+    const { session: own, feature } = this.planFolders(sessionId);
+    const read = (folder: string, kind: PlanKind) => {
+      const text = this.plans.text(folder);
+      return text === undefined ? [] : parsePlan(text, kind).steps.filter((s) => s.id);
+    };
+    const featureSteps = feature ? read(feature.folder, "feature") : [];
+    const featureOwner: PlanOwner | undefined = session.featureId ? { kind: "feature", id: session.featureId } : undefined;
+    const started = session.stepId ? featureSteps.find((s) => s.id === session.stepId) : undefined;
+    if (started && featureOwner) return { owner: featureOwner, step: started };
+    const inHand = [
+      ...(featureOwner ? featureSteps.filter((s) => s.mark === "doing").map((step) => ({ owner: featureOwner, step })) : []),
+      ...read(own, "session").filter((s) => s.mark === "doing").map((step) => ({ owner: { kind: "session" as const, id: sessionId }, step })),
+    ];
+    return inHand.length === 1 ? inHand[0] : undefined;
+  }
+
   /** Whose plan a folder under `.kratos/` holds; undefined for one Kratos doesn't know. */
   private ownerOfPlan(folder: string): PlanOwner | undefined {
     const [kind, name = ""] = folder.split("/");
@@ -926,6 +980,8 @@ export class SessionHub {
         onChange: () => this.broadcastSessionList(),
         features: this.featureOps(sessionId),
         onTurn: (edge) => (edge === "start" ? this.planTurnStarted(sessionId) : void this.planTurnEnded(sessionId)),
+        onTurnSnapshot: (end) =>
+          void this.checkScope(sessionId, end).catch((err) => this.log.warn({ err, session: sessionId }, "could not check the turn's scope")),
         instructions: () => {
           void this.plans.prepare().catch((err) => this.log.warn({ err }, "could not prepare .kratos/ for plans"));
           return planInstructions(this.planPaths(sessionId));

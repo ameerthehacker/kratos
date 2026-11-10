@@ -289,6 +289,17 @@ Format: **decision** · alternatives · why · how to reverse. Newest at the bot
   built from messages that exist: `set_permission_mode` back to the mode the log last showed
   (else the agent's "ask" mode), then the agent is told to go ahead — a deny of its waiting plan,
   or a prompt it reads at its next step (D56). No server change.
+- Scope drift (4p7a): once a turn's end snapshot is stored, the files it changed (its span: the
+  snapshot before its end) are held against the Scope of the step it worked on — the session's
+  own step (4p5b), else the one step in hand (`[~]`) in its plans; several in hand, or no Scope:
+  nothing to hold them to. Globs by **picomatch** (the common matcher; no native parts, the binary
+  builds), `dot: true`. Git's paths are from the repository root; the project's are the ones
+  under its prefix (`Snapshots.prefix()`, git's `--show-prefix`, not `path.relative` against the
+  root: git resolves symlinks, so `/tmp/x` vs `/private/tmp/x` would hide every file); files
+  outside the project aren't the plan's. The span's "before" is by log position, not by storage
+  order: a turn's end and the next one's start snapshot may finish in either order. Drift is a
+  `scope_drift` message in the session's log: a notice under the turn with Show diff. Only a
+  notice — the fence that stops a turn is step 5.
 - Steps start sessions (4p5b): a session remembers the feature-plan step it was started on
   (`sessions.step_id`, taken with its first prompt in that feature, like the feature; cleared when
   it moves). Home's Up next chips and ▶ on a step (plan page, island) both go through Home with

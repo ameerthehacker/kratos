@@ -47,6 +47,8 @@ export type TimelineItem =
   /** The agent put itself in plan mode (4p6c): its reason when it gave one just before, and the
    * mode it was in (Skip planning goes back to it; null: never said, the agent's default). */
   | { type: "plan_switch"; id: string; reason?: string; before: string | null }
+  /** Files the last turn changed outside its step's Scope (4p7a). */
+  | { type: "scope_drift"; stepId: string; paths: string[] }
   | { type: "event"; text: string };
 
 type ToolCall = Extract<AgentEvent, { kind: "tool_call" }>;
@@ -151,6 +153,9 @@ export function buildTimeline(log: readonly LogMessage[], cwd = "", agent = "The
       step.doing = step.title;
       step.question = { id: message.id, request };
       questions.set(message.id, step);
+    } else if (message.type === "scope_drift") {
+      breakGroup();
+      items.push({ type: "scope_drift", stepId: message.stepId, paths: message.paths });
     } else if (message.type === "plan_updated") {
       // Kratos's, not the agent's: a group of its own, and the agent's next steps start another.
       breakGroup();

@@ -7,6 +7,7 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "@/components/ui/button";
 import { PromptBubble } from "@/components/conversation/prompt-bubble";
 import { PlanSwitch } from "@/components/conversation/plan-switch";
+import { ScopeDrift } from "@/components/conversation/scope-drift";
 import { StepGroup } from "@/components/conversation/step-group";
 import { WorkingIndicator } from "@/components/conversation/working-indicator";
 import { codePlugin } from "@/lib/appearance";
@@ -21,6 +22,8 @@ type Props = {
   /** Skip planning (4p6c), while the session is still planning from the agent's own switch: with
    * the mode it had before. */
   onSkipPlanning?: (before: string | null) => void;
+  /** Where Show diff goes (4p7a): this session's review. */
+  reviewHref?: string;
 };
 /** What the list's items, header and footer draw with, besides the item itself. */
 type Context = Props & { raw: boolean; onToggleRaw: () => void; lastSwitch?: string };
@@ -36,12 +39,12 @@ type Context = Props & { raw: boolean; onToggleRaw: () => void; lastSwitch?: str
  */
 export function Conversation(props: Props) {
   const [raw, setRaw] = useState(false); // one toggle for the whole view, as in the design
-  const { items, agent, status, queued, onSkipPlanning } = props;
+  const { items, agent, status, queued, onSkipPlanning, reviewHref } = props;
   // A new object only when something drawn changes: Virtuoso redraws every item on screen when
   // its context changes, and the page re-renders for other reasons (the composer, the queue…).
   const context = useMemo<Context>(
-    () => ({ items, agent, status, queued, onSkipPlanning, raw, onToggleRaw: () => setRaw((r) => !r), lastSwitch: lastSwitchId(items) }),
-    [items, agent, status, queued, onSkipPlanning, raw],
+    () => ({ items, agent, status, queued, onSkipPlanning, reviewHref, raw, onToggleRaw: () => setRaw((r) => !r), lastSwitch: lastSwitchId(items) }),
+    [items, agent, status, queued, onSkipPlanning, reviewHref, raw],
   );
   // Pinned to the newest message until you scroll up, and again once you're back at the bottom
   // (use-stick-to-bottom, D76): it watches the content's size, so a new message, a growing step or
@@ -156,6 +159,8 @@ function Item({ item, context }: { item: TimelineItem; context: Context }) {
       const skip = item.id === context.lastSwitch && context.onSkipPlanning;
       return <PlanSwitch item={item} agent={context.agent} onSkip={skip ? () => skip(item.before) : undefined} />;
     }
+    case "scope_drift":
+      return <ScopeDrift item={item} reviewHref={context.reviewHref} />;
     case "event":
       return (
         <div className="flex items-center gap-2.5 text-sm text-muted-foreground">

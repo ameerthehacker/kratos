@@ -1864,7 +1864,43 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
             reach Claude before it plans (4p2's instructions), or the reader learns that shape too.
     - [ ] **4p7. The plan guards the work** (board §3; was 4k) — files a turn changed outside
           the step's Scope are flagged with Show diff / Add to scope (Add edits the plan). The
-          first piece of step 5's scope fence.
+          first piece of step 5's scope fence. Split:
+      - [x] **4p7a. Scope drift, flagged** (~200 + tests) — when a turn's end snapshot is taken
+            (D65), the files it changed (that turn's span: the snapshot before its end, its start
+            or the last turn's end for a queued one) are held against the Scope of the step it
+            worked on: the session's own step (4p5b), else the one step in hand (`[~]`) in its
+            plans. No such step, or a step without a Scope: nothing to hold against. A file
+            outside every Scope glob (picomatch, the common matcher, D79) is drift: the session's
+            log gets `scope_drift {owner, stepId, paths}` and the chat a notice under the turn,
+            "1 file changed outside P2's scope", the paths, Show diff (the review page). Paths
+            are taken relative to the project (git gives them from the repository root; a file
+            outside the project isn't the plan's business). Scope: core `protocol.ts`; cli
+            `changes/git-snapshots.ts` (the project's prefix in the repository), `session-runtime.ts` (a turn's end
+            snapshot taken), `session-hub.ts` + tests, `package.json` (picomatch); web
+            `lib/timeline.ts` + test, `components/conversation/{conversation,scope-drift}.tsx`.
+            Accept: hub tests (outside → the notice; inside, no step, or no Scope → none; a
+            queued turn's span); timeline test; live with the real `claude` on a step with a
+            Scope: a file outside it → the notice, Show diff opens the review; typecheck, test,
+            build.
+            **Proof:** 3 hub tests (outside → `scope_drift` with only the outside paths; all inside,
+            a step without a Scope, no step → none; no step started on → the one `[~]` step is
+            held to) + a timeline test. 317 pass, typecheck 7/7, build 5/5, the binary builds
+            (picomatch bundled). Live, real `claude` (Haiku) on a throwaway repo, a session started
+            on P1 (Scope `src/greet.js`) and asked to also document it in the README: it wrote
+            `src/greet.js`, proved it, marked P1 `[?]`, edited README.md; under the turn
+            "1 file changed outside P1's scope · README.md · Show diff"; Show diff → the review
+            with its 2 files. ~170 lines + ~70 of tests.
+            **Review round:** 8 findings, 5 fixed — paths filtered and stripped by the project's
+            prefix in the repository (`git rev-parse --show-prefix`, was a root compare that broke
+            in a subfolder); the span picked by log position from the end snapshot the runtime
+            hands over (was "the latest snapshot", racy with a queued turn's start) + a queued-turn
+            test; the review link shared in the session page. Left: which step a turn without a
+            started step worked on (the `[~]` one is read at its end, but the agent often moves it
+            to `[?]` by then, so drift goes unflagged — the owner's call); a failed start snapshot
+            widens the span to the last one; the notice can land in a queued turn's group. 318
+            pass, typecheck 7/7, build 5/5.
+      - [ ] **4p7b. Add to scope** — the notice's Add to scope puts the paths in the step's
+            Scope line (your change, in line), and the notice says so.
 - [ ] **5. Step gates** — scope fence + budget enforced by Kratos itself (via
       `requestPermission`), using the D24 model: steps carry an estimate (agent must split before
       coding if it exceeds the budget); budget = review load (in-scope insertions, config/lockfiles/

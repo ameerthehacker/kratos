@@ -1497,6 +1497,10 @@ class FakeSnapshots implements Snapshots {
   async exists(id: string) {
     return !this.gone.has(id);
   }
+  /** The repository is the project (4p7a): its paths are the project's. */
+  async prefix() {
+    return this.repo ? "" : null;
+  }
   async changedPaths(from: string, to: string) {
     const [a, b] = [from, to].map((tree) => Number(tree.slice(4)));
     return [...new Set([...this.changes].filter(([n]) => n > a! && n <= b!).flatMap(([, paths]) => paths))];
@@ -2317,5 +2321,75 @@ describe("SessionHub: a feature's ticked count (4p5c, D79)", () => {
     a.receive({ type: "plan_action", owner, action: { kind: "tick", stepId: "P1" } });
     await tick();
     expect(a.features[0]!.progress).toEqual({ ticked: 1, total: 2 });
+  });
+});
+
+describe("SessionHub: scope drift (4p7a, D79)", () => {
+  const drift = (seen: ServerMessage[]) => seen.filter((m) => m.type === "scope_drift");
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await tick();
+  };
+  /** A feature "Reports" whose plan has P1 (Scope `src/**`, `README.md`) and P2 (no Scope), and a
+   * session started on `step`; its turn edits `edits`. */
+  async function turnOn(step: string | undefined, edits: string[], plan?: string) {
+    const snapshots = new FakeSnapshots();
+    const ctx = setup(snapshots);
+    const a = ctx.tab();
+    a.receive({ type: "create_feature", title: "Reports" });
+    const feature = a.features[0]!.id;
+    a.receive({ type: "start_plan", owner: { kind: "feature", id: feature } });
+    await tick();
+    ctx.plans.edit("features/reports", plan ?? "# Reports\n\n## Steps\n- [ ] **P1. Export**\n  Scope: `src/**`, `README.md`\n- [ ] **P2. Docs**\n");
+    a.receive({ type: "prompt", text: "go", newSession: true, featureId: feature, ...(step ? { stepId: step } : {}) });
+    await settle(); // its start snapshot
+    for (const path of edits) snapshots.edit(path);
+    ctx.agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await settle(); // its end snapshot, then the check
+    return { ...ctx, a, feature };
+  }
+
+  it("files outside the step's Scope: a notice in the session's log, paths from the project", async () => {
+    const { a, feature } = await turnOn("P1", ["src/export.ts", "README.md", "package.json", "apps/web/x.tsx"]);
+    expect(drift(a.seen)).toEqual([{ type: "scope_drift", owner: { kind: "feature", id: feature }, stepId: "P1", paths: ["package.json", "apps/web/x.tsx"] }]);
+  });
+
+  it("all inside, a step without a Scope, or no step: nothing", async () => {
+    expect(drift((await turnOn("P1", ["src/a.ts", "src/deep/b.ts"])).a.seen)).toEqual([]);
+    expect(drift((await turnOn("P2", ["anything.ts"])).a.seen)).toEqual([]);
+    expect(drift((await turnOn(undefined, ["anything.ts"])).a.seen)).toEqual([]);
+  });
+
+  it("no step started on: the one step in hand ([~]) is held to", async () => {
+    const plan = "# Reports\n\n## Steps\n- [~] **P1. Export**\n  Scope: `src/**`\n- [ ] **P2. Docs**\n";
+    const { a } = await turnOn(undefined, ["src/a.ts", "docs/x.md"], plan);
+    expect(drift(a.seen)).toMatchObject([{ stepId: "P1", paths: ["docs/x.md"] }]);
+  });
+
+  it("a queued turn's span is from the last turn's end: only its own files count", async () => {
+    const { a, agents, snapshots } = await (async () => {
+      const snapshots = new FakeSnapshots();
+      const ctx = setup(snapshots);
+      const a = ctx.tab();
+      a.receive({ type: "create_feature", title: "Reports" });
+      const feature = a.features[0]!.id;
+      a.receive({ type: "start_plan", owner: { kind: "feature", id: feature } });
+      await tick();
+      ctx.plans.edit("features/reports", "# Reports\n\n## Steps\n- [ ] **P1. Export**\n  Scope: `src/**`\n");
+      a.receive({ type: "prompt", text: "one", newSession: true, featureId: feature, stepId: "P1" });
+      await settle();
+      return { a, agents: ctx.agents, snapshots };
+    })();
+    a.receive({ type: "prompt", text: "two" }); // queued: the turn is open
+    snapshots.edit("docs/one.md");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await settle();
+    const [queued] = a.seen.flatMap((m) => (m.type === "prompt_queued" ? [m.id] : []));
+    agents[0]!.emit({ kind: "prompt_state", id: queued!, state: "started" }); // the agent starts turn 2 itself
+    await settle();
+    snapshots.edit("src/two.ts");
+    snapshots.edit("docs/two.md");
+    agents[0]!.emit({ kind: "turn_end", reason: "completed" });
+    await settle();
+    expect(drift(a.seen).map((m) => m.type === "scope_drift" && m.paths)).toEqual([["docs/one.md"], ["docs/two.md"]]);
   });
 });

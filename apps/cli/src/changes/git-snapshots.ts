@@ -19,6 +19,10 @@ export interface Snapshots {
   /** The files that differ between two snapshots, with both texts; with `only`, just those paths
    * (a rename counts when either side is in it). */
   diff(from: string, to: string, only?: ReadonlySet<string>): Promise<ChangedFile[]>;
+  /** Where the project is in the repository (4p7a), as git says it: "" at its root, else like
+   * `apps/web/` — the paths above are from the root, so a project's own start with it. Null
+   * outside a repository. Git's, not `path.relative`: it sees through symlinks (macOS's `/tmp`). */
+  prefix(): Promise<string | null>;
 }
 
 /** Bigger sides aren't sent: the review page couldn't show them usefully anyway. */
@@ -38,13 +42,14 @@ const BINARY_PROBE = 8000;
  */
 export function gitSnapshots(dir: string): Snapshots {
   // Located once: the repository root (snapshots cover the whole repo) and its index file.
-  let repo: Promise<{ git: SimpleGit; root: string; index: string } | null> | undefined;
+  let repo: Promise<{ git: SimpleGit; root: string; index: string; prefix: string } | null> | undefined;
   const locate = () =>
     (repo ??= (async () => {
       try {
         const root = (await gitIn(dir).revparse(["--show-toplevel"])).trim();
         const gitDir = (await gitIn(dir).revparse(["--absolute-git-dir"])).trim();
-        return { git: gitIn(root), root, index: join(gitDir, "index") };
+        const prefix = (await gitIn(dir).revparse(["--show-prefix"])).trim();
+        return { git: gitIn(root), root, index: join(gitDir, "index"), prefix };
       } catch {
         repo = undefined; // not kept: a `git init` (or a git that failed once) is seen next time
         return null; // not a repository, or no git installed
@@ -70,6 +75,10 @@ export function gitSnapshots(dir: string): Snapshots {
       } finally {
         await rm(index, { force: true });
       }
+    },
+
+    async prefix() {
+      return (await locate())?.prefix ?? null;
     },
 
     async exists(id) {

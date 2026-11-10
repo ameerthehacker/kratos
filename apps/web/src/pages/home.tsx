@@ -125,21 +125,23 @@ export function HomePage() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-32 pb-20">
         <h1 className="text-center font-heading text-display font-semibold">What should we build?</h1>
         {upNext.length > 0 && (
-          // Close to the box it fills (the design's "Up next", board §5b).
-          <div className="-mb-6 flex flex-wrap items-center gap-2" role="group" aria-label="Up next in the plan">
-            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Up next</span>
+          // Close to the box it fills (the design's "Up next", board §5b). One line: long titles
+          // share the width and truncate (the whole title on hover), never wrapping under the label.
+          <div className="-mb-6 flex min-w-0 items-center gap-2" role="group" aria-label="Up next in the plan">
+            <span className="flex-none text-xs font-semibold tracking-wider text-faint uppercase">Up next</span>
             {upNext.map((s) => (
               <button
                 key={s.id}
                 type="button"
                 aria-pressed={step?.id === s.id}
+                title={`${s.id}. ${s.title}`}
                 onClick={() => choose(step?.id === s.id ? { feature: featureId! } : { feature: featureId!, step: s.id! })}
                 className={cn(
-                  "flex h-8 max-w-full items-center gap-1.5 rounded-full px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring",
+                  "flex h-8 min-w-0 items-center gap-1.5 rounded-full px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring",
                   step?.id === s.id ? "bg-primary/15 text-foreground ring-1 ring-primary/40" : "bg-secondary text-secondary-foreground hover:bg-accent",
                 )}
               >
-                <span className="font-mono text-xs text-muted-foreground">{s.id}</span>
+                <span className="flex-none font-mono text-xs text-muted-foreground">{s.id}</span>
                 <span className="truncate">{s.title}</span>
               </button>
             ))}

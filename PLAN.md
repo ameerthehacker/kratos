@@ -1080,6 +1080,14 @@ no real `claude`, no tokens. Runner: Vitest (one root `pnpm test`), tests next t
       playground rev-parse --show-toplevel` is the playground; this repo ignores it
       (`.gitignore:9`); Kratos started on it reports it as the project. Your running `pnpm dev`
       still uses the old script until you restart it. D80.
+- [x] **3z9. Up next chips stay on one line** (~10; owner, 2026-11-10) — on Home with a feature
+      picked, long step titles wrapped the "Up next" chips onto lines of their own under the
+      label. Now one line: the chips share the width and truncate, step id and label stay whole,
+      the whole title on hover. Scope: web `pages/home.tsx`. Accept: headless Chrome with three
+      long next steps shows one row; typecheck, test, build.
+      **Proof:** a copy of the dev database's "Freehand" plan with a long P3: before, the row was
+      112 px, three chips on three lines; after, 32 px, one line, each chip truncated with its
+      title on hover. Typecheck 7/7, 343 tests, build 5/5.
 - [x] **4. Features and plans** (owner, 2026-11-08; design: "Proposal · features and plans" board,
       D73) — a feature is a folder in the sidebar that holds one plan and the sessions working on
       it; a session with no feature is a one-off. The plan is a document in the project, not a
